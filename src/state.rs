@@ -4,17 +4,19 @@ use sqlx::{postgres::PgPoolOptions, PgPool};
 pub struct AppState {
     pub db: sqlx::Pool<sqlx::Postgres>,
     pub cookie_key: cja::server::cookies::CookieKey,
+    pub domain: String,
 }
 
 impl AppState {
     pub async fn from_env() -> cja::Result<Self> {
-        let pool = setup_db_pool().await.unwrap();
+        let pool = setup_db_pool().await?;
 
         let cookie_key = cja::server::cookies::CookieKey::from_env_or_generate()?;
 
         Ok(Self {
             db: pool,
             cookie_key,
+            domain: std::env::var("DOMAIN")?,
         })
     }
 }
