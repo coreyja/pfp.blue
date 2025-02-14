@@ -1,5 +1,4 @@
 use atrium_api::types::string::Did;
-use atrium_xrpc_client::reqwest::ReqwestClientBuilder;
 use axum::extract::State;
 use axum::{response::IntoResponse, routing::get, Form};
 use maud::html;
