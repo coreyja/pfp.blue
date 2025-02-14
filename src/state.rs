@@ -1,10 +1,14 @@
+use std::sync::Arc;
+
+use atrium_xrpc_client::reqwest::{ReqwestClient, ReqwestClientBuilder};
 use sqlx::{postgres::PgPoolOptions, PgPool};
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct AppState {
     pub db: sqlx::Pool<sqlx::Postgres>,
     pub cookie_key: cja::server::cookies::CookieKey,
     pub domain: String,
+    pub bsky_client: Arc<ReqwestClient>,
 }
 
 impl AppState {
@@ -13,10 +17,21 @@ impl AppState {
 
         let cookie_key = cja::server::cookies::CookieKey::from_env_or_generate()?;
 
+        let client = ReqwestClientBuilder::new("https://bsky.social")
+            .client(
+                reqwest::ClientBuilder::new()
+                    .timeout(std::time::Duration::from_millis(1000))
+                    .use_rustls_tls()
+                    .build()
+                    .unwrap(),
+            )
+            .build();
+
         Ok(Self {
             db: pool,
             cookie_key,
             domain: std::env::var("DOMAIN")?,
+            bsky_client: Arc::new(client),
         })
     }
 }

@@ -33,12 +33,8 @@ pub async fn resolve_handle_to_did_document(
     client: Arc<ReqwestClient>,
 ) -> cja::Result<DidDocument> {
     let did = resolve_handle_to_did(handle, client.clone()).await?;
-    let config = CommonDidResolverConfig {
-        http_client: client.clone(),
-        plc_directory_url: DEFAULT_PLC_DIRECTORY_URL.to_string(),
-    };
-    let resolver = CommonDidResolver::new(config);
-    let document = resolver.resolve(&did).await?;
+    let document = resolve_did_to_document(&did, client.clone()).await?;
+
     if let Some(aka) = &document.also_known_as {
         if !aka.contains(&format!("at://{}", handle.as_str())) {
             return Err(atrium_identity::Error::DidDocument(format!(
@@ -50,5 +46,18 @@ pub async fn resolve_handle_to_did_document(
         }
     }
 
+    Ok(document)
+}
+
+pub async fn resolve_did_to_document(
+    did: &Did,
+    client: Arc<ReqwestClient>,
+) -> cja::Result<DidDocument> {
+    let config = CommonDidResolverConfig {
+        http_client: client.clone(),
+        plc_directory_url: DEFAULT_PLC_DIRECTORY_URL.to_string(),
+    };
+    let resolver = CommonDidResolver::new(config);
+    let document = resolver.resolve(&did).await?;
     Ok(document)
 }

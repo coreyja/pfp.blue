@@ -1,7 +1,10 @@
+use atrium_api::types::string::Did;
 use atrium_xrpc_client::reqwest::ReqwestClientBuilder;
+use axum::extract::State;
 use axum::{response::IntoResponse, routing::get, Form};
 use maud::html;
 
+use crate::did::resolve_did_to_document;
 use crate::{did::resolve_handle_to_did_document, state::AppState};
 
 mod bsky;
@@ -21,7 +24,7 @@ async fn root() -> &'static str {
 async fn login() -> impl IntoResponse {
     maud::html! {
       form action="/login" method="post" {
-        input type="text" name="handle" placeholder="Enter your handle" {}
+        input type="text" name="handle_or_did" placeholder="Enter your handle or DID" {}
 
         button type="submit" { "Login" }
       }
@@ -30,7 +33,7 @@ async fn login() -> impl IntoResponse {
 
 #[derive(serde::Deserialize, serde::Serialize)]
 struct LoginForm {
-    handle: String,
+    handle_or_did: String,
 }
 
 use maud::{Escaper, Render};
@@ -48,21 +51,19 @@ impl<T: fmt::Debug> Render for Debug<T> {
 }
 
 #[axum_macros::debug_handler]
-async fn login_post(form: Form<LoginForm>) -> impl IntoResponse {
-    let handle = form.handle.clone();
-    let handle = atrium_api::types::string::Handle::new(handle).unwrap();
-    let client = ReqwestClientBuilder::new("https://bsky.social")
-        .client(
-            reqwest::ClientBuilder::new()
-                .timeout(std::time::Duration::from_millis(1000))
-                .use_rustls_tls()
-                .build()
-                .unwrap(),
-        )
-        .build();
-    let did_doc = resolve_handle_to_did_document(&handle, client.into())
-        .await
-        .unwrap();
+async fn login_post(State(state): State<AppState>, form: Form<LoginForm>) -> impl IntoResponse {
+    let did_doc = if form.handle_or_did.starts_with("did:") {
+        let did = Did::new(form.handle_or_did.clone()).unwrap();
+        resolve_did_to_document(&did, state.bsky_client.clone())
+            .await
+            .unwrap()
+    } else {
+        let handle = form.handle_or_did.clone();
+        let handle = atrium_api::types::string::Handle::new(handle).unwrap();
+        resolve_handle_to_did_document(&handle, state.bsky_client.clone())
+            .await
+            .unwrap()
+    };
 
     html! {
       p { "DID Document: " (Debug(did_doc)) }
