@@ -3,7 +3,7 @@ use axum::extract::State;
 use axum::{response::IntoResponse, routing::get, Form};
 use maud::html;
 
-use crate::did::resolve_did_to_document;
+use crate::did::{document_to_auth_server_metadata, resolve_did_to_document};
 use crate::{did::resolve_handle_to_did_document, state::AppState};
 
 mod bsky;
@@ -64,7 +64,13 @@ async fn login_post(State(state): State<AppState>, form: Form<LoginForm>) -> imp
             .unwrap()
     };
 
+    let auth_server_metadata =
+        document_to_auth_server_metadata(&did_doc, state.bsky_client.clone())
+            .await
+            .unwrap();
+
     html! {
       p { "DID Document: " (Debug(did_doc)) }
+      p { "Auth Server Metadata: " (Debug(auth_server_metadata)) }
     }
 }

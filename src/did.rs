@@ -59,3 +59,54 @@ pub async fn resolve_did_to_document(
     let document = resolver.resolve(did).await?;
     Ok(document)
 }
+
+#[derive(serde::Deserialize)]
+pub struct PDSMetadata {
+    authorization_servers: Vec<String>,
+}
+
+#[derive(serde::Deserialize, Debug)]
+pub struct AuthServerMetadata {
+    issuer: String,
+    authorization_endpoint: String,
+    token_endpoint: String,
+    scopes_supported: Vec<String>,
+}
+
+pub async fn document_to_auth_server_metadata(
+    document: &DidDocument,
+    client: Arc<ReqwestClient>,
+) -> cja::Result<AuthServerMetadata> {
+    let services = document
+        .service
+        .as_ref()
+        .ok_or_else(|| eyre!("No service endpoint found"))?;
+
+    let pds_service = services
+        .iter()
+        .find(|s| s.id == "#atproto_pds")
+        .ok_or_else(|| eyre!("No ATProto service endpoint found"))?;
+
+    let pds_metadata_url = format!(
+        "{}/.well-known/oauth-protected-resource",
+        pds_service.service_endpoint
+    );
+    let pds_metadata = reqwest::get(pds_metadata_url)
+        .await?
+        .json::<PDSMetadata>()
+        .await?;
+
+    let auth_server_url = pds_metadata
+        .authorization_servers
+        .first()
+        .ok_or_else(|| eyre!("No authorization server found"))?;
+    let auth_server_metadata_url =
+        format!("{}/.well-known/oauth-authorization-server", auth_server_url);
+
+    let auth_server_metadata = reqwest::get(auth_server_metadata_url)
+        .await?
+        .json::<AuthServerMetadata>()
+        .await?;
+
+    Ok(auth_server_metadata)
+}
