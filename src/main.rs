@@ -10,6 +10,8 @@ mod jobs;
 mod routes;
 mod state;
 
+mod did;
+
 use state::AppState;
 
 fn main() -> color_eyre::Result<()> {
