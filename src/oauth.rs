@@ -153,10 +153,13 @@ pub fn create_client_assertion(
     header.kid = Some(jwk.kid.clone());
     header.typ = Some("JWT".to_string());
     
+    // For Bluesky, the 'aud' should be a fixed value rather than the token endpoint
+    // According to the error message, they're expecting a specific value
     let payload = TokenRequestPayload {
         iss: client_id.to_string(),
         sub: client_id.to_string(),
-        aud: token_endpoint.to_string(),
+        // Use the fixed audience expected by Bluesky
+        aud: "https://bsky.social".to_string(),
         jti: uuid::Uuid::new_v4().to_string(),
         exp: now + 300, // 5 minutes in the future
         iat: now,
@@ -199,6 +202,10 @@ pub fn create_client_assertion(
     // Log the JWT header and payload for debugging
     tracing::debug!("JWT Header: {}", header_json);
     tracing::debug!("JWT Payload: {}", payload_json);
+    
+    // Also log the token_endpoint and audience for comparison
+    tracing::debug!("Token endpoint: {}", token_endpoint);
+    tracing::debug!("JWT audience: {}", payload.aud);
     
     // Use OpenSSL directly to create the JWT
     // 1. Create Base64URL-encoded header
@@ -342,6 +349,16 @@ pub struct TokenResponse {
     pub expires_in: u64,
     pub refresh_token: Option<String>,
     pub scope: String,
+    /// DPoP confirmation key (JWK thumbprint)
+    #[serde(rename = "cnf")]
+    pub dpop_confirmation: Option<DPoPConfirmation>,
+}
+
+/// DPoP confirmation key in token response
+#[derive(Debug, Deserialize, Clone)]
+pub struct DPoPConfirmation {
+    /// JWK thumbprint
+    pub jkt: String,
 }
 
 /// Represents a complete set of OAuth tokens with metadata
@@ -349,7 +366,7 @@ pub struct TokenResponse {
 pub struct OAuthTokenSet {
     /// The access token for API requests
     pub access_token: String,
-    /// The token type (usually "Bearer")
+    /// The token type (usually "DPoP" for Bluesky)
     pub token_type: String,
     /// When the access token expires (as Unix timestamp)
     pub expires_at: u64,
@@ -359,6 +376,8 @@ pub struct OAuthTokenSet {
     pub scope: String,
     /// The Bluesky DID this token is associated with
     pub did: String,
+    /// DPoP confirmation key (JWK thumbprint)
+    pub dpop_jkt: Option<String>,
 }
 
 impl OAuthTokenSet {
@@ -376,6 +395,7 @@ impl OAuthTokenSet {
             refresh_token: response.refresh_token,
             scope: response.scope,
             did,
+            dpop_jkt: response.dpop_confirmation.map(|cnf| cnf.jkt),
         }
     }
     
@@ -392,6 +412,135 @@ impl OAuthTokenSet {
     }
 }
 
+/// Create a DPoP (Demonstrating Proof-of-Possession) proof JWT for OAuth token requests
+/// This is required by Bluesky's OAuth implementation
+pub fn create_dpop_proof(
+    oauth_config: &BlueskyOAuthConfig,
+    http_method: &str,
+    endpoint_url: &str,
+    server_nonce: Option<&str>,
+) -> cja::Result<String> {
+    use rand::{rngs::OsRng, RngCore};
+    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::io::Write;
+    use std::process::Command;
+    use tempfile::NamedTempFile;
+    
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| eyre!("Failed to get current time: {}", e))?
+        .as_secs();
+    
+    // Use the server-provided nonce if available, otherwise generate one
+    let nonce = match server_nonce {
+        Some(nonce) => {
+            tracing::debug!("Using server-provided DPoP nonce: {}", nonce);
+            nonce.to_string()
+        },
+        None => {
+            // Generate a random nonce
+            let mut nonce_bytes = [0u8; 16];
+            OsRng.fill_bytes(&mut nonce_bytes);
+            let nonce = base64_url_encode(&nonce_bytes);
+            tracing::debug!("Generated random DPoP nonce: {}", nonce);
+            nonce
+        }
+    };
+    
+    // Generate JWK for header
+    let jwk = generate_jwk(&oauth_config.public_key)?;
+    
+    // Create the JWT header with the key ID
+    let header_json = serde_json::json!({
+        "alg": "ES256",
+        "typ": "dpop+jwt",
+        "jwk": {
+            "kty": jwk.kty,
+            "crv": jwk.crv,
+            "x": jwk.x,
+            "y": jwk.y,
+            "kid": jwk.kid
+        }
+    }).to_string();
+    
+    // Create the DPoP payload according to the spec
+    let payload_json = serde_json::json!({
+        "jti": uuid::Uuid::new_v4().to_string(),
+        "htm": http_method,
+        "htu": endpoint_url,
+        "iat": now,
+        "exp": now + 300, // 5 minutes in the future
+        "nonce": nonce
+    }).to_string();
+    
+    // Log the DPoP JWT components
+    tracing::debug!("DPoP Header: {}", header_json);
+    tracing::debug!("DPoP Payload: {}", payload_json);
+    
+    // 1. Create Base64URL-encoded header
+    let header_b64 = base64_url_encode(header_json.as_bytes());
+    
+    // 2. Create Base64URL-encoded payload
+    let payload_b64 = base64_url_encode(payload_json.as_bytes());
+    
+    // 3. Combine to form the message to sign
+    let message = format!("{}.{}", header_b64, payload_b64);
+    
+    // 4. Create a temporary file for the message
+    let mut message_file = NamedTempFile::new()
+        .map_err(|e| eyre!("Failed to create temporary file for message: {}", e))?;
+    message_file.write_all(message.as_bytes())
+        .map_err(|e| eyre!("Failed to write message to temporary file: {}", e))?;
+    
+    // 5. Create a temporary file for the ES256 private key
+    let mut key_file = NamedTempFile::new()
+        .map_err(|e| eyre!("Failed to create temporary file for private key: {}", e))?;
+    
+    // Decode base64-encoded private key
+    let decoded_key = match base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &oauth_config.private_key) {
+        Ok(key) => key,
+        Err(e) => return Err(eyre!("Failed to decode base64-encoded private key: {}", e)),
+    };
+    
+    // Write the decoded PEM-encoded private key to the file
+    key_file.write_all(&decoded_key)
+        .map_err(|e| eyre!("Failed to write private key to temporary file: {}", e))?;
+    
+    // 6. Use OpenSSL to create the signature
+    let output = Command::new("openssl")
+        .arg("dgst")
+        .arg("-sha256")
+        .arg("-sign")
+        .arg(key_file.path())
+        .arg("-binary")
+        .arg(message_file.path())
+        .output()
+        .map_err(|e| eyre!("Failed to execute OpenSSL for signing: {}", e))?;
+    
+    if !output.status.success() {
+        let error = String::from_utf8_lossy(&output.stderr);
+        return Err(eyre!("OpenSSL signing failed: {}", error));
+    }
+    
+    // The raw signature from OpenSSL is in ASN.1 DER format
+    // We need to convert this to the R+S concatenated format for ES256 JWT
+    let signature_der = output.stdout;
+    
+    // 7. Convert DER-encoded signature to raw R||S format for JWT
+    let signature_raw = match der_signature_to_raw_signature(&signature_der) {
+        Ok(sig) => sig,
+        Err(e) => return Err(eyre!("Failed to convert DER signature to raw format: {}", e)),
+    };
+    
+    // 8. Base64URL-encode the raw signature
+    let signature_b64 = base64_url_encode(&signature_raw);
+    
+    // 9. Combine to form the complete JWT
+    let token = format!("{}.{}.{}", header_b64, payload_b64, signature_b64);
+    
+    Ok(token)
+}
+
 /// Exchange authorization code for access token
 pub async fn exchange_code_for_token(
     oauth_config: &BlueskyOAuthConfig,
@@ -404,19 +553,11 @@ pub async fn exchange_code_for_token(
     // Create the client assertion JWT
     let client_assertion = create_client_assertion(oauth_config, token_endpoint, client_id)?;
     
-    // Build the token request
-    let mut params = vec![
-        ("grant_type", "authorization_code"),
-        ("code", code),
-        ("redirect_uri", redirect_uri),
-        ("client_assertion_type", "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"),
-        ("client_assertion", &client_assertion),
-    ];
-    
-    // Add code_verifier for PKCE if present
-    if let Some(verifier) = code_verifier {
-        params.push(("code_verifier", verifier));
-    }
+    // Send the token request with retry logic and DPoP nonce handling
+    let client = reqwest::Client::new();
+    let mut retries = 3;
+    let mut last_error = None;
+    let mut dpop_nonce = None;
     
     // Log the request details for debugging
     tracing::debug!("Token endpoint: {}", token_endpoint);
@@ -425,71 +566,111 @@ pub async fn exchange_code_for_token(
     tracing::debug!("Code verifier present: {}", code_verifier.is_some());
     tracing::debug!("Client assertion length: {}", client_assertion.len());
     
-    // Build the token request body as a URL-encoded string
-    let mut body_parts = vec![
-        format!("grant_type={}", urlencoding::encode("authorization_code")),
-        format!("code={}", urlencoding::encode(code)),
-        format!("redirect_uri={}", urlencoding::encode(redirect_uri)),
-        format!("client_assertion_type={}", urlencoding::encode("urn:ietf:params:oauth:client-assertion-type:jwt-bearer")),
-        format!("client_assertion={}", urlencoding::encode(&client_assertion)),
-        format!("client_id={}", urlencoding::encode(client_id)),
-    ];
-    
-    // Add code_verifier for PKCE if present
-    if let Some(verifier) = code_verifier {
-        body_parts.push(format!("code_verifier={}", urlencoding::encode(verifier)));
-    }
-    
-    // Create the complete request body
-    let request_body = body_parts.join("&");
-    tracing::debug!("Request body: {}", request_body);
-    
-    // Send the token request with retry logic
-    let client = reqwest::Client::new();
-    let mut retries = 3;
-    let mut last_error = None;
-    
     // Use the token endpoint as is
     tracing::debug!("Using token endpoint: {}", token_endpoint);
     
     while retries > 0 {
+        // Create a fresh DPoP proof for each attempt, using the nonce from the previous response if available
+        let dpop_proof = create_dpop_proof(
+            oauth_config, 
+            "POST", 
+            token_endpoint,
+            dpop_nonce.as_deref()
+        )?;
+        
+        tracing::debug!("DPoP proof length: {}", dpop_proof.len());
+        
+        // Build the token request body as a URL-encoded string
+        let mut body_parts = vec![
+            format!("grant_type={}", urlencoding::encode("authorization_code")),
+            format!("code={}", urlencoding::encode(code)),
+            format!("redirect_uri={}", urlencoding::encode(redirect_uri)),
+            format!("client_assertion_type={}", urlencoding::encode("urn:ietf:params:oauth:client-assertion-type:jwt-bearer")),
+            format!("client_assertion={}", urlencoding::encode(&client_assertion)),
+            format!("client_id={}", urlencoding::encode(client_id)),
+        ];
+        
+        // Add code_verifier for PKCE if present
+        if let Some(verifier) = code_verifier {
+            body_parts.push(format!("code_verifier={}", urlencoding::encode(verifier)));
+        }
+        
+        // Create the complete request body
+        let request_body = body_parts.join("&");
+        tracing::debug!("Request body: {}", request_body);
+        
         // Make a completely manual POST request with all parameters in the body
-        match client
+        let response = match client
             .post(token_endpoint)
             .header("Content-Type", "application/x-www-form-urlencoded")
             .header("Accept", "application/json")
+            // Add the DPoP proof header
+            .header("DPoP", &dpop_proof)
             .body(request_body.clone())
             .timeout(std::time::Duration::from_secs(10))
             .send()
             .await
         {
-            Ok(response) => {
-                if response.status().is_success() {
-                    // Parse the token response
-                    return response.json::<TokenResponse>().await
-                        .map_err(|e| eyre!("Failed to parse token response: {}", e).into());
-                } else {
-                    let status = response.status();
-                    let error_text = response.text().await
-                        .unwrap_or_else(|_| "Failed to read error response".to_string());
-                    
-                    // Log detailed error information
-                    tracing::error!(
-                        "Token request failed. Status: {}, Error: {}\nRequest URL: {}\nRequest Body: {}", 
-                        status, error_text, token_endpoint, request_body
-                    );
-                        
-                    // Don't retry 4xx errors (except 429)
-                    if status.is_client_error() && status.as_u16() != 429 {
-                        return Err(eyre!("Token request failed: {} - {}", status, error_text).into());
-                    }
-                    
-                    last_error = Some(eyre!("Token request failed: {} - {}", status, error_text));
-                }
-            },
+            Ok(resp) => resp,
             Err(e) => {
                 last_error = Some(eyre!("Token request network error: {}", e));
+                retries -= 1;
+                if retries > 0 {
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                }
+                continue;
             }
+        };
+        
+        // Check for the DPoP-Nonce header in the response
+        if let Some(nonce_header) = response.headers().get("DPoP-Nonce") {
+            if let Ok(nonce) = nonce_header.to_str() {
+                tracing::debug!("Received DPoP-Nonce header: {}", nonce);
+                dpop_nonce = Some(nonce.to_string());
+            }
+        }
+        
+        if response.status().is_success() {
+            // Parse the token response
+            return response.json::<TokenResponse>().await
+                .map_err(|e| eyre!("Failed to parse token response: {}", e));
+        } else {
+            let status = response.status();
+            let error_text = response.text().await
+                .unwrap_or_else(|_| "Failed to read error response".to_string());
+            
+            // Log detailed error information
+            tracing::error!(
+                "Token request failed. Status: {}, Error: {}\nRequest URL: {}\nRequest Body: {}", 
+                status, error_text, token_endpoint, request_body
+            );
+            
+            // Check if the error is a nonce mismatch, which means we need to retry with the provided nonce
+            if error_text.contains("use_dpop_nonce") || error_text.contains("nonce mismatch") {
+                tracing::debug!("DPoP nonce error detected, will retry with server nonce");
+                
+                // Parse the error response to get the nonce if possible
+                if let Ok(error_json) = serde_json::from_str::<serde_json::Value>(&error_text) {
+                    if let Some(nonce) = error_json.get("dpop_nonce").and_then(|n| n.as_str()) {
+                        tracing::debug!("Found nonce in error response: {}", nonce);
+                        dpop_nonce = Some(nonce.to_string());
+                    }
+                }
+                
+                // Try again with another retry
+                retries -= 1;
+                if retries > 0 {
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                }
+                continue;
+            }
+                
+            // Don't retry other 4xx errors (except 429)
+            if status.is_client_error() && status.as_u16() != 429 {
+                return Err(eyre!("Token request failed: {} - {}", status, error_text));
+            }
+            
+            last_error = Some(eyre!("Token request failed: {} - {}", status, error_text));
         }
         
         retries -= 1;
@@ -498,7 +679,7 @@ pub async fn exchange_code_for_token(
         }
     }
     
-    Err(last_error.unwrap_or_else(|| eyre!("Token request failed after retries")).into())
+    Err(last_error.unwrap_or_else(|| eyre!("Token request failed after retries")))
 }
 
 /// Refresh an OAuth token using the refresh token
@@ -511,52 +692,122 @@ pub async fn refresh_token(
     // Create the client assertion JWT
     let client_assertion = create_client_assertion(oauth_config, token_endpoint, client_id)?;
     
+    // Send the token request with retry logic and DPoP nonce handling
+    let client = reqwest::Client::new();
+    let mut retries = 3;
+    let mut last_error = None;
+    let mut dpop_nonce = None;
+    
     // Log the request details for debugging
     tracing::debug!("Token endpoint (refresh): {}", token_endpoint);
     tracing::debug!("Client ID (refresh): {}", client_id);
     tracing::debug!("Client assertion length (refresh): {}", client_assertion.len());
     
-    // Build the token request body as a URL-encoded string
-    let body_parts = vec![
-        format!("grant_type={}", urlencoding::encode("refresh_token")),
-        format!("refresh_token={}", urlencoding::encode(refresh_token)),
-        format!("client_assertion_type={}", urlencoding::encode("urn:ietf:params:oauth:client-assertion-type:jwt-bearer")),
-        format!("client_assertion={}", urlencoding::encode(&client_assertion)),
-        format!("client_id={}", urlencoding::encode(client_id)),
-    ];
-    
-    // Create the complete request body
-    let request_body = body_parts.join("&");
-    tracing::debug!("Refresh token request body: {}", request_body);
-    
-    // Send the token request
-    let client = reqwest::Client::new();
-    let response = client
-        .post(token_endpoint)
-        .header("Content-Type", "application/x-www-form-urlencoded")
-        .header("Accept", "application/json")
-        .body(request_body.clone())  // Clone the body for later use in error logging
-        .timeout(std::time::Duration::from_secs(10))
-        .send()
-        .await?;
-    
-    if !response.status().is_success() {
-        let status = response.status();
-        let error_text = response.text().await?;
+    while retries > 0 {
+        // Create a fresh DPoP proof for each attempt, using the nonce from the previous response if available
+        let dpop_proof = create_dpop_proof(
+            oauth_config, 
+            "POST", 
+            token_endpoint,
+            dpop_nonce.as_deref()
+        )?;
         
-        // Log detailed error information
-        tracing::error!(
-            "Token refresh failed. Status: {}, Error: {}\nRequest URL: {}\nRequest Body: {}", 
-            status, error_text, token_endpoint, request_body
-        );
+        tracing::debug!("DPoP proof length (refresh): {}", dpop_proof.len());
         
-        return Err(eyre!("Token refresh failed: {} - {}", status, error_text).into());
+        // Build the token request body as a URL-encoded string
+        let body_parts = vec![
+            format!("grant_type={}", urlencoding::encode("refresh_token")),
+            format!("refresh_token={}", urlencoding::encode(refresh_token)),
+            format!("client_assertion_type={}", urlencoding::encode("urn:ietf:params:oauth:client-assertion-type:jwt-bearer")),
+            format!("client_assertion={}", urlencoding::encode(&client_assertion)),
+            format!("client_id={}", urlencoding::encode(client_id)),
+        ];
+        
+        // Create the complete request body
+        let request_body = body_parts.join("&");
+        tracing::debug!("Refresh token request body: {}", request_body);
+        
+        // Send the token request
+        let response = match client
+            .post(token_endpoint)
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .header("Accept", "application/json")
+            // Add the DPoP proof header
+            .header("DPoP", &dpop_proof)
+            .body(request_body.clone())
+            .timeout(std::time::Duration::from_secs(10))
+            .send()
+            .await
+        {
+            Ok(resp) => resp,
+            Err(e) => {
+                last_error = Some(eyre!("Token refresh network error: {}", e));
+                retries -= 1;
+                if retries > 0 {
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                }
+                continue;
+            }
+        };
+        
+        // Check for the DPoP-Nonce header in the response
+        if let Some(nonce_header) = response.headers().get("DPoP-Nonce") {
+            if let Ok(nonce) = nonce_header.to_str() {
+                tracing::debug!("Received DPoP-Nonce header in refresh: {}", nonce);
+                dpop_nonce = Some(nonce.to_string());
+            }
+        }
+        
+        if response.status().is_success() {
+            // Parse the token response
+            return response.json::<TokenResponse>().await
+                .map_err(|e| eyre!("Failed to parse refresh token response: {}", e));
+        } else {
+            let status = response.status();
+            let error_text = response.text().await
+                .unwrap_or_else(|_| "Failed to read error response".to_string());
+            
+            // Log detailed error information
+            tracing::error!(
+                "Token refresh failed. Status: {}, Error: {}\nRequest URL: {}\nRequest Body: {}", 
+                status, error_text, token_endpoint, request_body
+            );
+            
+            // Check if the error is a nonce mismatch, which means we need to retry with the provided nonce
+            if error_text.contains("use_dpop_nonce") || error_text.contains("nonce mismatch") {
+                tracing::debug!("DPoP nonce error detected in refresh, will retry with server nonce");
+                
+                // Parse the error response to get the nonce if possible
+                if let Ok(error_json) = serde_json::from_str::<serde_json::Value>(&error_text) {
+                    if let Some(nonce) = error_json.get("dpop_nonce").and_then(|n| n.as_str()) {
+                        tracing::debug!("Found nonce in refresh error response: {}", nonce);
+                        dpop_nonce = Some(nonce.to_string());
+                    }
+                }
+                
+                // Try again with another retry
+                retries -= 1;
+                if retries > 0 {
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                }
+                continue;
+            }
+                
+            // Don't retry other 4xx errors (except 429)
+            if status.is_client_error() && status.as_u16() != 429 {
+                return Err(eyre!("Token refresh failed: {} - {}", status, error_text));
+            }
+            
+            last_error = Some(eyre!("Token refresh failed: {} - {}", status, error_text));
+        }
+        
+        retries -= 1;
+        if retries > 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
     }
     
-    // Parse the token response
-    let token_response = response.json::<TokenResponse>().await?;
-    
-    Ok(token_response)
+    Err(last_error.unwrap_or_else(|| eyre!("Token refresh failed after retries")))
 }
 
 /// Represents the data stored in a session during the OAuth flow
@@ -740,12 +991,12 @@ pub mod db {
         .execute(pool)
         .await?;
         
-        // Then insert the new token
+        // Then insert the new token including DPoP JKT if present
         sqlx::query(
             r#"
             INSERT INTO oauth_tokens (
-                did, access_token, token_type, expires_at, refresh_token, scope
-            ) VALUES ($1, $2, $3, $4, $5, $6)
+                did, access_token, token_type, expires_at, refresh_token, scope, dpop_jkt
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7)
             "#
         )
         .bind(&token_set.did)
@@ -754,6 +1005,7 @@ pub mod db {
         .bind(token_set.expires_at as i64)
         .bind(&token_set.refresh_token)
         .bind(&token_set.scope)
+        .bind(&token_set.dpop_jkt)
         .execute(pool)
         .await?;
         
@@ -764,7 +1016,7 @@ pub mod db {
     pub async fn get_token(pool: &PgPool, did: &str) -> cja::Result<Option<OAuthTokenSet>> {
         let row = sqlx::query(
             r#"
-            SELECT access_token, token_type, expires_at, refresh_token, scope
+            SELECT access_token, token_type, expires_at, refresh_token, scope, dpop_jkt
             FROM oauth_tokens
             WHERE did = $1 AND is_active = TRUE
             ORDER BY created_at_utc DESC
@@ -782,6 +1034,7 @@ pub mod db {
             expires_at: row.get::<i64, _>("expires_at") as u64,
             refresh_token: row.get("refresh_token"),
             scope: row.get("scope"),
+            dpop_jkt: row.get("dpop_jkt"),
         }))
     }
     

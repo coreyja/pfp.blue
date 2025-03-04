@@ -43,6 +43,8 @@ CREATE TABLE oauth_tokens (
     refresh_token TEXT,
     -- The scopes granted to this token
     scope TEXT NOT NULL,
+    -- DPoP JWK thumbprint for DPoP-bound tokens
+    dpop_jkt TEXT,
     -- Whether this token is currently active
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     -- Creation timestamp

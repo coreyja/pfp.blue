@@ -79,6 +79,10 @@ pub async fn authorize(
     // Use the provided redirect_uri if any, or fall back to our default callback
     let redirect_uri = params.redirect_uri
         .unwrap_or_else(|| state.redirect_uri());
+        
+    // Log the input parameters for debugging
+    info!("Authorize called with did: {}, redirect_uri: {:?}, state: {:?}", 
+        params.did, redirect_uri, params.state);
     
     // Determine if input is a handle or DID
     let did_str = params.did.clone();
@@ -191,6 +195,7 @@ pub async fn authorize(
     );
     
     info!("Redirecting to auth URL: {}", auth_url);
+    info!("Session ID: {}, Code Challenge: {}", session_id, code_challenge);
     Redirect::to(&auth_url).into_response()
 }
 
@@ -211,6 +216,17 @@ pub async fn callback(
     // Use the consistent helpers
     let client_id = state.client_id();
     let redirect_uri = state.redirect_uri();
+    
+    // Log all parameters for debugging
+    info!("Callback received: code: {:?}, state: {:?}, error: {:?}, error_description: {:?}",
+        params.code, params.state, params.error, params.error_description);
+        
+    // Also log cookie info
+    if let Some(session_cookie) = cookies.get("bsky_session_id") {
+        info!("Found session cookie: {}", session_cookie.value());
+    } else {
+        info!("No session cookie found");
+    }
     
     // If we have an error, display it
     if let Some(error) = params.error {
@@ -236,10 +252,23 @@ pub async fn callback(
         Some(code) => code,
         None => {
             error!("No code parameter in callback");
-            return (
-                StatusCode::BAD_REQUEST,
-                "No code parameter found in callback. Please try authenticating again.".to_string(),
-            ).into_response();
+            
+            // Provide a more user-friendly response with debugging info
+            return maud::html! {
+                h1 { "Authentication Error" }
+                p { "There was an error during the authorization process." }
+                p { "The Bluesky server did not provide an authorization code in the callback." }
+                p { "Debug Information:" }
+                p { "State parameter: " (params.state.as_deref().unwrap_or("None")) }
+                p { "Client ID: " (client_id) }
+                p { "Redirect URI: " (redirect_uri) }
+                p { 
+                    a href="/" { "Return to Home" }
+                }
+                p {
+                    a href="/login" { "Try Again" }
+                }
+            }.into_response();
         }
     };
     
