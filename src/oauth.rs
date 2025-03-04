@@ -336,44 +336,40 @@ pub async fn exchange_code_for_token(
     tracing::debug!("Code verifier present: {}", code_verifier.is_some());
     tracing::debug!("Client assertion length: {}", client_assertion.len());
     
-    // Create a map of key-value pairs for form encoding
-    let mut form_data = std::collections::HashMap::new();
-    form_data.insert("grant_type", "authorization_code");
-    form_data.insert("code", code);
-    form_data.insert("redirect_uri", redirect_uri);
-    form_data.insert("client_assertion_type", "urn:ietf:params:oauth:client-assertion-type:jwt-bearer");
-    form_data.insert("client_assertion", &client_assertion);
+    // Build the token request body as a URL-encoded string
+    let mut body_parts = vec![
+        format!("grant_type={}", urlencoding::encode("authorization_code")),
+        format!("code={}", urlencoding::encode(code)),
+        format!("redirect_uri={}", urlencoding::encode(redirect_uri)),
+        format!("client_assertion_type={}", urlencoding::encode("urn:ietf:params:oauth:client-assertion-type:jwt-bearer")),
+        format!("client_assertion={}", urlencoding::encode(&client_assertion)),
+        format!("client_id={}", urlencoding::encode(client_id)),
+    ];
     
     // Add code_verifier for PKCE if present
     if let Some(verifier) = code_verifier {
-        form_data.insert("code_verifier", verifier);
+        body_parts.push(format!("code_verifier={}", urlencoding::encode(verifier)));
     }
+    
+    // Create the complete request body
+    let request_body = body_parts.join("&");
+    tracing::debug!("Request body: {}", request_body);
     
     // Send the token request with retry logic
     let client = reqwest::Client::new();
     let mut retries = 3;
     let mut last_error = None;
     
-    // Add client_id to URL query for more context
-    let token_url = if token_endpoint.contains('?') {
-        format!("{}&client_id={}", token_endpoint, urlencoding::encode(client_id))
-    } else {
-        format!("{}?client_id={}", token_endpoint, urlencoding::encode(client_id))
-    };
-    tracing::debug!("Using token URL: {}", token_url);
+    // Use the token endpoint as is
+    tracing::debug!("Using token endpoint: {}", token_endpoint);
     
     while retries > 0 {
-        // Log the complete request body for debugging
-        let request_body = form_data.iter()
-            .map(|(k, v)| format!("{}={}", k, v))
-            .collect::<Vec<_>>()
-            .join("&");
-        tracing::debug!("Request body: {}", request_body);
-        
+        // Make a completely manual POST request with all parameters in the body
         match client
-            .post(&token_url)
+            .post(token_endpoint)
             .header("Content-Type", "application/x-www-form-urlencoded")
-            .form(&form_data)
+            .header("Accept", "application/json")
+            .body(request_body.clone())
             .timeout(std::time::Duration::from_secs(10))
             .send()
             .await
@@ -387,6 +383,12 @@ pub async fn exchange_code_for_token(
                     let status = response.status();
                     let error_text = response.text().await
                         .unwrap_or_else(|_| "Failed to read error response".to_string());
+                    
+                    // Log detailed error information
+                    tracing::error!(
+                        "Token request failed. Status: {}, Error: {}\nRequest URL: {}\nRequest Body: {}", 
+                        status, error_text, token_endpoint, request_body
+                    );
                         
                     // Don't retry 4xx errors (except 429)
                     if status.is_client_error() && status.as_u16() != 429 {
@@ -425,41 +427,41 @@ pub async fn refresh_token(
     tracing::debug!("Client ID (refresh): {}", client_id);
     tracing::debug!("Client assertion length (refresh): {}", client_assertion.len());
     
-    // Create a map of key-value pairs for form encoding
-    let mut form_data = std::collections::HashMap::new();
-    form_data.insert("grant_type", "refresh_token");
-    form_data.insert("refresh_token", refresh_token);
-    form_data.insert("client_assertion_type", "urn:ietf:params:oauth:client-assertion-type:jwt-bearer");
-    form_data.insert("client_assertion", &client_assertion);
+    // Build the token request body as a URL-encoded string
+    let body_parts = vec![
+        format!("grant_type={}", urlencoding::encode("refresh_token")),
+        format!("refresh_token={}", urlencoding::encode(refresh_token)),
+        format!("client_assertion_type={}", urlencoding::encode("urn:ietf:params:oauth:client-assertion-type:jwt-bearer")),
+        format!("client_assertion={}", urlencoding::encode(&client_assertion)),
+        format!("client_id={}", urlencoding::encode(client_id)),
+    ];
     
-    // Add client_id to URL query for more context
-    let token_url = if token_endpoint.contains('?') {
-        format!("{}&client_id={}", token_endpoint, urlencoding::encode(client_id))
-    } else {
-        format!("{}?client_id={}", token_endpoint, urlencoding::encode(client_id))
-    };
-    tracing::debug!("Using refresh token URL: {}", token_url);
-    
-    // Log the complete request body for debugging
-    let request_body = form_data.iter()
-        .map(|(k, v)| format!("{}={}", k, v))
-        .collect::<Vec<_>>()
-        .join("&");
+    // Create the complete request body
+    let request_body = body_parts.join("&");
     tracing::debug!("Refresh token request body: {}", request_body);
     
     // Send the token request
     let client = reqwest::Client::new();
     let response = client
-        .post(&token_url)
+        .post(token_endpoint)
         .header("Content-Type", "application/x-www-form-urlencoded")
-        .form(&form_data)
+        .header("Accept", "application/json")
+        .body(request_body.clone())  // Clone the body for later use in error logging
         .timeout(std::time::Duration::from_secs(10))
         .send()
         .await?;
     
     if !response.status().is_success() {
+        let status = response.status();
         let error_text = response.text().await?;
-        return Err(eyre!("Token refresh failed: {}", error_text).into());
+        
+        // Log detailed error information
+        tracing::error!(
+            "Token refresh failed. Status: {}, Error: {}\nRequest URL: {}\nRequest Body: {}", 
+            status, error_text, token_endpoint, request_body
+        );
+        
+        return Err(eyre!("Token refresh failed: {} - {}", status, error_text).into());
     }
     
     // Parse the token response
