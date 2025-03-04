@@ -49,6 +49,13 @@ tower-cookies = { version = "0.10.0", features = ["private", "signed"] }
 futures = "0.3.30"
 chrono = { version = "0.4.23", default-features = false, features = ["serde"] }
 jsonwebtoken = "9.3.0"
+p256 = { version = "0.13", features = ["ecdsa", "pem", "pkcs8"] }
+base64 = "0.21"
+base64ct = { version = "1.6", features = ["alloc"] }
+ring = "0.17"
+rand = "0.8"
+sha2 = "0.10"
+tempfile = "3.8"
 
 atrium-identity = { version = "0.1", git = "https://github.com/sugyan/atrium" }
 atrium-api = { version = "0.24", git = "https://github.com/sugyan/atrium" }

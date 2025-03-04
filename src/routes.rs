@@ -4,7 +4,7 @@ use axum::{response::IntoResponse, routing::get, Form};
 use maud::html;
 
 use crate::did::{document_to_auth_server_metadata, resolve_did_to_document};
-use crate::{did::resolve_handle_to_did_document, state::AppState};
+use crate::state::AppState;
 
 mod bsky;
 
@@ -12,7 +12,12 @@ pub fn routes(app_state: AppState) -> axum::Router {
     axum::Router::new()
         .route("/", get(root))
         .route("/login", get(login).post(login_post))
+        // Bluesky OAuth routes
         .route("/oauth/bsky/metadata.json", get(bsky::client_metadata))
+        .route("/oauth/bsky/authorize", get(bsky::authorize))
+        .route("/oauth/bsky/callback", get(bsky::callback))
+        .route("/oauth/bsky/token", get(bsky::get_token))
+        .route("/oauth/bsky/revoke", get(bsky::revoke_token))
         .with_state(app_state)
 }
 
@@ -20,13 +25,31 @@ async fn root() -> &'static str {
     "This is pfp.blue, welcome!"
 }
 
-async fn login() -> impl IntoResponse {
+async fn login(State(state): State<AppState>) -> impl IntoResponse {
     maud::html! {
       form action="/login" method="post" {
         input type="text" name="handle_or_did" placeholder="Enter your handle or DID" {}
 
         button type="submit" { "Login" }
       }
+      
+      hr {}
+      
+      h2 { "Login with Bluesky" }
+      p { "Enter your Bluesky handle or DID:" }
+      form action="/oauth/bsky/authorize" method="get" {
+        input type="text" name="did" placeholder="Enter your handle or DID" {}
+        input type="hidden" name="state" value="from_login_page" {}
+        
+        button type="submit" { "Login with Bluesky" }
+      }
+      
+      hr {}
+      p { "Debug Info:" }
+      p { "Client ID: " (state.client_id()) }
+      p { "Redirect URI: " (state.redirect_uri()) }
+      p { "Domain: " (state.domain) }
+      p { "Protocol: " (state.protocol) }
     }
 }
 
@@ -51,26 +74,71 @@ impl<T: fmt::Debug> Render for Debug<T> {
 
 #[axum_macros::debug_handler]
 async fn login_post(State(state): State<AppState>, form: Form<LoginForm>) -> impl IntoResponse {
-    let did_doc = if form.handle_or_did.starts_with("did:") {
-        let did = Did::new(form.handle_or_did.clone()).unwrap();
-        resolve_did_to_document(&did, state.bsky_client.clone())
-            .await
-            .unwrap()
+    // First, determine if input is a handle or DID and resolve to a DID
+    let did = if form.handle_or_did.starts_with("did:") {
+        // Input is already a DID
+        match Did::new(form.handle_or_did.clone()) {
+            Ok(did) => did,
+            Err(_) => {
+                return html! {
+                    p { "Invalid DID format" }
+                };
+            }
+        }
     } else {
-        let handle = form.handle_or_did.clone();
-        let handle = atrium_api::types::string::Handle::new(handle).unwrap();
-        resolve_handle_to_did_document(&handle, state.bsky_client.clone())
-            .await
-            .unwrap()
+        // Input is a handle, resolve to DID
+        match atrium_api::types::string::Handle::new(form.handle_or_did.clone()) {
+            Ok(handle) => {
+                match crate::did::resolve_handle_to_did(&handle, state.bsky_client.clone()).await {
+                    Ok(did) => did,
+                    Err(err) => {
+                        return html! {
+                            p { "Failed to resolve handle to DID: " (err) }
+                        };
+                    }
+                }
+            },
+            Err(_) => {
+                return html! {
+                    p { "Invalid handle format" }
+                };
+            }
+        }
     };
 
-    let auth_server_metadata =
-        document_to_auth_server_metadata(&did_doc, state.bsky_client.clone())
-            .await
-            .unwrap();
+    // Now that we have the DID, get the document
+    let did_doc = match resolve_did_to_document(&did, state.bsky_client.clone()).await {
+        Ok(doc) => doc,
+        Err(err) => {
+            return html! {
+                p { "Failed to resolve DID document: " (err) }
+            };
+        }
+    };
+
+    // Get the auth server metadata
+    let auth_server_metadata = match document_to_auth_server_metadata(&did_doc, state.bsky_client.clone()).await {
+        Ok(metadata) => metadata,
+        Err(err) => {
+            return html! {
+                p { "Failed to get auth server metadata: " (err) }
+            };
+        }
+    };
 
     html! {
       p { "DID Document: " (Debug(did_doc)) }
       p { "Auth Server Metadata: " (Debug(auth_server_metadata)) }
+      
+      // Add a button to start the OAuth flow with this DID
+      form action="/oauth/bsky/authorize" method="get" {
+        input type="hidden" name="did" value=(did.to_string()) {}
+        input type="hidden" name="state" value="from_login_page" {}
+        
+        button type="submit" { "Start OAuth Login with " (did.to_string()) }
+      }
+      
+      p { "Note: Using client_id: " (state.client_id()) }
+      p { "Callback URI: " (state.redirect_uri()) }
     }
 }

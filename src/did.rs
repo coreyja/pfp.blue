@@ -12,15 +12,14 @@ use atrium_identity::{
 use atrium_xrpc_client::reqwest::ReqwestClient;
 use color_eyre::eyre::eyre;
 
-async fn resolve_handle_to_did(handle: &str, client: Arc<ReqwestClient>) -> cja::Result<Did> {
-    let handle = Handle::new(handle.to_string()).map_err(|_| eyre!("Invalid handle"))?;
+pub async fn resolve_handle_to_did(handle: &Handle, client: Arc<ReqwestClient>) -> cja::Result<Did> {
 
     let config = AppViewHandleResolverConfig {
         service_url: "https://bsky.social".to_string(),
         http_client: client.clone(),
     };
     let resolver = AppViewHandleResolver::new(config);
-    let identity = resolver.resolve(&handle).await?;
+    let identity = resolver.resolve(handle).await?;
     Ok(identity)
 }
 
@@ -67,16 +66,16 @@ pub struct PDSMetadata {
 
 #[derive(serde::Deserialize, Debug)]
 pub struct AuthServerMetadata {
-    issuer: String,
-    pushed_authorization_request_endpoint: String,
-    authorization_endpoint: String,
-    token_endpoint: String,
-    scopes_supported: Vec<String>,
+    pub issuer: String,
+    pub pushed_authorization_request_endpoint: String,
+    pub authorization_endpoint: String,
+    pub token_endpoint: String,
+    pub scopes_supported: Vec<String>,
 }
 
 pub async fn document_to_auth_server_metadata(
     document: &DidDocument,
-    client: Arc<ReqwestClient>,
+    _client: Arc<ReqwestClient>,
 ) -> cja::Result<AuthServerMetadata> {
     let services = document
         .service

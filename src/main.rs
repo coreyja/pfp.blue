@@ -9,7 +9,7 @@ mod cron;
 mod jobs;
 mod routes;
 mod state;
-
+mod oauth;
 mod did;
 
 use state::AppState;
@@ -27,7 +27,21 @@ fn main() -> color_eyre::Result<()> {
 async fn _main() -> cja::Result<()> {
     setup_tracing("domains")?;
 
-    let app_state = AppState::from_env().await?;
+    println!("\n========== 🔑 PFP.BLUE STARTING ==========");
+    println!("Verifying OAuth keys...");
+    
+    let app_state = match AppState::from_env().await {
+        Ok(state) => {
+            println!("✅ OAuth keys verified successfully!\n");
+            state
+        },
+        Err(e) => {
+            eprintln!("\n❌ ERROR: Failed to initialize app state: {}", e);
+            eprintln!("Please check your OAuth key configuration. Keys should be in PEM format with proper newlines.");
+            eprintln!("You can run the setup_keys.sh script to generate new keys.\n");
+            return Err(e);
+        }
+    };
 
     cja::sqlx::migrate!().run(app_state.db()).await?;
 
