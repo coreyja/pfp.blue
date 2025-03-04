@@ -1,6 +1,6 @@
 use base64ct::{Base64UrlUnpadded, Encoding};
 use color_eyre::eyre::eyre;
-use jsonwebtoken::{Algorithm, EncodingKey};
+use jsonwebtoken::Algorithm;
 use p256::{
     ecdsa::VerifyingKey,
     pkcs8::DecodePublicKey,
@@ -8,10 +8,7 @@ use p256::{
 };
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::fs::File;
 use std::io::Write;
-use std::path::Path;
-use std::process::Command;
 
 use crate::state::BlueskyOAuthConfig;
 
@@ -129,7 +126,7 @@ pub fn create_client_assertion(
 ) -> cja::Result<String> {
     use std::io::Write;
     use std::process::Command;
-    use std::str;
+    
     use tempfile::NamedTempFile;
     
     // Debug info
@@ -269,8 +266,8 @@ fn base64_url_encode(input: &[u8]) -> String {
 /// Convert a DER-encoded ECDSA signature to the raw format required for JWT
 /// For ES256, the signature must be a 64-byte array containing R and S values (each 32 bytes)
 fn der_signature_to_raw_signature(der_signature: &[u8]) -> cja::Result<Vec<u8>> {
-    use simple_asn1::{ASN1Block, BigInt, from_der};
-    use num_bigint::BigUint;
+    use simple_asn1::{ASN1Block, from_der};
+    
     use color_eyre::eyre::eyre;
     
     // Parse the DER-encoded signature
@@ -715,13 +712,11 @@ pub async fn refresh_token(
         tracing::debug!("DPoP proof length (refresh): {}", dpop_proof.len());
         
         // Build the token request body as a URL-encoded string
-        let body_parts = vec![
-            format!("grant_type={}", urlencoding::encode("refresh_token")),
+        let body_parts = [format!("grant_type={}", urlencoding::encode("refresh_token")),
             format!("refresh_token={}", urlencoding::encode(refresh_token)),
             format!("client_assertion_type={}", urlencoding::encode("urn:ietf:params:oauth:client-assertion-type:jwt-bearer")),
             format!("client_assertion={}", urlencoding::encode(&client_assertion)),
-            format!("client_id={}", urlencoding::encode(client_id)),
-        ];
+            format!("client_id={}", urlencoding::encode(client_id))];
         
         // Create the complete request body
         let request_body = body_parts.join("&");
@@ -845,7 +840,7 @@ impl OAuthSession {
             .as_secs();
             
         // Generate PKCE code verifier and challenge
-        let (code_verifier, code_challenge) = Self::generate_pkce_codes().unwrap_or_else(|_| {
+        let (code_verifier, code_challenge) = Self::generate_pkce_codes().unwrap_or({
             // Fallback to empty strings if generation fails
             (None, None)
         });

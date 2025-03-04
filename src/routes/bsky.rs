@@ -5,7 +5,7 @@ use axum::{
     Json,
 };
 use serde::Deserialize;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::SystemTime;
 use tower_cookies::{Cookie, Cookies};
 use tracing::{error, info};
 use uuid::Uuid;

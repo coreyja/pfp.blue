@@ -34,7 +34,7 @@ impl BlueskyOAuthConfig {
         use std::process::Command;
         use std::io::Write;
         use tempfile::NamedTempFile;
-        use p256::{ecdsa::VerifyingKey, pkcs8::DecodePublicKey};
+        
         
         // Decode base64-encoded private key
         let decoded_private_key = match base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &self.private_key) {
