@@ -189,11 +189,16 @@ pub fn create_client_assertion(
         .map_err(|e| eyre!("Failed to write payload to temporary file: {}", e))?;
     
     // Create header JSON with proper format for OpenSSL
+    // Ensure we're using the exact format expected by Bluesky
     let header_json = serde_json::json!({
         "alg": "ES256",
         "typ": "JWT",
         "kid": jwk.kid
     }).to_string();
+    
+    // Log the JWT header and payload for debugging
+    tracing::debug!("JWT Header: {}", header_json);
+    tracing::debug!("JWT Payload: {}", payload_json);
     
     // Use OpenSSL directly to create the JWT
     // 1. Create Base64URL-encoded header
@@ -324,15 +329,51 @@ pub async fn exchange_code_for_token(
         params.push(("code_verifier", verifier));
     }
     
+    // Log the request details for debugging
+    tracing::debug!("Token endpoint: {}", token_endpoint);
+    tracing::debug!("Client ID: {}", client_id);
+    tracing::debug!("Redirect URI: {}", redirect_uri);
+    tracing::debug!("Code verifier present: {}", code_verifier.is_some());
+    tracing::debug!("Client assertion length: {}", client_assertion.len());
+    
+    // Create a map of key-value pairs for form encoding
+    let mut form_data = std::collections::HashMap::new();
+    form_data.insert("grant_type", "authorization_code");
+    form_data.insert("code", code);
+    form_data.insert("redirect_uri", redirect_uri);
+    form_data.insert("client_assertion_type", "urn:ietf:params:oauth:client-assertion-type:jwt-bearer");
+    form_data.insert("client_assertion", &client_assertion);
+    
+    // Add code_verifier for PKCE if present
+    if let Some(verifier) = code_verifier {
+        form_data.insert("code_verifier", verifier);
+    }
+    
     // Send the token request with retry logic
     let client = reqwest::Client::new();
     let mut retries = 3;
     let mut last_error = None;
     
+    // Add client_id to URL query for more context
+    let token_url = if token_endpoint.contains('?') {
+        format!("{}&client_id={}", token_endpoint, urlencoding::encode(client_id))
+    } else {
+        format!("{}?client_id={}", token_endpoint, urlencoding::encode(client_id))
+    };
+    tracing::debug!("Using token URL: {}", token_url);
+    
     while retries > 0 {
+        // Log the complete request body for debugging
+        let request_body = form_data.iter()
+            .map(|(k, v)| format!("{}={}", k, v))
+            .collect::<Vec<_>>()
+            .join("&");
+        tracing::debug!("Request body: {}", request_body);
+        
         match client
-            .post(token_endpoint)
-            .form(&params)
+            .post(&token_url)
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .form(&form_data)
             .timeout(std::time::Duration::from_secs(10))
             .send()
             .await
@@ -379,19 +420,39 @@ pub async fn refresh_token(
     // Create the client assertion JWT
     let client_assertion = create_client_assertion(oauth_config, token_endpoint, client_id)?;
     
-    // Build the token request
-    let params = [
-        ("grant_type", "refresh_token"),
-        ("refresh_token", refresh_token),
-        ("client_assertion_type", "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"),
-        ("client_assertion", &client_assertion),
-    ];
+    // Log the request details for debugging
+    tracing::debug!("Token endpoint (refresh): {}", token_endpoint);
+    tracing::debug!("Client ID (refresh): {}", client_id);
+    tracing::debug!("Client assertion length (refresh): {}", client_assertion.len());
+    
+    // Create a map of key-value pairs for form encoding
+    let mut form_data = std::collections::HashMap::new();
+    form_data.insert("grant_type", "refresh_token");
+    form_data.insert("refresh_token", refresh_token);
+    form_data.insert("client_assertion_type", "urn:ietf:params:oauth:client-assertion-type:jwt-bearer");
+    form_data.insert("client_assertion", &client_assertion);
+    
+    // Add client_id to URL query for more context
+    let token_url = if token_endpoint.contains('?') {
+        format!("{}&client_id={}", token_endpoint, urlencoding::encode(client_id))
+    } else {
+        format!("{}?client_id={}", token_endpoint, urlencoding::encode(client_id))
+    };
+    tracing::debug!("Using refresh token URL: {}", token_url);
+    
+    // Log the complete request body for debugging
+    let request_body = form_data.iter()
+        .map(|(k, v)| format!("{}={}", k, v))
+        .collect::<Vec<_>>()
+        .join("&");
+    tracing::debug!("Refresh token request body: {}", request_body);
     
     // Send the token request
     let client = reqwest::Client::new();
     let response = client
-        .post(token_endpoint)
-        .form(&params)
+        .post(&token_url)
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .form(&form_data)
         .timeout(std::time::Duration::from_secs(10))
         .send()
         .await?;
