@@ -153,7 +153,6 @@ pub async fn authorize(
     // Create and store the OAuth session
     let session = OAuthSession::new(
         did_str,
-        Some(redirect_uri.clone()),
         params.state.clone(),
         auth_metadata.token_endpoint.clone(),
     );
@@ -355,36 +354,17 @@ pub async fn callback(
     
     info!("Authentication successful for DID: {}", session.did);
     
-    // Redirect to the original redirect URI if present, otherwise show success
-    if let Some(original_redirect) = session.redirect_uri {
-        // Append the DID as a query parameter
-        let redirect_to = if original_redirect.contains('?') {
-            format!("{}&did={}", original_redirect, session.did)
-        } else {
-            format!("{}?did={}", original_redirect, session.did)
-        };
-        
-        // Add the original state parameter if present
-        let redirect_to = if let Some(state) = session.state {
-            format!("{}&state={}", redirect_to, state)
-        } else {
-            redirect_to
-        };
-        
-        Redirect::to(&redirect_to).into_response()
-    } else {
-        // Default success page
-        maud::html! {
-            h1 { "Authentication Successful" }
-            p { "You are now authenticated with Bluesky." }
-            p { "DID: " (session.did) }
-            p { "Access token expires in: " (token_set.expires_at - SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs()) " seconds" }
-            p { "Refresh token: " (token_set.refresh_token.is_some()) }
-            p { 
-                a href="/" { "Return to Home" }
-            }
-        }.into_response()
-    }
+    // Default success page
+    maud::html! {
+        h1 { "Authentication Successful" }
+        p { "You are now authenticated with Bluesky." }
+        p { "DID: " (session.did) }
+        p { "Access token expires in: " (token_set.expires_at - SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs()) " seconds" }
+        p { "Refresh token: " (token_set.refresh_token.is_some()) }
+        p { 
+            a href="/" { "Return to Home" }
+        }
+    }.into_response()
 }
 
 /// Get a token for a DID

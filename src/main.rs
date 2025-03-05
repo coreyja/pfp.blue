@@ -6,11 +6,11 @@ use cja::{
 use tracing::info;
 
 mod cron;
+mod did;
 mod jobs;
+mod oauth;
 mod routes;
 mod state;
-mod oauth;
-mod did;
 
 use state::AppState;
 
@@ -29,12 +29,12 @@ async fn _main() -> cja::Result<()> {
 
     println!("\n========== 🔑 PFP.BLUE STARTING ==========");
     println!("Verifying OAuth keys...");
-    
+
     let app_state = match AppState::from_env().await {
         Ok(state) => {
             println!("✅ OAuth keys verified successfully!\n");
             state
-        },
+        }
         Err(e) => {
             eprintln!("\n❌ ERROR: Failed to initialize app state: {}", e);
             eprintln!("Please check your OAuth key configuration. Keys should be in PEM format with proper newlines.");
@@ -46,10 +46,14 @@ async fn _main() -> cja::Result<()> {
     cja::sqlx::migrate!().run(app_state.db()).await?;
 
     info!("Spawning Tasks");
-    let mut futures = vec![
-        tokio::spawn(run_server(routes::routes(app_state.clone()))),
-        tokio::spawn(cja::jobs::worker::job_worker(app_state.clone(), jobs::Jobs)),
-    ];
+    let mut futures = vec![tokio::spawn(run_server(routes::routes(app_state.clone())))];
+    if std::env::var("JOBS_DISABLED").unwrap_or_else(|_| "false".to_string()) != "true" {
+        info!("Jobs Enabled");
+        futures.push(tokio::spawn(cja::jobs::worker::job_worker(
+            app_state.clone(),
+            jobs::Jobs,
+        )));
+    }
     if std::env::var("CRON_DISABLED").unwrap_or_else(|_| "false".to_string()) != "true" {
         info!("Cron Enabled");
         futures.push(tokio::spawn(cron::run_cron(app_state.clone())));
