@@ -5,12 +5,14 @@ use cja::{
 };
 use tracing::info;
 
+mod auth;
 mod cron;
 mod did;
 mod jobs;
 mod oauth;
 mod routes;
 mod state;
+mod user;
 
 use state::AppState;
 
@@ -46,7 +48,8 @@ async fn _main() -> cja::Result<()> {
     cja::sqlx::migrate!().run(app_state.db()).await?;
 
     info!("Spawning Tasks");
-    let mut futures = vec![tokio::spawn(run_server(routes::routes(app_state.clone())))];
+    let app_router = routes::routes(app_state.clone());
+    let mut futures = vec![tokio::spawn(run_server(app_router))];
     if std::env::var("JOBS_DISABLED").unwrap_or_else(|_| "false".to_string()) != "true" {
         info!("Jobs Enabled");
         futures.push(tokio::spawn(cja::jobs::worker::job_worker(

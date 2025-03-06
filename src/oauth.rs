@@ -426,6 +426,8 @@ pub struct OAuthTokenSet {
     pub did: String,
     /// DPoP confirmation key (JWK thumbprint)
     pub dpop_jkt: Option<String>,
+    /// User ID that owns this token
+    pub user_id: Option<uuid::Uuid>,
 }
 
 impl OAuthTokenSet {
@@ -444,7 +446,14 @@ impl OAuthTokenSet {
             scope: response.scope,
             did,
             dpop_jkt: response.dpop_confirmation.map(|cnf| cnf.jkt),
+            user_id: None,
         }
+    }
+    
+    /// Set the user ID for this token set
+    pub fn with_user_id(mut self, user_id: uuid::Uuid) -> Self {
+        self.user_id = Some(user_id);
+        self
     }
     
     /// Create a new OAuthTokenSet from a TokenResponse with a calculated JWK thumbprint
@@ -1097,6 +1106,23 @@ pub mod db {
 
     /// Stores an OAuth token in the database
     pub async fn store_token(pool: &PgPool, token_set: &OAuthTokenSet) -> cja::Result<()> {
+        // Check if we need to create a user
+        let user_id = if let Some(user_id) = token_set.user_id {
+            user_id
+        } else {
+            // Check if a user already exists for this DID
+            let existing_user = crate::user::User::get_by_did(pool, &token_set.did).await?;
+            
+            match existing_user {
+                Some(user) => user.user_id,
+                None => {
+                    // Create a new user
+                    let user = crate::user::User::create(pool, None, None).await?;
+                    user.user_id
+                }
+            }
+        };
+        
         // First, deactivate any existing active tokens for this DID
         sqlx::query(
             r#"
@@ -1113,8 +1139,8 @@ pub mod db {
         sqlx::query(
             r#"
             INSERT INTO oauth_tokens (
-                did, access_token, token_type, expires_at, refresh_token, scope, dpop_jkt
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                did, access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             "#,
         )
         .bind(&token_set.did)
@@ -1124,6 +1150,7 @@ pub mod db {
         .bind(&token_set.refresh_token)
         .bind(&token_set.scope)
         .bind(&token_set.dpop_jkt)
+        .bind(user_id)
         .execute(pool)
         .await?;
 
@@ -1134,7 +1161,7 @@ pub mod db {
     pub async fn get_token(pool: &PgPool, did: &str) -> cja::Result<Option<OAuthTokenSet>> {
         let row = sqlx::query(
             r#"
-            SELECT access_token, token_type, expires_at, refresh_token, scope, dpop_jkt
+            SELECT access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id
             FROM oauth_tokens
             WHERE did = $1 AND is_active = TRUE
             ORDER BY created_at_utc DESC
@@ -1153,7 +1180,38 @@ pub mod db {
             refresh_token: row.get("refresh_token"),
             scope: row.get("scope"),
             dpop_jkt: row.get("dpop_jkt"),
+            user_id: row.get("user_id"),
         }))
+    }
+    
+    /// Retrieves all active tokens for a user
+    pub async fn get_tokens_for_user(pool: &PgPool, user_id: uuid::Uuid) -> cja::Result<Vec<OAuthTokenSet>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT did, access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id
+            FROM oauth_tokens
+            WHERE user_id = $1 AND is_active = TRUE
+            ORDER BY created_at_utc DESC
+            "#,
+        )
+        .bind(user_id)
+        .fetch_all(pool)
+        .await?;
+        
+        let tokens = rows.into_iter().map(|row| {
+            OAuthTokenSet {
+                did: row.get("did"),
+                access_token: row.get("access_token"),
+                token_type: row.get("token_type"),
+                expires_at: row.get::<i64, _>("expires_at") as u64,
+                refresh_token: row.get("refresh_token"),
+                scope: row.get("scope"),
+                dpop_jkt: row.get("dpop_jkt"),
+                user_id: row.get("user_id"),
+            }
+        }).collect();
+        
+        Ok(tokens)
     }
 
     /// Marks a token as inactive

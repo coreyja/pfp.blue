@@ -2,6 +2,8 @@ use atrium_api::types::string::Did;
 use axum::extract::State;
 use axum::{response::IntoResponse, routing::get, Form};
 use maud::html;
+use time;
+use tower_cookies::{Cookie, Cookies};
 
 use crate::did::{document_to_auth_server_metadata, resolve_did_to_document};
 use crate::state::AppState;
@@ -11,18 +13,33 @@ mod bsky;
 pub fn routes(app_state: AppState) -> axum::Router {
     axum::Router::new()
         .route("/", get(root))
+        .route("/me", get(bsky::profile))
         .route("/login", get(login).post(login_post))
+        .route("/logout", get(logout))
         // Bluesky OAuth routes
         .route("/oauth/bsky/metadata.json", get(bsky::client_metadata))
         .route("/oauth/bsky/authorize", get(bsky::authorize))
         .route("/oauth/bsky/callback", get(bsky::callback))
         .route("/oauth/bsky/token", get(bsky::get_token))
         .route("/oauth/bsky/revoke", get(bsky::revoke_token))
+        // Add trace layer for debugging
+        .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(app_state)
 }
 
-async fn root() -> &'static str {
-    "This is pfp.blue, welcome!"
+async fn root() -> impl IntoResponse {
+    maud::html! {
+        h1 { "pfp.blue" }
+        p { "Welcome to pfp.blue!" }
+        
+        div {
+            p { "Your profile page:" }
+            a href="/me" { "View Your Profile" }
+            
+            p { "Or login:" }
+            a href="/login" { "Login" }
+        }
+    }
 }
 
 async fn login(State(state): State<AppState>) -> impl IntoResponse {
@@ -141,4 +158,27 @@ async fn login_post(State(state): State<AppState>, form: Form<LoginForm>) -> imp
       p { "Note: Using client_id: " (state.client_id()) }
       p { "Callback URI: " (state.redirect_uri()) }
     }
+}
+
+/// Logout route - clears authentication cookies and redirects to home
+async fn logout(
+    State(state): State<AppState>,
+    cookies: Cookies
+) -> impl IntoResponse {
+    // End the session
+    let _ = crate::auth::end_session(&state.db, &cookies).await;
+    
+    // Also clear the old legacy cookie if it exists
+    if let Some(cookie) = cookies.get(bsky::AUTH_DID_COOKIE) {
+        let mut remove_cookie = Cookie::new(bsky::AUTH_DID_COOKIE, "");
+        remove_cookie.set_path("/");
+        remove_cookie.set_max_age(time::Duration::seconds(-1));
+        remove_cookie.set_http_only(true);
+        remove_cookie.set_secure(true);
+        
+        cookies.add(remove_cookie);
+    }
+    
+    // Redirect to home page
+    axum::response::Redirect::to("/")
 }

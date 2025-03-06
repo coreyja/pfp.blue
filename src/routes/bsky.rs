@@ -6,10 +6,13 @@ use axum::{
 };
 use color_eyre::eyre::eyre;
 use serde::Deserialize;
+use sqlx::Row;
 use std::time::SystemTime;
+use time;
 use tower_cookies::{Cookie, Cookies};
 use tracing::{error, info};
 use uuid::Uuid;
+use maud::html;
 
 use crate::{
     oauth::{self, OAuthSession, OAuthTokenSet},
@@ -625,52 +628,53 @@ pub async fn callback(
         format!("data:{};base64,{}", mime_type, base64::Engine::encode(&base64::engine::general_purpose::STANDARD, blob))
     });
     
-    // Success page with profile information
-    maud::html! {
-        h1 { "Authentication Successful" }
-        p { "You are now authenticated with Bluesky." }
-        p { "DID: " (session.did) }
-        p { "Access token expires in: " (token_set.expires_at - SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs()) " seconds" }
-        p { "Refresh token: " (token_set.refresh_token.is_some()) }
-        
-        div {
-            h2 { "Profile Picture" }
-            
-            @if let Some(cid) = &avatar_blob_cid {
-                p { "Blob CID: " (cid) }
-                
-                @if let Some(img_src) = &avatar_base64 {
-                    p { "Image loaded successfully." }
-                    img src=(img_src) alt="Profile Picture" style="max-width: 200px; max-height: 200px;" {}
-                } @else {
-                    p { 
-                        strong { "Failed to load profile picture from CID" }
-                    }
-                }
-            } @else {
-                p { "No avatar CID found in profile data" }
-            }
-            
-            @if avatar_blob.is_some() {
-                p { "Blob data was successfully fetched" }
-            }
-        }
-        
-        @if let Some(data) = profile_data {
-            div {
-                h2 { "Profile Data (JSON)" }
-                pre {
-                    code {
-                        (serde_json::to_string_pretty(&data).unwrap_or_else(|_| "Failed to format profile data".to_string()))
-                    }
+    // Find or create a user for this token
+    let user = match crate::user::User::get_by_did(&state.db, &session.did).await {
+        Ok(Some(user)) => user,
+        Ok(None) => {
+            // Create a new user
+            match crate::user::User::create(&state.db, None, None).await {
+                Ok(user) => user,
+                Err(err) => {
+                    error!("Failed to create user: {:?}", err);
+                    return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to create user").into_response();
                 }
             }
+        },
+        Err(err) => {
+            error!("Failed to find user: {:?}", err);
+            return (StatusCode::INTERNAL_SERVER_ERROR, "Database error").into_response();
         }
-        
-        p { 
-            a href="/" { "Return to Home" }
-        }
-    }.into_response()
+    };
+    
+    // Create a session for this user
+    let user_agent_str = None; // Simplify by not using User-Agent header for now
+    let ip_address = None; // Simplified to not use client IP address
+    
+    // Create a session
+    if let Err(err) = crate::auth::create_session_and_set_cookie(
+        &state.db, 
+        &cookies, 
+        user.user_id,
+        user_agent_str,
+        ip_address,
+    ).await {
+        error!("Failed to create session: {:?}", err);
+        return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to create session").into_response();
+    }
+    
+    // For backward compatibility, also set the legacy DID cookie
+    let mut legacy_cookie = Cookie::new(AUTH_DID_COOKIE, session.did.clone());
+    legacy_cookie.set_path("/");
+    legacy_cookie.set_max_age(time::Duration::days(30));
+    legacy_cookie.set_http_only(true);
+    legacy_cookie.set_secure(true);
+    
+    cookies.add(legacy_cookie);
+    
+    // Redirect to the profile page
+    info!("Setting auth cookies and redirecting to /me");
+    Redirect::to("/me").into_response()
 }
 
 /// Get a token for a DID
@@ -819,7 +823,304 @@ pub struct GetTokenParams {
     pub token_endpoint: Option<String>,
 }
 
+/// Cookie name for storing the user's DID
+pub const AUTH_DID_COOKIE: &str = "pfp_auth_did";
+
 #[derive(Deserialize)]
 pub struct RevokeTokenParams {
     pub did: String,
+}
+
+/// Profile page that requires authentication
+pub async fn profile(
+    State(state): State<AppState>,
+    crate::auth::AuthUser(user): crate::auth::AuthUser,
+) -> impl IntoResponse {
+    // Get all tokens for this user
+    let tokens = match oauth::db::get_tokens_for_user(&state.db, user.user_id).await {
+        Ok(tokens) => tokens,
+        Err(err) => {
+            error!("Failed to retrieve tokens for user: {:?}", err);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to retrieve tokens".to_string(),
+            ).into_response();
+        }
+    };
+    
+    if tokens.is_empty() {
+        return maud::html! {
+            h1 { "Your Profile" }
+            p { "You don't have any Bluesky accounts linked yet." }
+            a href="/oauth/bsky/authorize" { "Link a Bluesky Account" }
+        }.into_response();
+    }
+    
+    // Use the first token as the primary one
+    let primary_token = tokens[0].clone();
+    
+    // Check if the primary token is expired and try to refresh it
+    if primary_token.is_expired() {
+        if let Some(refresh_token) = &primary_token.refresh_token {
+            let client_id = state.client_id();
+            
+            // Try to get the latest DPoP nonce
+            let dpop_nonce = match oauth::db::get_latest_nonce(&state.db, &primary_token.did).await {
+                Ok(nonce) => nonce,
+                Err(err) => {
+                    error!("Failed to get DPoP nonce: {:?}", err);
+                    None
+                }
+            };
+            
+            // Lookup the token endpoint in the OAuthSession
+            let token_endpoint = match get_token_endpoint_for_did(&state.db, &primary_token.did).await {
+                Ok(Some(endpoint)) => endpoint,
+                _ => {
+                    // Fallback to bsky.social
+                    "https://bsky.social/xrpc/com.atproto.server.refreshSession".to_string()
+                }
+            };
+            
+            match oauth::refresh_token(
+                &state.bsky_oauth,
+                &token_endpoint,
+                &client_id,
+                refresh_token,
+                dpop_nonce.as_deref(),
+            ).await {
+                Ok(token_response) => {
+                    // Create a new token set with JWK thumbprint
+                    let new_token = match OAuthTokenSet::from_token_response_with_jwk(
+                        &token_response, 
+                        primary_token.did.clone(),
+                        &state.bsky_oauth.public_key
+                    ) {
+                        Ok(token) => {
+                            // Set the user_id
+                            let token_with_user = token.with_user_id(user.user_id);
+                            token_with_user
+                        },
+                        Err(err) => {
+                            error!("Failed to create token set with JWK: {:?}", err);
+                            // Fallback to standard token creation
+                            let token = OAuthTokenSet::from_token_response(token_response, primary_token.did.clone())
+                                .with_user_id(user.user_id);
+                            token
+                        }
+                    };
+                    
+                    // Store the new token
+                    if let Err(err) = oauth::db::store_token(&state.db, &new_token).await {
+                        error!("Failed to store refreshed token: {:?}", err);
+                        return (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "Failed to store refreshed token".to_string(),
+                        ).into_response();
+                    }
+                    
+                    // Refresh all tokens
+                    let tokens = match oauth::db::get_tokens_for_user(&state.db, user.user_id).await {
+                        Ok(tokens) => tokens,
+                        Err(_) => vec![new_token.clone()],
+                    };
+                    
+                    // Display the profile with the refreshed token and all tokens
+                    return display_profile_multi(&state, new_token, tokens).await.into_response();
+                }
+                Err(err) => {
+                    error!("Failed to refresh token: {:?}", err);
+                    // Token refresh failed, but we still show the profile with expired token
+                    // so the user can see other linked accounts
+                }
+            }
+        }
+    }
+    
+    // Display profile with all tokens
+    display_profile_multi(&state, primary_token, tokens).await.into_response()
+}
+
+/// Helper function to get the token endpoint for a DID from stored sessions
+async fn get_token_endpoint_for_did(pool: &sqlx::PgPool, did: &str) -> cja::Result<Option<String>> {
+    let row = sqlx::query(
+        r#"
+        SELECT token_endpoint FROM oauth_sessions 
+        WHERE did = $1 
+        ORDER BY updated_at_utc DESC 
+        LIMIT 1
+        "#,
+    )
+    .bind(did)
+    .fetch_optional(pool)
+    .await?;
+    
+    Ok(row.map(|r| r.get("token_endpoint")))
+}
+
+/// Display profile information with multiple linked accounts
+async fn display_profile_multi(state: &AppState, primary_token: OAuthTokenSet, all_tokens: Vec<OAuthTokenSet>) -> maud::Markup {
+    // Fetch primary profile data
+    let profile_data = match fetch_user_profile(state, &primary_token.did, &primary_token).await {
+        Ok(data) => Some(data),
+        Err(e) => {
+            error!("Failed to fetch user profile: {:?}", e);
+            None
+        }
+    };
+    
+    // Try to extract avatar CID from profile
+    let mut avatar_blob_cid = None;
+    if let Some(data) = &profile_data {
+        if let Some(value) = data.get("value") {
+            if let Some(avatar) = value.get("avatar") {
+                if let Some(ref_obj) = avatar.get("ref") {
+                    if let Some(link) = ref_obj.get("$link") {
+                        if let Some(cid_str) = link.as_str() {
+                            avatar_blob_cid = Some(cid_str.to_string());
+                            info!("Found avatar blob CID: {}", cid_str);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Try to fetch avatar blob
+    let avatar_blob = if let Some(ref cid) = avatar_blob_cid {
+        match fetch_blob_by_cid(state, &primary_token.did, &primary_token, cid).await {
+            Ok(blob) => {
+                info!("Successfully fetched avatar blob: {} bytes", blob.len());
+                Some(blob)
+            }
+            Err(e) => {
+                error!("Failed to fetch avatar blob: {:?}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+    
+    // Determine mime type for image
+    let mut mime_type = "image/jpeg"; // Default if we can't detect
+    
+    // Try to extract the mime type from the profile data
+    if let Some(data) = &profile_data {
+        if let Some(value) = data.get("value") {
+            if let Some(avatar) = value.get("avatar") {
+                if let Some(mime) = avatar.get("mimeType") {
+                    if let Some(mime_str) = mime.as_str() {
+                        mime_type = mime_str;
+                        info!("Detected mime type from profile: {}", mime_type);
+                    }
+                }
+            }
+        }
+    }
+    
+    // Encode avatar as base64
+    let avatar_base64 = avatar_blob.as_ref().map(|blob| {
+        format!("data:{};base64,{}", mime_type, base64::Engine::encode(&base64::engine::general_purpose::STANDARD, blob))
+    });
+    
+    // Extract display name and handle from profile
+    let mut display_name = primary_token.did.clone();
+    let mut handle = None;
+    
+    if let Some(data) = &profile_data {
+        if let Some(value) = data.get("value") {
+            if let Some(name) = value.get("displayName") {
+                if let Some(name_str) = name.as_str() {
+                    display_name = name_str.to_string();
+                }
+            }
+            
+            if let Some(h) = value.get("handle") {
+                if let Some(h_str) = h.as_str() {
+                    handle = Some(h_str.to_string());
+                }
+            }
+        }
+    }
+    
+    // Create profile display
+    html! {
+        h1 { "Your Profile" }
+        
+        div class="profile-container" {
+            div class="profile-header" {
+                @if let Some(img_src) = &avatar_base64 {
+                    img src=(img_src) alt="Profile Picture" style="max-width: 150px; max-height: 150px; border-radius: 50%;" {}
+                } @else {
+                    div style="width: 150px; height: 150px; background-color: #ccc; border-radius: 50%; display: flex; align-items: center; justify-content: center;" {
+                        "No Image"
+                    }
+                }
+                
+                div class="profile-info" {
+                    h2 { (display_name) }
+                    @if let Some(h) = &handle {
+                        p { "@" (h) }
+                    }
+                    p { "DID: " (primary_token.did) }
+                }
+            }
+            
+            div class="token-info" {
+                h3 { "Authentication Info" }
+                p { "Access token expires in: " (primary_token.expires_at - SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs()) " seconds" }
+                p { "Has refresh token: " (primary_token.refresh_token.is_some()) }
+            }
+            
+            // Display all linked accounts
+            div class="linked-accounts" {
+                h3 { "Linked Bluesky Accounts" }
+                
+                ul {
+                    @for token in &all_tokens {
+                        li {
+                            strong { "DID: " (token.did) }
+                            @if &token.did == &primary_token.did {
+                                span style="color: green;" { " (Current)" }
+                            }
+                            p { "Expires in: " (token.expires_at - SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs()) " seconds" }
+                        }
+                    }
+                }
+                
+                p {
+                    a href="/oauth/bsky/authorize" { "Link Another Bluesky Account" }
+                }
+            }
+            
+            @if let Some(data) = &profile_data {
+                div class="profile-data" {
+                    h3 { "Profile Data" }
+                    details {
+                        summary { "View Raw JSON" }
+                        pre {
+                            code {
+                                (serde_json::to_string_pretty(data).unwrap_or_else(|_| "Failed to format profile data".to_string()))
+                            }
+                        }
+                    }
+                }
+            }
+            
+            p {
+                a href="/" { "Return to Home" }
+                " | "
+                a href="/logout" { "Logout" }
+                " | "
+                a href="/login" { "Sign in as another user" }
+            }
+        }
+    }
+}
+
+/// Legacy profile display function (for backward compatibility)
+async fn display_profile(state: &AppState, token: OAuthTokenSet) -> maud::Markup {
+    let token_clone = token.clone();
+    display_profile_multi(state, token, vec![token_clone]).await
 }
