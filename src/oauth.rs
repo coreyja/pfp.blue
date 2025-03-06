@@ -477,7 +477,7 @@ impl OAuthTokenSet {
     }
 }
 
-/// Create a DPoP (Demonstrating Proof-of-Possession) proof JWT for OAuth token requests
+/// Create a DPoP (Demonstrating Proof-of-Possession) proof JWT for API requests
 /// This is required by Bluesky's OAuth implementation
 pub fn create_dpop_proof(
     oauth_config: &BlueskyOAuthConfig,
