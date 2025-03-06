@@ -694,22 +694,35 @@ pub async fn callback(
                 info!("Found profile value");
                 if let Some(avatar) = value.get("avatar") {
                     info!("Found avatar field: {:?}", avatar);
-                    if let Some(ref_val) = avatar.as_str() {
-                        info!("Extracted avatar blob CID: {}", ref_val);
-                        avatar_blob_cid = Some(ref_val.to_string());
+                    
+                    // Extract the CID from the nested structure
+                    // The path is avatar -> ref -> $link
+                    if let Some(ref_obj) = avatar.get("ref") {
+                        info!("Found ref object: {:?}", ref_obj);
                         
-                        // Try to fetch the avatar blob
-                        match fetch_blob(&state, &session.did, &token_set, ref_val).await {
-                            Ok(blob_data) => {
-                                info!("Successfully fetched avatar blob ({} bytes)", blob_data.len());
-                                avatar_blob = Some(blob_data);
-                            },
-                            Err(e) => {
-                                error!("Failed to fetch avatar blob: {:?}", e);
+                        if let Some(link) = ref_obj.get("$link") {
+                            if let Some(cid) = link.as_str() {
+                                info!("Extracted avatar blob CID from $link: {}", cid);
+                                avatar_blob_cid = Some(cid.to_string());
+                                
+                                // Try to fetch the avatar blob
+                                match fetch_blob_by_cid(&state, &session.did, &token_set, cid).await {
+                                    Ok(blob_data) => {
+                                        info!("Successfully fetched avatar blob ({} bytes)", blob_data.len());
+                                        avatar_blob = Some(blob_data);
+                                    },
+                                    Err(e) => {
+                                        error!("Failed to fetch avatar blob: {:?}", e);
+                                    }
+                                }
+                            } else {
+                                error!("$link field is not a string: {:?}", link);
                             }
+                        } else {
+                            error!("No $link field found in ref: {:?}", ref_obj);
                         }
                     } else {
-                        error!("Avatar field is not a string: {:?}", avatar);
+                        error!("No ref field found in avatar: {:?}", avatar);
                     }
                 } else {
                     info!("No avatar field found in profile");
@@ -725,9 +738,24 @@ pub async fn callback(
     }
     
     // Encode the image as base64 if we have one
+    let mut mime_type = "image/jpeg"; // Default if we can't detect
+    
+    // Try to extract the mime type from the profile data
+    if let Some(data) = &profile_data {
+        if let Some(value) = data.get("value") {
+            if let Some(avatar) = value.get("avatar") {
+                if let Some(mime) = avatar.get("mimeType") {
+                    if let Some(mime_str) = mime.as_str() {
+                        mime_type = mime_str;
+                        info!("Detected mime type from profile: {}", mime_type);
+                    }
+                }
+            }
+        }
+    }
+    
     let avatar_base64 = avatar_blob.as_ref().map(|blob| {
-        let content_type = "image/jpeg"; // Assuming JPEG format, but in production should detect from headers
-        format!("data:{};base64,{}", content_type, base64::Engine::encode(&base64::engine::general_purpose::STANDARD, blob))
+        format!("data:{};base64,{}", mime_type, base64::Engine::encode(&base64::engine::general_purpose::STANDARD, blob))
     });
     
     // Success page with profile information
