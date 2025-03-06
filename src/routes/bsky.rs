@@ -322,20 +322,69 @@ pub async fn callback(
     let code_verifier = session.code_verifier.as_deref();
     
     // Exchange the code for an access token
-    let token_response = match oauth::exchange_code_for_token(
-        &state.bsky_oauth,
-        &session.token_endpoint,
-        &client_id,
-        &code,
-        &redirect_uri,
-        code_verifier,
-    ).await {
-        Ok(token) => token,
-        Err(err) => {
-            error!("Token exchange failed: {:?}", err);
+    let mut attempts = 0;
+    let mut last_error = None;
+    let mut token_response = None;
+    
+    // Try up to 2 times - once with the stored nonce and once with a new nonce if needed
+    while attempts < 2 && token_response.is_none() {
+        match oauth::exchange_code_for_token(
+            &state.bsky_oauth,
+            &session.token_endpoint,
+            &client_id,
+            &code,
+            &redirect_uri,
+            code_verifier,
+            session.dpop_nonce.as_deref(),  // Use the stored nonce if available
+        ).await {
+            Ok(response) => {
+                token_response = Some(response);
+            },
+            Err(err) => {
+                last_error = Some(err.to_string());
+                
+                // Check if the error contains a DPoP nonce error
+                if last_error.as_ref().unwrap().contains("use_dpop_nonce") || 
+                   last_error.as_ref().unwrap().contains("nonce mismatch") {
+                    
+                    // Try to extract the nonce from the error message
+                    if let Some(nonce_start) = last_error.as_ref().unwrap().find("\"dpop_nonce\":\"") {
+                        let nonce_substring = &last_error.as_ref().unwrap()[nonce_start + 14..];
+                        if let Some(nonce_end) = nonce_substring.find('\"') {
+                            let new_nonce = &nonce_substring[..nonce_end];
+                            
+                            // Save the new nonce in the database for this session
+                            if let Err(e) = oauth::db::update_session_nonce(&state.db, session_id, new_nonce).await {
+                                error!("Failed to update session nonce: {:?}", e);
+                            } else {
+                                // Update the session object with the new nonce
+                                let mut updated_session = session.clone();
+                                updated_session.dpop_nonce = Some(new_nonce.to_string());
+                                
+                                // Try again with the new session containing the updated nonce
+                                attempts += 1;
+                                continue;
+                            }
+                        }
+                    }
+                }
+                
+                // If we couldn't extract a nonce or it's not a nonce error, break
+                break;
+            }
+        }
+        
+        attempts += 1;
+    }
+    
+    let token_response = match token_response {
+        Some(token) => token,
+        None => {
+            let error_msg = last_error.as_ref().unwrap_or(&"Unknown error".to_string()).clone();
+            error!("Token exchange failed: {:?}", error_msg);
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to exchange authorization code for token: {:?}", err),
+                format!("Failed to exchange authorization code for token: {:?}", error_msg),
             ).into_response();
         }
     };
@@ -396,11 +445,19 @@ pub async fn get_token(
         if let Some(refresh_token) = &token.refresh_token {
             let client_id = state.client_id();
             
+            // Try to get the session to get the stored DPoP nonce
+            let session_id = uuid::Uuid::new_v4(); // Dummy UUID for this request
+            let session = match oauth::db::get_session(&state.db, session_id).await {
+                Ok(Some(s)) => s,
+                _ => OAuthSession::new(params.did.clone(), None, params.token_endpoint.clone().unwrap_or_default()),
+            };
+            
             match oauth::refresh_token(
                 &state.bsky_oauth,
                 &params.token_endpoint.unwrap_or_default(),
                 &client_id,
                 refresh_token,
+                session.dpop_nonce.as_deref(),
             ).await {
                 Ok(token_response) => {
                     // Create a new token set

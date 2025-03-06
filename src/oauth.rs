@@ -3,7 +3,6 @@ use color_eyre::eyre::eyre;
 use jsonwebtoken::Algorithm;
 use p256::{ecdsa::VerifyingKey, pkcs8::DecodePublicKey, EncodedPoint, PublicKey};
 use serde::{Deserialize, Serialize};
-use std::io::Write;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::state::BlueskyOAuthConfig;
@@ -442,7 +441,6 @@ pub fn create_dpop_proof(
     endpoint_url: &str,
     server_nonce: Option<&str>,
 ) -> cja::Result<String> {
-    use rand::{rngs::OsRng, RngCore};
     use std::io::Write;
     use std::process::Command;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -587,6 +585,7 @@ pub async fn exchange_code_for_token(
     code: &str,
     redirect_uri: &str,
     code_verifier: Option<&str>,
+    dpop_nonce: Option<&str>,
 ) -> cja::Result<TokenResponse> {
     // Create the client assertion JWT
     let client_assertion = create_client_assertion(oauth_config, token_endpoint, client_id)?;
@@ -595,7 +594,7 @@ pub async fn exchange_code_for_token(
     let client = reqwest::Client::new();
     let mut retries = 3;
     let mut last_error = None;
-    let mut dpop_nonce = None;
+    let mut current_dpop_nonce = dpop_nonce.map(|s| s.to_string());
 
     // Log the request details for debugging
     tracing::debug!("Token endpoint: {}", token_endpoint);
@@ -610,7 +609,7 @@ pub async fn exchange_code_for_token(
     while retries > 0 {
         // Create a fresh DPoP proof for each attempt, using the nonce from the previous response if available
         let dpop_proof =
-            create_dpop_proof(oauth_config, "POST", token_endpoint, dpop_nonce.as_deref())?;
+            create_dpop_proof(oauth_config, "POST", token_endpoint, current_dpop_nonce.as_deref())?;
 
         tracing::debug!("DPoP proof length: {}", dpop_proof.len());
 
@@ -662,12 +661,17 @@ pub async fn exchange_code_for_token(
             }
         };
 
-        // Check for the DPoP-Nonce header in the response
-        if let Some(nonce_header) = response.headers().get("DPoP-Nonce") {
-            if let Ok(nonce) = nonce_header.to_str() {
-                tracing::debug!("Received DPoP-Nonce header: {}", nonce);
-                dpop_nonce = Some(nonce.to_string());
-            }
+        // First, check for a DPoP nonce in the response headers
+        let received_nonce = response.headers()
+            .get("DPoP-Nonce")
+            .and_then(|h| h.to_str().ok())
+            .map(|s| {
+                tracing::debug!("Received DPoP-Nonce header: {}", s);
+                s.to_string()
+            });
+            
+        if let Some(nonce) = received_nonce {
+            current_dpop_nonce = Some(nonce);
         }
 
         if response.status().is_success() {
@@ -700,7 +704,7 @@ pub async fn exchange_code_for_token(
                 if let Ok(error_json) = serde_json::from_str::<serde_json::Value>(&error_text) {
                     if let Some(nonce) = error_json.get("dpop_nonce").and_then(|n| n.as_str()) {
                         tracing::debug!("Found nonce in error response: {}", nonce);
-                        dpop_nonce = Some(nonce.to_string());
+                        current_dpop_nonce = Some(nonce.to_string());
                     }
                 }
 
@@ -735,6 +739,7 @@ pub async fn refresh_token(
     token_endpoint: &str,
     client_id: &str,
     refresh_token: &str,
+    dpop_nonce: Option<&str>,
 ) -> cja::Result<TokenResponse> {
     // Create the client assertion JWT
     let client_assertion = create_client_assertion(oauth_config, token_endpoint, client_id)?;
@@ -743,7 +748,7 @@ pub async fn refresh_token(
     let client = reqwest::Client::new();
     let mut retries = 3;
     let mut last_error = None;
-    let mut dpop_nonce = None;
+    let mut current_dpop_nonce = dpop_nonce.map(|s| s.to_string());
 
     // Log the request details for debugging
     tracing::debug!("Token endpoint (refresh): {}", token_endpoint);
@@ -756,7 +761,7 @@ pub async fn refresh_token(
     while retries > 0 {
         // Create a fresh DPoP proof for each attempt, using the nonce from the previous response if available
         let dpop_proof =
-            create_dpop_proof(oauth_config, "POST", token_endpoint, dpop_nonce.as_deref())?;
+            create_dpop_proof(oauth_config, "POST", token_endpoint, current_dpop_nonce.as_deref())?;
 
         tracing::debug!("DPoP proof length (refresh): {}", dpop_proof.len());
 
@@ -802,12 +807,17 @@ pub async fn refresh_token(
             }
         };
 
-        // Check for the DPoP-Nonce header in the response
-        if let Some(nonce_header) = response.headers().get("DPoP-Nonce") {
-            if let Ok(nonce) = nonce_header.to_str() {
-                tracing::debug!("Received DPoP-Nonce header in refresh: {}", nonce);
-                dpop_nonce = Some(nonce.to_string());
-            }
+        // First, check for a DPoP nonce in the response headers
+        let received_nonce = response.headers()
+            .get("DPoP-Nonce")
+            .and_then(|h| h.to_str().ok())
+            .map(|s| {
+                tracing::debug!("Received DPoP-Nonce header in refresh: {}", s);
+                s.to_string()
+            });
+            
+        if let Some(nonce) = received_nonce {
+            current_dpop_nonce = Some(nonce);
         }
 
         if response.status().is_success() {
@@ -842,7 +852,7 @@ pub async fn refresh_token(
                 if let Ok(error_json) = serde_json::from_str::<serde_json::Value>(&error_text) {
                     if let Some(nonce) = error_json.get("dpop_nonce").and_then(|n| n.as_str()) {
                         tracing::debug!("Found nonce in refresh error response: {}", nonce);
-                        dpop_nonce = Some(nonce.to_string());
+                        current_dpop_nonce = Some(nonce.to_string());
                     }
                 }
 
@@ -890,6 +900,8 @@ pub struct OAuthSession {
     pub code_verifier: Option<String>,
     /// PKCE code challenge - the hashed and encoded verifier
     pub code_challenge: Option<String>,
+    /// DPoP nonce from the server
+    pub dpop_nonce: Option<String>,
 }
 
 impl OAuthSession {
@@ -914,17 +926,18 @@ impl OAuthSession {
             token_set: None,
             code_verifier,
             code_challenge,
+            dpop_nonce: None,
         }
     }
 
     /// Generate PKCE code verifier and challenge
     fn generate_pkce_codes() -> cja::Result<(Option<String>, Option<String>)> {
-        use rand::{rngs::OsRng, RngCore};
+        use rand::{thread_rng, RngCore};
         use sha2::{Digest, Sha256};
 
         // Generate a random code verifier (between 43 and 128 characters)
         let mut code_verifier_bytes = [0u8; 64]; // 64 bytes = 128 chars in hex
-        OsRng.fill_bytes(&mut code_verifier_bytes);
+        thread_rng().fill_bytes(&mut code_verifier_bytes);
 
         // Base64-URL encode the verifier
         let code_verifier = Base64UrlUnpadded::encode_string(&code_verifier_bytes);
@@ -965,10 +978,11 @@ pub mod db {
     pub async fn store_session(pool: &PgPool, session: &OAuthSession) -> cja::Result<Uuid> {
         let session_id = Uuid::new_v4();
 
-        // Store PKCE data in the data JSONB field
+        // Store PKCE data and DPoP nonce in the data JSONB field
         let data = serde_json::json!({
             "code_verifier": session.code_verifier,
-            "code_challenge": session.code_challenge
+            "code_challenge": session.code_challenge,
+            "dpop_nonce": session.dpop_nonce
         });
 
         sqlx::query(
@@ -1017,6 +1031,12 @@ pub mod db {
                 .and_then(|d| d.get("code_challenge"))
                 .and_then(|v| v.as_str())
                 .map(String::from);
+                
+            let dpop_nonce = data
+                .as_ref()
+                .and_then(|d| d.get("dpop_nonce"))
+                .and_then(|v| v.as_str())
+                .map(String::from);
 
             OAuthSession {
                 did: row.get("did"),
@@ -1026,6 +1046,7 @@ pub mod db {
                 token_set: None, // Token set is retrieved separately
                 code_verifier,
                 code_challenge,
+                dpop_nonce,
             }
         }))
     }
@@ -1104,6 +1125,43 @@ pub mod db {
         .execute(pool)
         .await?;
 
+        Ok(())
+    }
+
+    /// Updates a session's DPoP nonce
+    pub async fn update_session_nonce(pool: &PgPool, session_id: Uuid, nonce: &str) -> cja::Result<()> {
+        // First get the current session data
+        let row = sqlx::query(
+            r#"
+            SELECT data FROM oauth_sessions WHERE session_id = $1
+            "#,
+        )
+        .bind(session_id)
+        .fetch_optional(pool)
+        .await?;
+        
+        if let Some(row) = row {
+            let mut data: serde_json::Value = row.get("data");
+            
+            // Update the nonce in the data
+            if let Some(obj) = data.as_object_mut() {
+                obj.insert("dpop_nonce".to_string(), serde_json::Value::String(nonce.to_string()));
+            }
+            
+            // Update the session with the new data
+            sqlx::query(
+                r#"
+                UPDATE oauth_sessions
+                SET data = $1, updated_at_utc = NOW()
+                WHERE session_id = $2
+                "#,
+            )
+            .bind(data)
+            .bind(session_id)
+            .execute(pool)
+            .await?;
+        }
+        
         Ok(())
     }
 
