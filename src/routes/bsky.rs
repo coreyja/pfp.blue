@@ -261,215 +261,82 @@ async fn fetch_user_profile(
     Ok(profile_data)
 }
 
-/// Fetch a blob from Bluesky PDS
-async fn fetch_blob(
-    state: &AppState,
-    did: &str,
-    token: &OAuthTokenSet,
-    blob_ref: &str,
-) -> cja::Result<Vec<u8>> {
-    // The blob_ref is in the format "at://did:plc:abcdef/app.bsky.embed.images/12345"
-    // We need to extract the CID for the API call
-    
-    info!("Fetching blob with ref: {}", blob_ref);
-    
-    // Check if this is a URI/link format
-    if !blob_ref.starts_with("at://") {
-        // If it's already a CID, use it directly
-        return fetch_blob_by_cid(state, did, token, blob_ref).await;
-    }
-    
-    // First get the record to find the actual blob CID
-    let client = reqwest::Client::new();
-    
-    // The blob ref should be in format at://did/collection/rkey
-    let blob_parts: Vec<&str> = blob_ref.trim_start_matches("at://").split('/').collect();
-    
-    if blob_parts.len() < 3 {
-        return Err(eyre!("Invalid blob reference format: {}", blob_ref));
-    }
-    
-    let repo = blob_parts[0];
-    let collection = blob_parts[1];
-    let rkey = blob_parts[2];
-    
-    info!("Parsed blob ref - repo: {}, collection: {}, rkey: {}", repo, collection, rkey);
-    
-    // Create a DPoP proof for this API call
-    let dpop_proof = oauth::create_dpop_proof(
-        &state.bsky_oauth,
-        "GET",
-        &format!("https://bsky.social/xrpc/com.atproto.repo.getRecord"), 
-        None,
-    )?;
-
-    // First get the record to extract the blob CID
-    let record_response = client
-        .get("https://bsky.social/xrpc/com.atproto.repo.getRecord")
-        .query(&[
-            ("repo", repo),
-            ("collection", collection),
-            ("rkey", rkey),
-        ])
-        .header("Authorization", format!("DPoP {}", token.access_token))
-        .header("DPoP", dpop_proof)
-        .send()
-        .await?;
-    
-    let status = record_response.status();
-    if !status.is_success() {
-        let error_text = record_response
-            .text()
-            .await
-            .unwrap_or_else(|_| "Failed to read error response".to_string());
-            
-        return Err(eyre!("Failed to fetch record: {} - {}", status, error_text));
-    }
-    
-    let record_data = record_response.json::<serde_json::Value>().await?;
-    info!("Record data: {}", serde_json::to_string_pretty(&record_data).unwrap_or_default());
-    
-    // For images, the CID is usually in value.image.ref
-    let cid = if let Some(value) = record_data.get("value") {
-        if let Some(image) = value.get("image") {
-            if let Some(image_ref) = image.get("ref") {
-                image_ref.as_str().map(|s| s.to_string())
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-    
-    match cid {
-        Some(cid) => {
-            info!("Extracted CID from record: {}", cid);
-            fetch_blob_by_cid(state, did, token, &cid).await
-        },
-        None => {
-            // Try a direct fetch if we couldn't extract the CID
-            info!("Could not extract CID from record, trying direct fetch");
-            fetch_blob_directly(state, did, token, blob_ref).await
-        }
-    }
-}
 
 /// Fetch a blob by its CID
 async fn fetch_blob_by_cid(
-    state: &AppState,
+    _state: &AppState,
     did: &str,
-    token: &OAuthTokenSet,
+    _token: &OAuthTokenSet,
     cid: &str,
 ) -> cja::Result<Vec<u8>> {
     info!("Fetching blob with CID: {}", cid);
+    
     let client = reqwest::Client::new();
     
-    // Create a DPoP proof for this API call
-    let dpop_proof = oauth::create_dpop_proof(
-        &state.bsky_oauth,
-        "GET",
-        &format!("https://bsky.social/xrpc/com.atproto.sync.getBlob"),
-        None,
-    )?;
-
-    // Make the API request to get the blob
-    let response = client
-        .get("https://bsky.social/xrpc/com.atproto.sync.getBlob")
-        .query(&[
-            ("did", did),
-            ("cid", cid),
-        ])
-        .header("Authorization", format!("DPoP {}", token.access_token))
-        .header("DPoP", dpop_proof)
-        .send()
-        .await?;
+    // Try multiple URL formats for Bluesky images
+    let urls = vec![
+        // Format 1: Plain avatar format - most common for avatars
+        format!("https://cdn.bsky.app/img/avatar/plain/{}@jpeg", cid),
         
-    // Log response headers for debugging
-    info!("Blob fetch response status: {}", response.status());
-    for (name, value) in response.headers().iter() {
-        if let Ok(value_str) = value.to_str() {
-            info!("Header {}: {}", name, value_str);
+        // Format 2: General full format
+        format!("https://cdn.bsky.app/img/feed/plain/{}@jpeg", cid),
+        
+        // Format 3: Legacy format with DID
+        format!("https://av-cdn.bsky.app/img/avatar/plain/{}/{}@jpeg", did, cid),
+        
+        // Format 4: Plain bsky.network API
+        format!("https://bsky.network/xrpc/com.atproto.sync.getBlob?did={}&cid={}", did, cid),
+        
+        // Format 5: Direct bsky.social API 
+        format!("https://bsky.social/xrpc/com.atproto.sync.getBlob?did={}&cid={}", did, cid),
+        
+        // Format 6: Legacy avatar format with did:plc
+        format!("https://avatar.bsky.social/img/avatar/plain/{}/{}@jpeg", did, cid)
+    ];
+    
+    // We'll store any errors we encounter to return at the end if all URLs fail
+    let mut last_error: Option<(reqwest::StatusCode, String)> = None;
+    
+    // Try each URL in turn
+    for (i, url) in urls.iter().enumerate() {
+        info!("Trying URL format {}: {}", i+1, url);
+        
+        match client.get(url).send().await {
+            Ok(response) => {
+                info!("Response status from format {}: {}", i+1, response.status());
+                
+                if response.status().is_success() {
+                    // Success! Get the image data
+                    let blob_data = response.bytes().await?.to_vec();
+                    info!("Successfully retrieved blob from format {}: {} bytes", i+1, blob_data.len());
+                    return Ok(blob_data);
+                } else {
+                    // Store the error and try the next URL
+                    let status = response.status();
+                    let error_text = response
+                        .text()
+                        .await
+                        .unwrap_or_else(|_| "Failed to read error response".to_string());
+                    
+                    info!("Format {} failed: {} - {}", i+1, status, error_text);
+                    last_error = Some((status, error_text));
+                }
+            },
+            Err(e) => {
+                info!("Request to format {} failed: {:?}", i+1, e);
+                // Continue to the next URL
+            }
         }
     }
     
-    // Check if we have a DPoP nonce in the response
-    if let Some(nonce_header) = response.headers().get("DPoP-Nonce") {
-        if let Ok(nonce) = nonce_header.to_str() {
-            info!("Received DPoP-Nonce from blob request: {}", nonce);
-        }
+    // If we get here, all URLs failed
+    if let Some((status, error_text)) = last_error {
+        return Err(eyre!("All image URL formats failed. Last error: {} - {}", status, error_text));
+    } else {
+        return Err(eyre!("All image URL formats failed with connection errors"));
     }
-    
-    if !response.status().is_success() {
-        let status = response.status();
-        let error_text = response
-            .text()
-            .await
-            .unwrap_or_else(|_| "Failed to read error response".to_string());
-            
-        return Err(eyre!("Failed to fetch blob by CID: {} - {}", status, error_text));
-    }
-    
-    // Get the binary blob data
-    let blob_data = response.bytes().await?.to_vec();
-    info!("Successfully retrieved blob: {} bytes", blob_data.len());
-    
-    Ok(blob_data)
 }
 
-/// Fetch a blob directly from an AT URL (fallback method)
-async fn fetch_blob_directly(
-    state: &AppState,
-    did: &str,
-    token: &OAuthTokenSet,
-    blob_url: &str,
-) -> cja::Result<Vec<u8>> {
-    info!("Attempting direct blob fetch for: {}", blob_url);
-    
-    // For now just try a simple approach
-    let client = reqwest::Client::new();
-    
-    // Create a DPoP proof for this API call
-    let endpoint = "https://bsky.social/xrpc/com.atproto.sync.getBlob";
-    let dpop_proof = oauth::create_dpop_proof(
-        &state.bsky_oauth,
-        "GET",
-        endpoint,
-        None,
-    )?;
-    
-    // Try to access the blob directly
-    let response = client
-        .get(endpoint)
-        .query(&[
-            ("did", did),
-            ("at", blob_url),
-        ])
-        .header("Authorization", format!("DPoP {}", token.access_token))
-        .header("DPoP", dpop_proof)
-        .send()
-        .await?;
-    
-    info!("Direct blob fetch response status: {}", response.status());
-    
-    if !response.status().is_success() {
-        let status = response.status();
-        let error_text = response
-            .text()
-            .await
-            .unwrap_or_else(|_| "Failed to read error response".to_string());
-            
-        return Err(eyre!("Failed direct blob fetch: {} - {}", status, error_text));
-    }
-    
-    // Get the binary blob data
-    let blob_data = response.bytes().await?.to_vec();
-    info!("Successfully retrieved blob directly: {} bytes", blob_data.len());
-    
-    Ok(blob_data)
-}
 
 pub async fn callback(
     State(state): State<AppState>,
@@ -705,7 +572,7 @@ pub async fn callback(
                                 info!("Extracted avatar blob CID from $link: {}", cid);
                                 avatar_blob_cid = Some(cid.to_string());
                                 
-                                // Try to fetch the avatar blob
+                                // Try to fetch the avatar blob directly by CID
                                 match fetch_blob_by_cid(&state, &session.did, &token_set, cid).await {
                                     Ok(blob_data) => {
                                         info!("Successfully fetched avatar blob ({} bytes)", blob_data.len());
