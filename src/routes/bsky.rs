@@ -389,8 +389,19 @@ pub async fn callback(
         }
     };
     
-    // Create a token set
-    let token_set = OAuthTokenSet::from_token_response(token_response, session.did.clone());
+    // Create a token set with JWK thumbprint
+    let token_set = match OAuthTokenSet::from_token_response_with_jwk(
+        &token_response, 
+        session.did.clone(),
+        &state.bsky_oauth.public_key
+    ) {
+        Ok(token) => token,
+        Err(err) => {
+            error!("Failed to create token set with JWK: {:?}", err);
+            // Fallback to standard token creation without JWK calculation
+            OAuthTokenSet::from_token_response(token_response, session.did.clone())
+        }
+    };
     
     // Store the token in the database
     if let Err(err) = oauth::db::store_token(&state.db, &token_set).await {
@@ -460,8 +471,19 @@ pub async fn get_token(
                 session.dpop_nonce.as_deref(),
             ).await {
                 Ok(token_response) => {
-                    // Create a new token set
-                    let new_token = OAuthTokenSet::from_token_response(token_response, token.did.clone());
+                    // Create a new token set with JWK thumbprint
+                    let new_token = match OAuthTokenSet::from_token_response_with_jwk(
+                        &token_response, 
+                        token.did.clone(),
+                        &state.bsky_oauth.public_key
+                    ) {
+                        Ok(token) => token,
+                        Err(err) => {
+                            error!("Failed to create token set with JWK: {:?}", err);
+                            // Fallback to standard token creation
+                            OAuthTokenSet::from_token_response(token_response, token.did.clone())
+                        }
+                    };
                     
                     // Store the new token
                     if let Err(err) = oauth::db::store_token(&state.db, &new_token).await {
