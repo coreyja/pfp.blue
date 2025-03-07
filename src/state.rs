@@ -15,46 +15,49 @@ impl BlueskyOAuthConfig {
         let private_key = std::env::var("OAUTH_PRIVATE_KEY")?;
         let public_key = std::env::var("OAUTH_PUBLIC_KEY")?;
         let client_secret = std::env::var("OAUTH_CLIENT_SECRET")?;
-        
+
         let config = Self {
             private_key,
             public_key,
             client_secret,
         };
-        
+
         // Verify keys at startup
         config.verify_keys()?;
-        
+
         Ok(config)
     }
-    
+
     /// Verify that the keys are properly formatted and can be parsed
     pub fn verify_keys(&self) -> cja::Result<()> {
         use color_eyre::eyre::eyre;
-        use std::process::Command;
         use std::io::Write;
+        use std::process::Command;
         use tempfile::NamedTempFile;
-        
-        
+
         // Decode base64-encoded private key
-        let decoded_private_key = match base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &self.private_key) {
+        let decoded_private_key = match base64::Engine::decode(
+            &base64::engine::general_purpose::STANDARD,
+            &self.private_key,
+        ) {
             Ok(key) => key,
             Err(e) => return Err(eyre!("Failed to decode base64-encoded private key: {}", e)),
         };
-        
+
         let key_preview = if decoded_private_key.len() > 30 {
             format!("{:?}...", &decoded_private_key[..30])
         } else {
             format!("{:?}", decoded_private_key)
         };
-        
+
         // Write to temp file and verify with OpenSSL directly
-        let mut private_temp_file = NamedTempFile::new()
-            .map_err(|e| eyre!("Failed to create temporary file: {}", e))?;
-        
-        private_temp_file.write_all(&decoded_private_key)
+        let mut private_temp_file =
+            NamedTempFile::new().map_err(|e| eyre!("Failed to create temporary file: {}", e))?;
+
+        private_temp_file
+            .write_all(&decoded_private_key)
             .map_err(|e| eyre!("Failed to write to temporary file: {}", e))?;
-        
+
         // Try to verify the key with OpenSSL
         let private_output = Command::new("openssl")
             .arg("ec")
@@ -63,31 +66,39 @@ impl BlueskyOAuthConfig {
             .arg("-noout")
             .output()
             .map_err(|e| eyre!("Failed to execute OpenSSL on private key: {}", e))?;
-        
+
         if !private_output.status.success() {
             let error = String::from_utf8_lossy(&private_output.stderr);
-            return Err(eyre!("OpenSSL verification of private key failed: {}. Key starts with: {}", error, key_preview));
+            return Err(eyre!(
+                "OpenSSL verification of private key failed: {}. Key starts with: {}",
+                error,
+                key_preview
+            ));
         }
-        
+
         // Decode base64-encoded public key
-        let decoded_public_key = match base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &self.public_key) {
+        let decoded_public_key = match base64::Engine::decode(
+            &base64::engine::general_purpose::STANDARD,
+            &self.public_key,
+        ) {
             Ok(key) => key,
             Err(e) => return Err(eyre!("Failed to decode base64-encoded public key: {}", e)),
         };
-        
+
         let pub_key_preview = if decoded_public_key.len() > 30 {
             format!("{:?}...", &decoded_public_key[..30])
         } else {
             format!("{:?}", decoded_public_key)
         };
-        
+
         // Write to temp file and verify with OpenSSL directly
         let mut public_temp_file = NamedTempFile::new()
             .map_err(|e| eyre!("Failed to create temporary file for public key: {}", e))?;
-        
-        public_temp_file.write_all(&decoded_public_key)
+
+        public_temp_file
+            .write_all(&decoded_public_key)
             .map_err(|e| eyre!("Failed to write to temporary file for public key: {}", e))?;
-        
+
         // Try to verify the public key with OpenSSL
         let public_output = Command::new("openssl")
             .arg("ec")
@@ -97,12 +108,16 @@ impl BlueskyOAuthConfig {
             .arg("-noout")
             .output()
             .map_err(|e| eyre!("Failed to execute OpenSSL on public key: {}", e))?;
-        
+
         if !public_output.status.success() {
             let error = String::from_utf8_lossy(&public_output.stderr);
-            return Err(eyre!("OpenSSL verification of public key failed: {}. Key starts with: {}", error, pub_key_preview));
+            return Err(eyre!(
+                "OpenSSL verification of public key failed: {}. Key starts with: {}",
+                error,
+                pub_key_preview
+            ));
         }
-        
+
         Ok(())
     }
 }
@@ -144,23 +159,26 @@ impl AppState {
             bsky_oauth,
         })
     }
-    
+
     /// Returns the OAuth client ID for Bluesky
     /// This should return a consistent value regardless of local development or production
     pub fn client_id(&self) -> String {
         // For OAuth, we need to use a consistent client ID
         // During local dev, we'll use the production domain for the client ID
         // but still use localhost for the actual callbacks
-        
+
         // If we're running on localhost, use prod domain for client ID
         if self.domain.contains("localhost") || self.domain.contains("127.0.0.1") {
             "https://pfp.blue/oauth/bsky/metadata.json".to_string()
         } else {
             // Otherwise use the actual domain
-            format!("{}://{}/oauth/bsky/metadata.json", self.protocol, self.domain)
+            format!(
+                "{}://{}/oauth/bsky/metadata.json",
+                self.protocol, self.domain
+            )
         }
     }
-    
+
     /// Returns the canonical redirect URI for OAuth
     pub fn redirect_uri(&self) -> String {
         format!("{}://{}/oauth/bsky/callback", self.protocol, self.domain)

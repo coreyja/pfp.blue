@@ -2,7 +2,6 @@ use atrium_api::types::string::Did;
 use axum::extract::State;
 use axum::{response::IntoResponse, routing::get, Form};
 use maud::html;
-use time;
 use tower_cookies::{Cookie, Cookies};
 
 use crate::did::{document_to_auth_server_metadata, resolve_did_to_document};
@@ -31,11 +30,11 @@ async fn root() -> impl IntoResponse {
     maud::html! {
         h1 { "pfp.blue" }
         p { "Welcome to pfp.blue!" }
-        
+
         div {
             p { "Your profile page:" }
             a href="/me" { "View Your Profile" }
-            
+
             p { "Or login:" }
             a href="/login" { "Login" }
         }
@@ -49,18 +48,18 @@ async fn login(State(state): State<AppState>) -> impl IntoResponse {
 
         button type="submit" { "Login" }
       }
-      
+
       hr {}
-      
+
       h2 { "Login with Bluesky" }
       p { "Enter your Bluesky handle or DID:" }
       form action="/oauth/bsky/authorize" method="get" {
         input type="text" name="did" placeholder="Enter your handle or DID" {}
         input type="hidden" name="state" value="from_login_page" {}
-        
+
         button type="submit" { "Login with Bluesky" }
       }
-      
+
       hr {}
       p { "Debug Info:" }
       p { "Client ID: " (state.client_id()) }
@@ -114,7 +113,7 @@ async fn login_post(State(state): State<AppState>, form: Form<LoginForm>) -> imp
                         };
                     }
                 }
-            },
+            }
             Err(_) => {
                 return html! {
                     p { "Invalid handle format" }
@@ -134,51 +133,49 @@ async fn login_post(State(state): State<AppState>, form: Form<LoginForm>) -> imp
     };
 
     // Get the auth server metadata
-    let auth_server_metadata = match document_to_auth_server_metadata(&did_doc, state.bsky_client.clone()).await {
-        Ok(metadata) => metadata,
-        Err(err) => {
-            return html! {
-                p { "Failed to get auth server metadata: " (err) }
-            };
-        }
-    };
+    let auth_server_metadata =
+        match document_to_auth_server_metadata(&did_doc, state.bsky_client.clone()).await {
+            Ok(metadata) => metadata,
+            Err(err) => {
+                return html! {
+                    p { "Failed to get auth server metadata: " (err) }
+                };
+            }
+        };
 
     html! {
       p { "DID Document: " (Debug(did_doc)) }
       p { "Auth Server Metadata: " (Debug(auth_server_metadata)) }
-      
+
       // Add a button to start the OAuth flow with this DID
       form action="/oauth/bsky/authorize" method="get" {
         input type="hidden" name="did" value=(did.to_string()) {}
         input type="hidden" name="state" value="from_login_page" {}
-        
+
         button type="submit" { "Start OAuth Login with " (did.to_string()) }
       }
-      
+
       p { "Note: Using client_id: " (state.client_id()) }
       p { "Callback URI: " (state.redirect_uri()) }
     }
 }
 
 /// Logout route - clears authentication cookies and redirects to home
-async fn logout(
-    State(state): State<AppState>,
-    cookies: Cookies
-) -> impl IntoResponse {
+async fn logout(State(state): State<AppState>, cookies: Cookies) -> impl IntoResponse {
     // End the session
     let _ = crate::auth::end_session(&state.db, &cookies).await;
-    
+
     // Also clear the old legacy cookie if it exists
-    if let Some(cookie) = cookies.get(bsky::AUTH_DID_COOKIE) {
+    if let Some(_cookie) = cookies.get(bsky::AUTH_DID_COOKIE) {
         let mut remove_cookie = Cookie::new(bsky::AUTH_DID_COOKIE, "");
         remove_cookie.set_path("/");
         remove_cookie.set_max_age(time::Duration::seconds(-1));
         remove_cookie.set_http_only(true);
         remove_cookie.set_secure(true);
-        
+
         cookies.add(remove_cookie);
     }
-    
+
     // Redirect to home page
     axum::response::Redirect::to("/")
 }

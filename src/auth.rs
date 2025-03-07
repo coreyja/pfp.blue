@@ -1,13 +1,11 @@
 use axum::{
     async_trait,
-    extract::{FromRequestParts, State},
+    extract::FromRequestParts,
     http::{request::Parts, StatusCode},
     response::{IntoResponse, Redirect, Response},
 };
 use tower_cookies::{Cookie, Cookies};
-use tracing::{error, info};
 use uuid::Uuid;
-use time;
 
 use crate::{
     state::AppState,
@@ -27,7 +25,10 @@ pub struct AuthUser(pub User);
 impl FromRequestParts<AppState> for AuthUser {
     type Rejection = Response;
 
-    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, Self::Rejection> {
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
         let cookies = match Cookies::from_request_parts(parts, state).await {
             Ok(cookies) => cookies,
             Err(_) => {
@@ -68,20 +69,24 @@ impl FromRequestParts<AppState> for AuthUser {
 
 /// Get the session ID from the cookie
 pub fn get_session_id_from_cookie(cookies: &Cookies) -> Option<Uuid> {
-    cookies.get(SESSION_COOKIE_NAME)
+    cookies
+        .get(SESSION_COOKIE_NAME)
         .and_then(|cookie| cookie.value().parse::<Uuid>().ok())
 }
 
 /// Validate a session
-pub async fn validate_session(pool: &sqlx::PgPool, session_id: Uuid) -> cja::Result<Option<Session>> {
+pub async fn validate_session(
+    pool: &sqlx::PgPool,
+    session_id: Uuid,
+) -> cja::Result<Option<Session>> {
     let session = Session::get_by_id(pool, session_id).await?;
-    
+
     if let Some(ref session) = session {
         if session.is_expired() || !session.is_active {
             return Ok(None);
         }
     }
-    
+
     Ok(session)
 }
 
@@ -95,16 +100,16 @@ pub async fn create_session_and_set_cookie(
 ) -> cja::Result<Session> {
     // Create a new session
     let session = Session::create(pool, user_id, user_agent, ip_address, 30).await?;
-    
+
     // Set a secure cookie with the session ID
     let mut cookie = Cookie::new(SESSION_COOKIE_NAME, session.session_id.to_string());
     cookie.set_path("/");
     cookie.set_http_only(true);
     cookie.set_secure(true);
     cookie.set_max_age(time::Duration::days(30));
-    
+
     cookies.add(cookie);
-    
+
     Ok(session)
 }
 
@@ -115,15 +120,15 @@ pub async fn end_session(pool: &sqlx::PgPool, cookies: &Cookies) -> cja::Result<
             session.invalidate(pool).await?;
         }
     }
-    
+
     // Remove the cookie by setting it to expire immediately
     let mut cookie = Cookie::new(SESSION_COOKIE_NAME, "");
     cookie.set_path("/");
     cookie.set_max_age(time::Duration::seconds(-1));
     cookie.set_http_only(true);
     cookie.set_secure(true);
-    
+
     cookies.add(cookie);
-    
+
     Ok(())
 }

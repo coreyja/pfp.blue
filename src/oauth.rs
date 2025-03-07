@@ -98,12 +98,12 @@ fn generate_key_id(x: &str, y: &str) -> cja::Result<String> {
 }
 
 /// Calculate the JWK thumbprint for the given public key
-/// 
+///
 /// This follows RFC 7638 for JWK Thumbprint calculation
 pub fn calculate_jwk_thumbprint(public_key_base64: &str) -> cja::Result<String> {
     // First generate the JWK for the public key
     let jwk = generate_jwk(public_key_base64)?;
-    
+
     // Create the canonical JWK representation with only the required fields in lexicographic order
     let canonical_jwk = serde_json::json!({
         "crv": jwk.crv,
@@ -111,15 +111,15 @@ pub fn calculate_jwk_thumbprint(public_key_base64: &str) -> cja::Result<String> 
         "x": jwk.x,
         "y": jwk.y
     });
-    
+
     // Convert to a compact JSON string without whitespace
     let canonical_json = serde_json::to_string(&canonical_jwk)
         .map_err(|e| eyre!("Failed to serialize canonical JWK: {}", e))?;
-    
+
     // Calculate SHA-256 hash
     use ring::digest::{digest, SHA256};
     let digest = digest(&SHA256, canonical_json.as_bytes());
-    
+
     // Base64-URL encode the result
     Ok(Base64UrlUnpadded::encode_string(digest.as_ref()))
 }
@@ -449,27 +449,27 @@ impl OAuthTokenSet {
             user_id: None,
         }
     }
-    
+
     /// Set the user ID for this token set
     pub fn with_user_id(mut self, user_id: uuid::Uuid) -> Self {
         self.user_id = Some(user_id);
         self
     }
-    
+
     /// Create a new OAuthTokenSet from a TokenResponse with a calculated JWK thumbprint
     pub fn from_token_response_with_jwk(
-        response: &TokenResponse, 
-        did: String, 
-        public_key: &str
+        response: &TokenResponse,
+        did: String,
+        public_key: &str,
     ) -> cja::Result<Self> {
         let mut token_set = Self::from_token_response(response.clone(), did);
-        
+
         // If there's no JWK thumbprint in the response, calculate it
         if token_set.dpop_jkt.is_none() {
             let calculated_jkt = calculate_jwk_thumbprint(public_key)?;
             token_set.dpop_jkt = Some(calculated_jkt);
         }
-        
+
         Ok(token_set)
     }
 
@@ -661,8 +661,12 @@ pub async fn exchange_code_for_token(
 
     while retries > 0 {
         // Create a fresh DPoP proof for each attempt, using the nonce from the previous response if available
-        let dpop_proof =
-            create_dpop_proof(oauth_config, "POST", token_endpoint, current_dpop_nonce.as_deref())?;
+        let dpop_proof = create_dpop_proof(
+            oauth_config,
+            "POST",
+            token_endpoint,
+            current_dpop_nonce.as_deref(),
+        )?;
 
         tracing::debug!("DPoP proof length: {}", dpop_proof.len());
 
@@ -715,14 +719,15 @@ pub async fn exchange_code_for_token(
         };
 
         // First, check for a DPoP nonce in the response headers
-        let received_nonce = response.headers()
+        let received_nonce = response
+            .headers()
             .get("DPoP-Nonce")
             .and_then(|h| h.to_str().ok())
             .map(|s| {
                 tracing::debug!("Received DPoP-Nonce header: {}", s);
                 s.to_string()
             });
-            
+
         if let Some(nonce) = received_nonce {
             current_dpop_nonce = Some(nonce);
         }
@@ -813,8 +818,12 @@ pub async fn refresh_token(
 
     while retries > 0 {
         // Create a fresh DPoP proof for each attempt, using the nonce from the previous response if available
-        let dpop_proof =
-            create_dpop_proof(oauth_config, "POST", token_endpoint, current_dpop_nonce.as_deref())?;
+        let dpop_proof = create_dpop_proof(
+            oauth_config,
+            "POST",
+            token_endpoint,
+            current_dpop_nonce.as_deref(),
+        )?;
 
         tracing::debug!("DPoP proof length (refresh): {}", dpop_proof.len());
 
@@ -861,14 +870,15 @@ pub async fn refresh_token(
         };
 
         // First, check for a DPoP nonce in the response headers
-        let received_nonce = response.headers()
+        let received_nonce = response
+            .headers()
             .get("DPoP-Nonce")
             .and_then(|h| h.to_str().ok())
             .map(|s| {
                 tracing::debug!("Received DPoP-Nonce header in refresh: {}", s);
                 s.to_string()
             });
-            
+
         if let Some(nonce) = received_nonce {
             current_dpop_nonce = Some(nonce);
         }
@@ -1084,7 +1094,7 @@ pub mod db {
                 .and_then(|d| d.get("code_challenge"))
                 .and_then(|v| v.as_str())
                 .map(String::from);
-                
+
             let dpop_nonce = data
                 .as_ref()
                 .and_then(|d| d.get("dpop_nonce"))
@@ -1112,7 +1122,7 @@ pub mod db {
         } else {
             // Check if a user already exists for this DID
             let existing_user = crate::user::User::get_by_did(pool, &token_set.did).await?;
-            
+
             match existing_user {
                 Some(user) => user.user_id,
                 None => {
@@ -1122,7 +1132,7 @@ pub mod db {
                 }
             }
         };
-        
+
         // First, deactivate any existing active tokens for this DID
         sqlx::query(
             r#"
@@ -1183,9 +1193,12 @@ pub mod db {
             user_id: row.get("user_id"),
         }))
     }
-    
+
     /// Retrieves all active tokens for a user
-    pub async fn get_tokens_for_user(pool: &PgPool, user_id: uuid::Uuid) -> cja::Result<Vec<OAuthTokenSet>> {
+    pub async fn get_tokens_for_user(
+        pool: &PgPool,
+        user_id: uuid::Uuid,
+    ) -> cja::Result<Vec<OAuthTokenSet>> {
         let rows = sqlx::query(
             r#"
             SELECT did, access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id
@@ -1197,9 +1210,10 @@ pub mod db {
         .bind(user_id)
         .fetch_all(pool)
         .await?;
-        
-        let tokens = rows.into_iter().map(|row| {
-            OAuthTokenSet {
+
+        let tokens = rows
+            .into_iter()
+            .map(|row| OAuthTokenSet {
                 did: row.get("did"),
                 access_token: row.get("access_token"),
                 token_type: row.get("token_type"),
@@ -1208,9 +1222,9 @@ pub mod db {
                 scope: row.get("scope"),
                 dpop_jkt: row.get("dpop_jkt"),
                 user_id: row.get("user_id"),
-            }
-        }).collect();
-        
+            })
+            .collect();
+
         Ok(tokens)
     }
 
@@ -1229,7 +1243,7 @@ pub mod db {
 
         Ok(())
     }
-    
+
     /// Updates the DPoP JWK thumbprint for a token
     pub async fn update_token_jwk(pool: &PgPool, did: &str, dpop_jkt: &str) -> cja::Result<()> {
         sqlx::query(
@@ -1246,7 +1260,7 @@ pub mod db {
 
         Ok(())
     }
-    
+
     /// Gets the most recent DPoP nonce for a DID
     pub async fn get_latest_nonce(pool: &PgPool, did: &str) -> cja::Result<Option<String>> {
         // Find the most recent session for this DID that has a nonce
@@ -1261,16 +1275,17 @@ pub mod db {
         .bind(did)
         .fetch_optional(pool)
         .await?;
-        
+
         if let Some(row) = row {
             let data: serde_json::Value = row.get("data");
-            let nonce = data.get("dpop_nonce")
+            let nonce = data
+                .get("dpop_nonce")
                 .and_then(|v| v.as_str())
                 .map(String::from);
-                
+
             return Ok(nonce);
         }
-        
+
         Ok(None)
     }
 
@@ -1284,7 +1299,7 @@ pub mod db {
     ) -> cja::Result<String> {
         // First try to get any stored nonce
         let dpop_nonce = get_latest_nonce(pool, did).await?;
-        
+
         // Get the active token to check for JWK thumbprint
         if let Ok(Some(token)) = get_token(pool, did).await {
             // If we don't have a JWK thumbprint, calculate and store it
@@ -1293,18 +1308,18 @@ pub mod db {
                 update_token_jwk(pool, did, &calculated_jkt).await?;
             }
         }
-        
+
         // Create the DPoP proof
         let dpop_proof = create_dpop_proof(
-            oauth_config, 
-            http_method, 
-            endpoint_url, 
-            dpop_nonce.as_deref()
+            oauth_config,
+            http_method,
+            endpoint_url,
+            dpop_nonce.as_deref(),
         )?;
-        
+
         Ok(dpop_proof)
     }
-    
+
     /// Takes a response and extracts/updates any DPoP nonce for future use
     pub async fn process_dpop_response(
         pool: &PgPool,
@@ -1319,7 +1334,7 @@ pub mod db {
                 tracing::debug!("Received DPoP-Nonce header in API request: {}", s);
                 s.to_string()
             });
-            
+
         if let Some(nonce) = dpop_nonce {
             // Look for existing sessions for this DID
             let row = sqlx::query(
@@ -1333,7 +1348,7 @@ pub mod db {
             .bind(did)
             .fetch_optional(pool)
             .await?;
-            
+
             if let Some(row) = row {
                 let session_id: Uuid = row.get("session_id");
                 update_session_nonce(pool, session_id, &nonce).await?;
@@ -1342,21 +1357,25 @@ pub mod db {
                 let session = OAuthSession::new(
                     did.to_string(),
                     None,
-                    "dummy_endpoint".to_string() // Not used for this purpose
+                    "dummy_endpoint".to_string(), // Not used for this purpose
                 );
-                
+
                 let session_id = store_session(pool, &session).await?;
                 update_session_nonce(pool, session_id, &nonce).await?;
             }
-            
+
             return Ok(Some(nonce));
         }
-        
+
         Ok(None)
     }
 
     /// Updates a session's DPoP nonce
-    pub async fn update_session_nonce(pool: &PgPool, session_id: Uuid, nonce: &str) -> cja::Result<()> {
+    pub async fn update_session_nonce(
+        pool: &PgPool,
+        session_id: Uuid,
+        nonce: &str,
+    ) -> cja::Result<()> {
         // First get the current session data
         let row = sqlx::query(
             r#"
@@ -1366,15 +1385,18 @@ pub mod db {
         .bind(session_id)
         .fetch_optional(pool)
         .await?;
-        
+
         if let Some(row) = row {
             let mut data: serde_json::Value = row.get("data");
-            
+
             // Update the nonce in the data
             if let Some(obj) = data.as_object_mut() {
-                obj.insert("dpop_nonce".to_string(), serde_json::Value::String(nonce.to_string()));
+                obj.insert(
+                    "dpop_nonce".to_string(),
+                    serde_json::Value::String(nonce.to_string()),
+                );
             }
-            
+
             // Update the session with the new data
             sqlx::query(
                 r#"
@@ -1388,7 +1410,7 @@ pub mod db {
             .execute(pool)
             .await?;
         }
-        
+
         Ok(())
     }
 

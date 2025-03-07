@@ -5,7 +5,7 @@ use crate::{oauth, state::AppState};
 
 fn cron_registry() -> CronRegistry<AppState> {
     let mut registry = CronRegistry::new();
-    
+
     // Add a job to clean up expired OAuth sessions every hour
     registry.register(
         "cleanup_expired_oauth_sessions",
@@ -19,7 +19,7 @@ fn cron_registry() -> CronRegistry<AppState> {
             })
         },
     );
-    
+
     registry
 }
 
@@ -30,7 +30,7 @@ pub(crate) async fn run_cron(app_state: AppState) -> cja::Result<()> {
 /// Clean up expired OAuth sessions
 async fn cleanup_expired_sessions(state: AppState) -> cja::Result<()> {
     info!("Cleaning up expired OAuth sessions");
-    
+
     match oauth::db::cleanup_expired_sessions(&state.db).await {
         Ok(count) => {
             info!("Removed {} expired OAuth sessions", count);

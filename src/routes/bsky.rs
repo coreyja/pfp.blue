@@ -5,14 +5,13 @@ use axum::{
     Json,
 };
 use color_eyre::eyre::eyre;
+use maud::html;
 use serde::Deserialize;
 use sqlx::Row;
 use std::time::SystemTime;
-use time;
 use tower_cookies::{Cookie, Cookies};
 use tracing::{error, info};
 use uuid::Uuid;
-use maud::html;
 
 use crate::{
     oauth::{self, OAuthSession, OAuthTokenSet},
@@ -79,15 +78,16 @@ pub async fn authorize(
 ) -> impl IntoResponse {
     // Use the helpers for consistent values
     let client_id = state.client_id();
-    
+
     // Use the provided redirect_uri if any, or fall back to our default callback
-    let redirect_uri = params.redirect_uri
-        .unwrap_or_else(|| state.redirect_uri());
-        
+    let redirect_uri = params.redirect_uri.unwrap_or_else(|| state.redirect_uri());
+
     // Log the input parameters for debugging
-    info!("Authorize called with did: {}, redirect_uri: {:?}, state: {:?}", 
-        params.did, redirect_uri, params.state);
-    
+    info!(
+        "Authorize called with did: {}, redirect_uri: {:?}, state: {:?}",
+        params.did, redirect_uri, params.state
+    );
+
     // Determine if input is a handle or DID
     let did_str = params.did.clone();
     let did = if did_str.starts_with("did:") {
@@ -96,11 +96,7 @@ pub async fn authorize(
             Ok(did) => did,
             Err(_) => {
                 error!("Invalid DID: {}", did_str);
-                return (
-                    StatusCode::BAD_REQUEST,
-                    "Invalid DID".to_string(),
-                )
-                    .into_response();
+                return (StatusCode::BAD_REQUEST, "Invalid DID".to_string()).into_response();
             }
         }
     } else {
@@ -118,18 +114,14 @@ pub async fn authorize(
                             .into_response();
                     }
                 }
-            },
+            }
             Err(_) => {
                 error!("Invalid handle: {}", did_str);
-                return (
-                    StatusCode::BAD_REQUEST,
-                    "Invalid handle".to_string(),
-                )
-                    .into_response();
+                return (StatusCode::BAD_REQUEST, "Invalid handle".to_string()).into_response();
             }
         }
     };
-    
+
     let did_doc = match crate::did::resolve_did_to_document(&did, state.bsky_client.clone()).await {
         Ok(doc) => doc,
         Err(err) => {
@@ -141,26 +133,29 @@ pub async fn authorize(
                 .into_response();
         }
     };
-    
-    let auth_metadata = match crate::did::document_to_auth_server_metadata(&did_doc, state.bsky_client.clone()).await {
-        Ok(metadata) => metadata,
-        Err(err) => {
-            error!("Failed to get auth server metadata: {:?}", err);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to get auth server metadata: {:?}", err),
-            )
-                .into_response();
-        }
-    };
-    
+
+    let auth_metadata =
+        match crate::did::document_to_auth_server_metadata(&did_doc, state.bsky_client.clone())
+            .await
+        {
+            Ok(metadata) => metadata,
+            Err(err) => {
+                error!("Failed to get auth server metadata: {:?}", err);
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Failed to get auth server metadata: {:?}", err),
+                )
+                    .into_response();
+            }
+        };
+
     // Create and store the OAuth session
     let session = OAuthSession::new(
         did_str,
         params.state.clone(),
         auth_metadata.token_endpoint.clone(),
     );
-    
+
     // Store the session in the database
     let session_id = match oauth::db::store_session(&state.db, &session).await {
         Ok(id) => id,
@@ -173,20 +168,20 @@ pub async fn authorize(
                 .into_response();
         }
     };
-    
+
     // Set a session cookie
     let mut cookie = Cookie::new("bsky_session_id", session_id.to_string());
     cookie.set_path("/");
     cookie.set_secure(true);
     cookie.set_http_only(true);
     cookies.add(cookie);
-    
+
     // Build the authorization URL with state containing the session ID
     let state_param = session_id.to_string();
-    
+
     // Get the code challenge from the session
     let code_challenge = session.code_challenge.as_deref().unwrap_or_default();
-    
+
     // Build the URL with PKCE parameters
     let auth_url = format!(
         "{}?client_id={}&response_type=code&scope=atproto%20transition:generic&redirect_uri={}&state={}&code_challenge={}&code_challenge_method=S256",
@@ -196,9 +191,12 @@ pub async fn authorize(
         state_param,
         code_challenge
     );
-    
+
     info!("Redirecting to auth URL: {}", auth_url);
-    info!("Session ID: {}, Code Challenge: {}", session_id, code_challenge);
+    info!(
+        "Session ID: {}, Code Challenge: {}",
+        session_id, code_challenge
+    );
     Redirect::to(&auth_url).into_response()
 }
 
@@ -218,12 +216,12 @@ async fn fetch_user_profile(
     token: &OAuthTokenSet,
 ) -> cja::Result<serde_json::Value> {
     let client = reqwest::Client::new();
-    
+
     // Create a DPoP proof for this API call
     let dpop_proof = oauth::create_dpop_proof(
         &state.bsky_oauth,
         "GET",
-        &format!("https://bsky.social/xrpc/com.atproto.repo.getRecord"), // Use standard PDS URL
+        "https://bsky.social/xrpc/com.atproto.repo.getRecord", // Use standard PDS URL
         None,
     )?;
 
@@ -239,7 +237,7 @@ async fn fetch_user_profile(
         .header("DPoP", dpop_proof)
         .send()
         .await?;
-        
+
     // Check if we have a DPoP nonce in the response and store it
     if let Some(nonce_header) = response.headers().get("DPoP-Nonce") {
         if let Ok(nonce) = nonce_header.to_str() {
@@ -247,23 +245,26 @@ async fn fetch_user_profile(
             // We don't need to store it here since we're not retrying
         }
     }
-    
+
     if !response.status().is_success() {
         let status = response.status();
         let error_text = response
             .text()
             .await
             .unwrap_or_else(|_| "Failed to read error response".to_string());
-            
-        return Err(eyre!("Failed to fetch user profile: {} - {}", status, error_text));
+
+        return Err(eyre!(
+            "Failed to fetch user profile: {} - {}",
+            status,
+            error_text
+        ));
     }
-    
+
     // Parse the response JSON
     let profile_data = response.json::<serde_json::Value>().await?;
-    
+
     Ok(profile_data)
 }
-
 
 /// Fetch a blob by its CID
 async fn fetch_blob_by_cid(
@@ -273,45 +274,60 @@ async fn fetch_blob_by_cid(
     cid: &str,
 ) -> cja::Result<Vec<u8>> {
     info!("Fetching blob with CID: {}", cid);
-    
+
     let client = reqwest::Client::new();
-    
+
     // Try multiple URL formats for Bluesky images
-    let urls = vec![
+    let urls = [
         // Format 1: Plain avatar format - most common for avatars
         format!("https://cdn.bsky.app/img/avatar/plain/{}@jpeg", cid),
-        
         // Format 2: General full format
         format!("https://cdn.bsky.app/img/feed/plain/{}@jpeg", cid),
-        
         // Format 3: Legacy format with DID
-        format!("https://av-cdn.bsky.app/img/avatar/plain/{}/{}@jpeg", did, cid),
-        
+        format!(
+            "https://av-cdn.bsky.app/img/avatar/plain/{}/{}@jpeg",
+            did, cid
+        ),
         // Format 4: Plain bsky.network API
-        format!("https://bsky.network/xrpc/com.atproto.sync.getBlob?did={}&cid={}", did, cid),
-        
-        // Format 5: Direct bsky.social API 
-        format!("https://bsky.social/xrpc/com.atproto.sync.getBlob?did={}&cid={}", did, cid),
-        
+        format!(
+            "https://bsky.network/xrpc/com.atproto.sync.getBlob?did={}&cid={}",
+            did, cid
+        ),
+        // Format 5: Direct bsky.social API
+        format!(
+            "https://bsky.social/xrpc/com.atproto.sync.getBlob?did={}&cid={}",
+            did, cid
+        ),
         // Format 6: Legacy avatar format with did:plc
-        format!("https://avatar.bsky.social/img/avatar/plain/{}/{}@jpeg", did, cid)
+        format!(
+            "https://avatar.bsky.social/img/avatar/plain/{}/{}@jpeg",
+            did, cid
+        ),
     ];
-    
+
     // We'll store any errors we encounter to return at the end if all URLs fail
     let mut last_error: Option<(reqwest::StatusCode, String)> = None;
-    
+
     // Try each URL in turn
     for (i, url) in urls.iter().enumerate() {
-        info!("Trying URL format {}: {}", i+1, url);
-        
+        info!("Trying URL format {}: {}", i + 1, url);
+
         match client.get(url).send().await {
             Ok(response) => {
-                info!("Response status from format {}: {}", i+1, response.status());
-                
+                info!(
+                    "Response status from format {}: {}",
+                    i + 1,
+                    response.status()
+                );
+
                 if response.status().is_success() {
                     // Success! Get the image data
                     let blob_data = response.bytes().await?.to_vec();
-                    info!("Successfully retrieved blob from format {}: {} bytes", i+1, blob_data.len());
+                    info!(
+                        "Successfully retrieved blob from format {}: {} bytes",
+                        i + 1,
+                        blob_data.len()
+                    );
                     return Ok(blob_data);
                 } else {
                     // Store the error and try the next URL
@@ -320,26 +336,29 @@ async fn fetch_blob_by_cid(
                         .text()
                         .await
                         .unwrap_or_else(|_| "Failed to read error response".to_string());
-                    
-                    info!("Format {} failed: {} - {}", i+1, status, error_text);
+
+                    info!("Format {} failed: {} - {}", i + 1, status, error_text);
                     last_error = Some((status, error_text));
                 }
-            },
+            }
             Err(e) => {
-                info!("Request to format {} failed: {:?}", i+1, e);
+                info!("Request to format {} failed: {:?}", i + 1, e);
                 // Continue to the next URL
             }
         }
     }
-    
+
     // If we get here, all URLs failed
     if let Some((status, error_text)) = last_error {
-        return Err(eyre!("All image URL formats failed. Last error: {} - {}", status, error_text));
+        Err(eyre!(
+            "All image URL formats failed. Last error: {} - {}",
+            status,
+            error_text
+        ))
     } else {
-        return Err(eyre!("All image URL formats failed with connection errors"));
+        Err(eyre!("All image URL formats failed with connection errors"))
     }
 }
-
 
 pub async fn callback(
     State(state): State<AppState>,
@@ -349,23 +368,27 @@ pub async fn callback(
     // Use the consistent helpers
     let client_id = state.client_id();
     let redirect_uri = state.redirect_uri();
-    
+
     // Log all parameters for debugging
-    info!("Callback received: code: {:?}, state: {:?}, error: {:?}, error_description: {:?}",
-        params.code, params.state, params.error, params.error_description);
-        
+    info!(
+        "Callback received: code: {:?}, state: {:?}, error: {:?}, error_description: {:?}",
+        params.code, params.state, params.error, params.error_description
+    );
+
     // Also log cookie info
     if let Some(session_cookie) = cookies.get("bsky_session_id") {
         info!("Found session cookie: {}", session_cookie.value());
     } else {
         info!("No session cookie found");
     }
-    
+
     // If we have an error, display it
     if let Some(error) = params.error {
-        let error_description = params.error_description.unwrap_or_else(|| "No error description provided".to_string());
+        let error_description = params
+            .error_description
+            .unwrap_or_else(|| "No error description provided".to_string());
         error!("OAuth error: {} - {}", error, error_description);
-        
+
         return maud::html! {
             h1 { "Authentication Error" }
             p { "There was an error during authentication:" }
@@ -374,18 +397,19 @@ pub async fn callback(
             p { "Debug Info:" }
             p { "Client ID: " (client_id) }
             p { "Redirect URI: " (redirect_uri) }
-            p { 
+            p {
                 a href="/" { "Return to Home" }
             }
-        }.into_response();
+        }
+        .into_response();
     }
-    
+
     // Make sure we have a code
     let code = match params.code {
         Some(code) => code,
         None => {
             error!("No code parameter in callback");
-            
+
             // Provide a more user-friendly response with debugging info
             return maud::html! {
                 h1 { "Authentication Error" }
@@ -395,23 +419,27 @@ pub async fn callback(
                 p { "State parameter: " (params.state.as_deref().unwrap_or("None")) }
                 p { "Client ID: " (client_id) }
                 p { "Redirect URI: " (redirect_uri) }
-                p { 
+                p {
                     a href="/" { "Return to Home" }
                 }
                 p {
                     a href="/login" { "Try Again" }
                 }
-            }.into_response();
+            }
+            .into_response();
         }
     };
-    
+
     info!("Received code: {}, state: {:?}", code, params.state);
-    
+
     // Get the session ID from the state parameter or the cookie
-    let session_id = match params.state.as_ref()
+    let session_id = match params
+        .state
+        .as_ref()
         .and_then(|s| Uuid::parse_str(s).ok())
         .or_else(|| {
-            cookies.get("bsky_session_id")
+            cookies
+                .get("bsky_session_id")
                 .and_then(|c| Uuid::parse_str(c.value()).ok())
         }) {
         Some(id) => id,
@@ -420,10 +448,11 @@ pub async fn callback(
             return (
                 StatusCode::BAD_REQUEST,
                 "No valid session found. Please try authenticating again.".to_string(),
-            ).into_response();
+            )
+                .into_response();
         }
     };
-    
+
     // Retrieve session data from the database
     let session = match oauth::db::get_session(&state.db, session_id).await {
         Ok(Some(session)) => session,
@@ -432,34 +461,37 @@ pub async fn callback(
             return (
                 StatusCode::BAD_REQUEST,
                 "Session not found. Please try authenticating again.".to_string(),
-            ).into_response();
+            )
+                .into_response();
         }
         Err(err) => {
             error!("Failed to retrieve session: {:?}", err);
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Failed to retrieve session data".to_string(),
-            ).into_response();
+            )
+                .into_response();
         }
     };
-    
+
     // Check if the session is expired
     if session.is_expired() {
         error!("Session expired: {}", session_id);
         return (
             StatusCode::BAD_REQUEST,
             "Session expired. Please try authenticating again.".to_string(),
-        ).into_response();
+        )
+            .into_response();
     }
-    
+
     // Get the code verifier from the session for PKCE
     let code_verifier = session.code_verifier.as_deref();
-    
+
     // Exchange the code for an access token
     let mut attempts = 0;
     let mut last_error = None;
     let mut token_response = None;
-    
+
     // Try up to 2 times - once with the stored nonce and once with a new nonce if needed
     while attempts < 2 && token_response.is_none() {
         match oauth::exchange_code_for_token(
@@ -469,32 +501,39 @@ pub async fn callback(
             &code,
             &redirect_uri,
             code_verifier,
-            session.dpop_nonce.as_deref(),  // Use the stored nonce if available
-        ).await {
+            session.dpop_nonce.as_deref(), // Use the stored nonce if available
+        )
+        .await
+        {
             Ok(response) => {
                 token_response = Some(response);
-            },
+            }
             Err(err) => {
                 last_error = Some(err.to_string());
-                
+
                 // Check if the error contains a DPoP nonce error
-                if last_error.as_ref().unwrap().contains("use_dpop_nonce") || 
-                   last_error.as_ref().unwrap().contains("nonce mismatch") {
-                    
+                if last_error.as_ref().unwrap().contains("use_dpop_nonce")
+                    || last_error.as_ref().unwrap().contains("nonce mismatch")
+                {
                     // Try to extract the nonce from the error message
-                    if let Some(nonce_start) = last_error.as_ref().unwrap().find("\"dpop_nonce\":\"") {
+                    if let Some(nonce_start) =
+                        last_error.as_ref().unwrap().find("\"dpop_nonce\":\"")
+                    {
                         let nonce_substring = &last_error.as_ref().unwrap()[nonce_start + 14..];
                         if let Some(nonce_end) = nonce_substring.find('\"') {
                             let new_nonce = &nonce_substring[..nonce_end];
-                            
+
                             // Save the new nonce in the database for this session
-                            if let Err(e) = oauth::db::update_session_nonce(&state.db, session_id, new_nonce).await {
+                            if let Err(e) =
+                                oauth::db::update_session_nonce(&state.db, session_id, new_nonce)
+                                    .await
+                            {
                                 error!("Failed to update session nonce: {:?}", e);
                             } else {
                                 // Update the session object with the new nonce
                                 let mut updated_session = session.clone();
                                 updated_session.dpop_nonce = Some(new_nonce.to_string());
-                                
+
                                 // Try again with the new session containing the updated nonce
                                 attempts += 1;
                                 continue;
@@ -502,51 +541,62 @@ pub async fn callback(
                         }
                     }
                 }
-                
+
                 // If we couldn't extract a nonce or it's not a nonce error, break
                 break;
             }
         }
-        
+
         attempts += 1;
     }
-    
+
     let token_response = match token_response {
         Some(token) => token,
         None => {
-            let error_msg = last_error.as_ref().unwrap_or(&"Unknown error".to_string()).clone();
+            let error_msg = last_error
+                .as_ref()
+                .unwrap_or(&"Unknown error".to_string())
+                .clone();
             error!("Token exchange failed: {:?}", error_msg);
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to exchange authorization code for token: {:?}", error_msg),
-            ).into_response();
+                format!(
+                    "Failed to exchange authorization code for token: {:?}",
+                    error_msg
+                ),
+            )
+                .into_response();
         }
     };
-    
+
     // Check if there's an existing user session
-    let current_user_id = if let Some(session_id) = crate::auth::get_session_id_from_cookie(&cookies) {
-        match crate::auth::validate_session(&state.db, session_id).await {
-            Ok(Some(user_session)) => {
-                // User is already logged in, get their ID
-                match user_session.get_user(&state.db).await {
-                    Ok(Some(user)) => {
-                        info!("Found existing user session, linking new account to user_id: {}", user.user_id);
-                        Some(user.user_id)
-                    },
-                    _ => None
+    let current_user_id =
+        if let Some(session_id) = crate::auth::get_session_id_from_cookie(&cookies) {
+            match crate::auth::validate_session(&state.db, session_id).await {
+                Ok(Some(user_session)) => {
+                    // User is already logged in, get their ID
+                    match user_session.get_user(&state.db).await {
+                        Ok(Some(user)) => {
+                            info!(
+                                "Found existing user session, linking new account to user_id: {}",
+                                user.user_id
+                            );
+                            Some(user.user_id)
+                        }
+                        _ => None,
+                    }
                 }
-            },
-            _ => None
-        }
-    } else {
-        None
-    };
-    
+                _ => None,
+            }
+        } else {
+            None
+        };
+
     // Create a token set with JWK thumbprint and user_id if we have one
     let mut token_set = match OAuthTokenSet::from_token_response_with_jwk(
-        &token_response, 
+        &token_response,
         session.did.clone(),
-        &state.bsky_oauth.public_key
+        &state.bsky_oauth.public_key,
     ) {
         Ok(token) => token,
         Err(err) => {
@@ -555,103 +605,26 @@ pub async fn callback(
             OAuthTokenSet::from_token_response(token_response, session.did.clone())
         }
     };
-    
+
     // If we found a user session, associate this token with that user
     if let Some(user_id) = current_user_id {
         token_set.user_id = Some(user_id);
     }
-    
+
     // Store the token in the database
     if let Err(err) = oauth::db::store_token(&state.db, &token_set).await {
         error!("Failed to store token: {:?}", err);
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
             "Failed to store access token".to_string(),
-        ).into_response();
+        )
+            .into_response();
     }
-    
+
     info!("Authentication successful for DID: {}", session.did);
     
-    // Try to fetch the user's profile to get their profile picture
-    let mut profile_data = None;
-    let mut avatar_blob = None;
-    let mut avatar_blob_cid = None;
-    
-    match fetch_user_profile(&state, &session.did, &token_set).await {
-        Ok(data) => {
-            profile_data = Some(data.clone());
-            
-            // Extract the avatar blob cid from the profile
-            info!("Got profile data: {}", serde_json::to_string_pretty(&data).unwrap_or_default());
-            
-            if let Some(value) = data.get("value") {
-                info!("Found profile value");
-                if let Some(avatar) = value.get("avatar") {
-                    info!("Found avatar field: {:?}", avatar);
-                    
-                    // Extract the CID from the nested structure
-                    // The path is avatar -> ref -> $link
-                    if let Some(ref_obj) = avatar.get("ref") {
-                        info!("Found ref object: {:?}", ref_obj);
-                        
-                        if let Some(link) = ref_obj.get("$link") {
-                            if let Some(cid) = link.as_str() {
-                                info!("Extracted avatar blob CID from $link: {}", cid);
-                                avatar_blob_cid = Some(cid.to_string());
-                                
-                                // Try to fetch the avatar blob directly by CID
-                                match fetch_blob_by_cid(&state, &session.did, &token_set, cid).await {
-                                    Ok(blob_data) => {
-                                        info!("Successfully fetched avatar blob ({} bytes)", blob_data.len());
-                                        avatar_blob = Some(blob_data);
-                                    },
-                                    Err(e) => {
-                                        error!("Failed to fetch avatar blob: {:?}", e);
-                                    }
-                                }
-                            } else {
-                                error!("$link field is not a string: {:?}", link);
-                            }
-                        } else {
-                            error!("No $link field found in ref: {:?}", ref_obj);
-                        }
-                    } else {
-                        error!("No ref field found in avatar: {:?}", avatar);
-                    }
-                } else {
-                    info!("No avatar field found in profile");
-                }
-            } else {
-                error!("Missing 'value' field in profile data");
-            }
-        },
-        Err(e) => {
-            error!("Failed to fetch user profile: {:?}", e);
-            // Don't fail the auth flow, just continue without profile data
-        }
-    }
-    
-    // Encode the image as base64 if we have one
-    let mut mime_type = "image/jpeg"; // Default if we can't detect
-    
-    // Try to extract the mime type from the profile data
-    if let Some(data) = &profile_data {
-        if let Some(value) = data.get("value") {
-            if let Some(avatar) = value.get("avatar") {
-                if let Some(mime) = avatar.get("mimeType") {
-                    if let Some(mime_str) = mime.as_str() {
-                        mime_type = mime_str;
-                        info!("Detected mime type from profile: {}", mime_type);
-                    }
-                }
-            }
-        }
-    }
-    
-    let avatar_base64 = avatar_blob.as_ref().map(|blob| {
-        format!("data:{};base64,{}", mime_type, base64::Engine::encode(&base64::engine::general_purpose::STANDARD, blob))
-    });
-    
+    // Profile image fetching and display is handled in display_profile_multi function
+
     // Check if we already have a user from the token set
     let user_id = if let Some(user_id) = token_set.user_id {
         // We already have a linked user from the existing session
@@ -666,55 +639,62 @@ pub async fn callback(
                     Ok(user) => user.user_id,
                     Err(err) => {
                         error!("Failed to create user: {:?}", err);
-                        return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to create user").into_response();
+                        return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to create user")
+                            .into_response();
                     }
                 }
-            },
+            }
             Err(err) => {
                 error!("Failed to find user: {:?}", err);
                 return (StatusCode::INTERNAL_SERVER_ERROR, "Database error").into_response();
             }
         }
     };
-    
+
     // Check if we already have a session
     let have_session = if let Some(session_id) = crate::auth::get_session_id_from_cookie(&cookies) {
-        match crate::auth::validate_session(&state.db, session_id).await {
-            Ok(Some(_)) => true,
-            _ => false
-        }
+        matches!(
+            crate::auth::validate_session(&state.db, session_id).await,
+            Ok(Some(_))
+        )
     } else {
         false
     };
-    
+
     // Only create a new session if we don't already have one
     if !have_session {
         // Create a session for this user
         let user_agent_str = None; // Simplify by not using User-Agent header for now
         let ip_address = None; // Simplified to not use client IP address
-        
+
         // Create a session
         if let Err(err) = crate::auth::create_session_and_set_cookie(
-            &state.db, 
-            &cookies, 
+            &state.db,
+            &cookies,
             user_id,
             user_agent_str,
             ip_address,
-        ).await {
+        )
+        .await
+        {
             error!("Failed to create session: {:?}", err);
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to create session").into_response();
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to create session",
+            )
+                .into_response();
         }
     }
-    
+
     // For backward compatibility, also set the legacy DID cookie
     let mut legacy_cookie = Cookie::new(AUTH_DID_COOKIE, session.did.clone());
     legacy_cookie.set_path("/");
     legacy_cookie.set_max_age(time::Duration::days(30));
     legacy_cookie.set_http_only(true);
     legacy_cookie.set_secure(true);
-    
+
     cookies.add(legacy_cookie);
-    
+
     // Redirect to the profile page
     info!("Setting auth cookies and redirecting to /me");
     Redirect::to("/me").into_response()
@@ -732,43 +712,51 @@ pub async fn get_token(
             return (
                 StatusCode::NOT_FOUND,
                 "No active token found for this DID".to_string(),
-            ).into_response();
+            )
+                .into_response();
         }
         Err(err) => {
             error!("Failed to retrieve token: {:?}", err);
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Failed to retrieve token".to_string(),
-            ).into_response();
+            )
+                .into_response();
         }
     };
-    
+
     // Check if the token is expired
     if token.is_expired() {
         // If we have a refresh token, try to refresh it
         if let Some(refresh_token) = &token.refresh_token {
             let client_id = state.client_id();
-            
+
             // Try to get the session to get the stored DPoP nonce
             let session_id = uuid::Uuid::new_v4(); // Dummy UUID for this request
             let session = match oauth::db::get_session(&state.db, session_id).await {
                 Ok(Some(s)) => s,
-                _ => OAuthSession::new(params.did.clone(), None, params.token_endpoint.clone().unwrap_or_default()),
+                _ => OAuthSession::new(
+                    params.did.clone(),
+                    None,
+                    params.token_endpoint.clone().unwrap_or_default(),
+                ),
             };
-            
+
             match oauth::refresh_token(
                 &state.bsky_oauth,
                 &params.token_endpoint.unwrap_or_default(),
                 &client_id,
                 refresh_token,
                 session.dpop_nonce.as_deref(),
-            ).await {
+            )
+            .await
+            {
                 Ok(token_response) => {
                     // Create a new token set with JWK thumbprint
                     let new_token = match OAuthTokenSet::from_token_response_with_jwk(
-                        &token_response, 
+                        &token_response,
                         token.did.clone(),
-                        &state.bsky_oauth.public_key
+                        &state.bsky_oauth.public_key,
                     ) {
                         Ok(token) => token,
                         Err(err) => {
@@ -777,16 +765,17 @@ pub async fn get_token(
                             OAuthTokenSet::from_token_response(token_response, token.did.clone())
                         }
                     };
-                    
+
                     // Store the new token
                     if let Err(err) = oauth::db::store_token(&state.db, &new_token).await {
                         error!("Failed to store refreshed token: {:?}", err);
                         return (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Failed to store refreshed token".to_string(),
-                        ).into_response();
+                        )
+                            .into_response();
                     }
-                    
+
                     // Return the refreshed token
                     return Json(serde_json::json!({
                         "did": new_token.did,
@@ -799,33 +788,35 @@ pub async fn get_token(
                 }
                 Err(err) => {
                     error!("Failed to refresh token: {:?}", err);
-                    
+
                     // Deactivate the expired token
                     if let Err(e) = oauth::db::deactivate_token(&state.db, &token.did).await {
                         error!("Failed to deactivate expired token: {:?}", e);
                     }
-                    
+
                     return (
                         StatusCode::UNAUTHORIZED,
                         "Token expired and refresh failed. Please authenticate again.".to_string(),
-                    ).into_response();
+                    )
+                        .into_response();
                 }
             }
         } else {
             // No refresh token, need to authenticate again
-            
+
             // Deactivate the expired token
             if let Err(e) = oauth::db::deactivate_token(&state.db, &token.did).await {
                 error!("Failed to deactivate expired token: {:?}", e);
             }
-            
+
             return (
                 StatusCode::UNAUTHORIZED,
                 "Token expired. Please authenticate again.".to_string(),
-            ).into_response();
+            )
+                .into_response();
         }
     }
-    
+
     // Token is valid, return it
     Json(serde_json::json!({
         "did": token.did,
@@ -844,18 +835,18 @@ pub async fn revoke_token(
 ) -> impl IntoResponse {
     // Deactivate the token
     match oauth::db::deactivate_token(&state.db, &params.did).await {
-        Ok(_) => {
-            Json(serde_json::json!({
-                "status": "success",
-                "message": "Token revoked successfully"
-            })).into_response()
-        }
+        Ok(_) => Json(serde_json::json!({
+            "status": "success",
+            "message": "Token revoked successfully"
+        }))
+        .into_response(),
         Err(err) => {
             error!("Failed to revoke token: {:?}", err);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Failed to revoke token".to_string(),
-            ).into_response()
+            )
+                .into_response()
         }
     }
 }
@@ -887,93 +878,102 @@ pub async fn profile(
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Failed to retrieve tokens".to_string(),
-            ).into_response();
+            )
+                .into_response();
         }
     };
-    
+
     if tokens.is_empty() {
         return maud::html! {
             h1 { "Your Profile" }
             p { "You don't have any Bluesky accounts linked yet." }
-            
             form action="/oauth/bsky/authorize" method="get" {
                 input type="text" name="did" placeholder="Enter Bluesky handle or DID" style="width: 250px;" {}
                 button type="submit" { "Link a Bluesky Account" }
             }
         }.into_response();
     }
-    
+
     // Use the first token as the primary one
     let primary_token = tokens[0].clone();
-    
+
     // Check if the primary token is expired and try to refresh it
     if primary_token.is_expired() {
         if let Some(refresh_token) = &primary_token.refresh_token {
             let client_id = state.client_id();
-            
+
             // Try to get the latest DPoP nonce
-            let dpop_nonce = match oauth::db::get_latest_nonce(&state.db, &primary_token.did).await {
+            let dpop_nonce = match oauth::db::get_latest_nonce(&state.db, &primary_token.did).await
+            {
                 Ok(nonce) => nonce,
                 Err(err) => {
                     error!("Failed to get DPoP nonce: {:?}", err);
                     None
                 }
             };
-            
+
             // Lookup the token endpoint in the OAuthSession
-            let token_endpoint = match get_token_endpoint_for_did(&state.db, &primary_token.did).await {
-                Ok(Some(endpoint)) => endpoint,
-                _ => {
-                    // Fallback to bsky.social
-                    "https://bsky.social/xrpc/com.atproto.server.refreshSession".to_string()
-                }
-            };
-            
+            let token_endpoint =
+                match get_token_endpoint_for_did(&state.db, &primary_token.did).await {
+                    Ok(Some(endpoint)) => endpoint,
+                    _ => {
+                        // Fallback to bsky.social
+                        "https://bsky.social/xrpc/com.atproto.server.refreshSession".to_string()
+                    }
+                };
+
             match oauth::refresh_token(
                 &state.bsky_oauth,
                 &token_endpoint,
                 &client_id,
                 refresh_token,
                 dpop_nonce.as_deref(),
-            ).await {
+            )
+            .await
+            {
                 Ok(token_response) => {
                     // Create a new token set with JWK thumbprint
                     let new_token = match OAuthTokenSet::from_token_response_with_jwk(
-                        &token_response, 
+                        &token_response,
                         primary_token.did.clone(),
-                        &state.bsky_oauth.public_key
+                        &state.bsky_oauth.public_key,
                     ) {
                         Ok(token) => {
                             // Set the user_id
-                            let token_with_user = token.with_user_id(user.user_id);
-                            token_with_user
-                        },
+                            token.with_user_id(user.user_id)
+                        }
                         Err(err) => {
                             error!("Failed to create token set with JWK: {:?}", err);
                             // Fallback to standard token creation
-                            let token = OAuthTokenSet::from_token_response(token_response, primary_token.did.clone())
-                                .with_user_id(user.user_id);
-                            token
+                            OAuthTokenSet::from_token_response(
+                                token_response,
+                                primary_token.did.clone(),
+                            )
+                            .with_user_id(user.user_id)
                         }
                     };
-                    
+
                     // Store the new token
                     if let Err(err) = oauth::db::store_token(&state.db, &new_token).await {
                         error!("Failed to store refreshed token: {:?}", err);
                         return (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Failed to store refreshed token".to_string(),
-                        ).into_response();
+                        )
+                            .into_response();
                     }
-                    
+
                     // Refresh all tokens
-                    let tokens = match oauth::db::get_tokens_for_user(&state.db, user.user_id).await {
+                    let tokens = match oauth::db::get_tokens_for_user(&state.db, user.user_id).await
+                    {
                         Ok(tokens) => tokens,
                         Err(_) => vec![new_token.clone()],
                     };
-                    
+
                     // Display the profile with the refreshed token and all tokens
-                    return display_profile_multi(&state, new_token, tokens).await.into_response();
+                    return display_profile_multi(&state, new_token, tokens)
+                        .await
+                        .into_response();
                 }
                 Err(err) => {
                     error!("Failed to refresh token: {:?}", err);
@@ -983,9 +983,11 @@ pub async fn profile(
             }
         }
     }
-    
+
     // Display profile with all tokens
-    display_profile_multi(&state, primary_token, tokens).await.into_response()
+    display_profile_multi(&state, primary_token, tokens)
+        .await
+        .into_response()
 }
 
 /// Helper function to get the token endpoint for a DID from stored sessions
@@ -1001,12 +1003,16 @@ async fn get_token_endpoint_for_did(pool: &sqlx::PgPool, did: &str) -> cja::Resu
     .bind(did)
     .fetch_optional(pool)
     .await?;
-    
+
     Ok(row.map(|r| r.get("token_endpoint")))
 }
 
 /// Display profile information with multiple linked accounts
-async fn display_profile_multi(state: &AppState, primary_token: OAuthTokenSet, all_tokens: Vec<OAuthTokenSet>) -> maud::Markup {
+async fn display_profile_multi(
+    state: &AppState,
+    primary_token: OAuthTokenSet,
+    all_tokens: Vec<OAuthTokenSet>,
+) -> maud::Markup {
     // Fetch primary profile data
     let profile_data = match fetch_user_profile(state, &primary_token.did, &primary_token).await {
         Ok(data) => Some(data),
@@ -1015,7 +1021,7 @@ async fn display_profile_multi(state: &AppState, primary_token: OAuthTokenSet, a
             None
         }
     };
-    
+
     // Try to extract avatar CID from profile
     let mut avatar_blob_cid = None;
     if let Some(data) = &profile_data {
@@ -1032,7 +1038,7 @@ async fn display_profile_multi(state: &AppState, primary_token: OAuthTokenSet, a
             }
         }
     }
-    
+
     // Try to fetch avatar blob
     let avatar_blob = if let Some(ref cid) = avatar_blob_cid {
         match fetch_blob_by_cid(state, &primary_token.did, &primary_token, cid).await {
@@ -1048,10 +1054,10 @@ async fn display_profile_multi(state: &AppState, primary_token: OAuthTokenSet, a
     } else {
         None
     };
-    
+
     // Determine mime type for image
     let mut mime_type = "image/jpeg"; // Default if we can't detect
-    
+
     // Try to extract the mime type from the profile data
     if let Some(data) = &profile_data {
         if let Some(value) = data.get("value") {
@@ -1065,16 +1071,20 @@ async fn display_profile_multi(state: &AppState, primary_token: OAuthTokenSet, a
             }
         }
     }
-    
+
     // Encode avatar as base64
     let avatar_base64 = avatar_blob.as_ref().map(|blob| {
-        format!("data:{};base64,{}", mime_type, base64::Engine::encode(&base64::engine::general_purpose::STANDARD, blob))
+        format!(
+            "data:{};base64,{}",
+            mime_type,
+            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, blob)
+        )
     });
-    
+
     // Extract display name and handle from profile
     let mut display_name = primary_token.did.clone();
     let mut handle = None;
-    
+
     if let Some(data) = &profile_data {
         if let Some(value) = data.get("value") {
             if let Some(name) = value.get("displayName") {
@@ -1082,7 +1092,7 @@ async fn display_profile_multi(state: &AppState, primary_token: OAuthTokenSet, a
                     display_name = name_str.to_string();
                 }
             }
-            
+
             if let Some(h) = value.get("handle") {
                 if let Some(h_str) = h.as_str() {
                     handle = Some(h_str.to_string());
@@ -1090,11 +1100,11 @@ async fn display_profile_multi(state: &AppState, primary_token: OAuthTokenSet, a
             }
         }
     }
-    
+
     // Create profile display
     html! {
         h1 { "Your Profile" }
-        
+
         div class="profile-container" {
             div class="profile-header" {
                 @if let Some(img_src) = &avatar_base64 {
@@ -1104,7 +1114,7 @@ async fn display_profile_multi(state: &AppState, primary_token: OAuthTokenSet, a
                         "No Image"
                     }
                 }
-                
+
                 div class="profile-info" {
                     h2 { (display_name) }
                     @if let Some(h) = &handle {
@@ -1113,29 +1123,29 @@ async fn display_profile_multi(state: &AppState, primary_token: OAuthTokenSet, a
                     p { "DID: " (primary_token.did) }
                 }
             }
-            
+
             div class="token-info" {
                 h3 { "Authentication Info" }
                 p { "Access token expires in: " (primary_token.expires_at - SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs()) " seconds" }
                 p { "Has refresh token: " (primary_token.refresh_token.is_some()) }
             }
-            
+
             // Display all linked accounts
             div class="linked-accounts" {
                 h3 { "Linked Bluesky Accounts" }
-                
+
                 ul {
                     @for token in &all_tokens {
                         li {
                             strong { "DID: " (token.did) }
-                            @if &token.did == &primary_token.did {
+                            @if token.did == primary_token.did {
                                 span style="color: green;" { " (Current)" }
                             }
                             p { "Expires in: " (token.expires_at - SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs()) " seconds" }
                         }
                     }
                 }
-                
+
                 p {
                     form action="/oauth/bsky/authorize" method="get" {
                         input type="text" name="did" placeholder="Enter Bluesky handle or DID" style="width: 250px;" {}
@@ -1143,7 +1153,7 @@ async fn display_profile_multi(state: &AppState, primary_token: OAuthTokenSet, a
                     }
                 }
             }
-            
+
             @if let Some(data) = &profile_data {
                 div class="profile-data" {
                     h3 { "Profile Data" }
@@ -1157,7 +1167,7 @@ async fn display_profile_multi(state: &AppState, primary_token: OAuthTokenSet, a
                     }
                 }
             }
-            
+
             p {
                 a href="/" { "Return to Home" }
                 " | "

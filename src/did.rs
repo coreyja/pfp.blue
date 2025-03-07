@@ -12,8 +12,10 @@ use atrium_identity::{
 use atrium_xrpc_client::reqwest::ReqwestClient;
 use color_eyre::eyre::eyre;
 
-pub async fn resolve_handle_to_did(handle: &Handle, client: Arc<ReqwestClient>) -> cja::Result<Did> {
-
+pub async fn resolve_handle_to_did(
+    handle: &Handle,
+    client: Arc<ReqwestClient>,
+) -> cja::Result<Did> {
     let config = AppViewHandleResolverConfig {
         service_url: "https://bsky.social".to_string(),
         http_client: client.clone(),

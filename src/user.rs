@@ -1,5 +1,5 @@
-use sqlx::{postgres::PgPool, Row};
 use chrono::{DateTime, Utc};
+use sqlx::{postgres::PgPool, Row};
 use uuid::Uuid;
 
 /// Represents a user in the system
@@ -60,7 +60,11 @@ impl User {
     }
 
     /// Create a new user with optional username and email
-    pub async fn create(pool: &PgPool, username: Option<String>, email: Option<String>) -> cja::Result<User> {
+    pub async fn create(
+        pool: &PgPool,
+        username: Option<String>,
+        email: Option<String>,
+    ) -> cja::Result<User> {
         let row = sqlx::query(
             r#"
             INSERT INTO users (username, email)
@@ -124,9 +128,9 @@ impl User {
 impl Session {
     /// Create a new session for a user
     pub async fn create(
-        pool: &PgPool, 
-        user_id: Uuid, 
-        user_agent: Option<String>, 
+        pool: &PgPool,
+        user_id: Uuid,
+        user_agent: Option<String>,
         ip_address: Option<String>,
         duration_days: i64,
     ) -> cja::Result<Session> {
