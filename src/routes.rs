@@ -5,7 +5,6 @@ use axum::{
     routing::{get, post},
 };
 use serde::Deserialize;
-use sqlx::Row;
 use tower_cookies::{Cookie, Cookies};
 
 pub mod bsky;
@@ -214,19 +213,19 @@ async fn toggle_profile_progress(
     use tracing::{error, info};
 
     // First, validate that this token belongs to the user
-    let token_result = sqlx::query(
+    let token_result = sqlx::query!(
         r#"
         SELECT id FROM oauth_tokens
         WHERE did = $1 AND user_id = $2
         "#,
+        params.token_id,
+        user.user_id
     )
-    .bind(&params.token_id)
-    .bind(user.user_id)
     .fetch_optional(&state.db)
     .await;
 
     let token_id = match token_result {
-        Ok(Some(row)) => row.get::<uuid::Uuid, _>("id"),
+        Ok(Some(row)) => row.id,
         Ok(None) => {
             error!(
                 "Attempted to toggle progress for token not belonging to user: {}",
@@ -289,19 +288,19 @@ async fn set_original_profile_picture(
     use tracing::{error, info};
 
     // First, validate that this token belongs to the user
-    let token_result = sqlx::query(
+    let token_result = sqlx::query!(
         r#"
         SELECT id FROM oauth_tokens
         WHERE did = $1 AND user_id = $2
         "#,
+        params.token_id,
+        user.user_id
     )
-    .bind(&params.token_id)
-    .bind(user.user_id)
     .fetch_optional(&state.db)
     .await;
 
     let token_id = match token_result {
-        Ok(Some(row)) => row.get::<uuid::Uuid, _>("id"),
+        Ok(Some(row)) => row.id,
         Ok(None) => {
             error!(
                 "Attempted to set original profile picture for token not belonging to user: {}",

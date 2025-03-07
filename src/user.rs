@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use sqlx::{postgres::PgPool, Row};
+use sqlx::postgres::PgPool;
 use uuid::Uuid;
 
 /// Represents a user in the system
@@ -43,21 +43,22 @@ pub struct Session {
 impl User {
     /// Get a user by their ID
     pub async fn get_by_id(pool: &PgPool, user_id: Uuid) -> cja::Result<Option<User>> {
-        let row = sqlx::query(
+        let row = sqlx::query!(
             r#"
-            SELECT * FROM users WHERE id = $1
+            SELECT id, username, email, created_at_utc, updated_at_utc 
+            FROM users WHERE id = $1
             "#,
+            user_id
         )
-        .bind(user_id)
         .fetch_optional(pool)
         .await?;
 
         Ok(row.map(|r| User {
-            user_id: r.get("id"),
-            username: r.get("username"),
-            email: r.get("email"),
-            created_at_utc: r.get("created_at_utc"),
-            updated_at_utc: r.get("updated_at_utc"),
+            user_id: r.id,
+            username: r.username,
+            email: r.email,
+            created_at_utc: r.created_at_utc,
+            updated_at_utc: r.updated_at_utc,
         }))
     }
 
@@ -67,47 +68,47 @@ impl User {
         username: Option<String>,
         email: Option<String>,
     ) -> cja::Result<User> {
-        let row = sqlx::query(
+        let row = sqlx::query!(
             r#"
             INSERT INTO users (username, email)
             VALUES ($1, $2)
-            RETURNING *
+            RETURNING id, username, email, created_at_utc, updated_at_utc
             "#,
+            username,
+            email
         )
-        .bind(username)
-        .bind(email)
         .fetch_one(pool)
         .await?;
 
         Ok(User {
-            user_id: row.get("id"),
-            username: row.get("username"),
-            email: row.get("email"),
-            created_at_utc: row.get("created_at_utc"),
-            updated_at_utc: row.get("updated_at_utc"),
+            user_id: row.id,
+            username: row.username,
+            email: row.email,
+            created_at_utc: row.created_at_utc,
+            updated_at_utc: row.updated_at_utc,
         })
     }
 
     /// Get a user by the DID of one of their OAuth tokens
     pub async fn get_by_did(pool: &PgPool, did: &str) -> cja::Result<Option<User>> {
-        let row = sqlx::query(
+        let row = sqlx::query!(
             r#"
-            SELECT u.* FROM users u
+            SELECT u.id, u.username, u.email, u.created_at_utc, u.updated_at_utc FROM users u
             JOIN oauth_tokens ot ON u.id = ot.user_id
             WHERE ot.did = $1
             LIMIT 1
             "#,
+            did
         )
-        .bind(did)
         .fetch_optional(pool)
         .await?;
 
         Ok(row.map(|r| User {
-            user_id: r.get("id"),
-            username: r.get("username"),
-            email: r.get("email"),
-            created_at_utc: r.get("created_at_utc"),
-            updated_at_utc: r.get("updated_at_utc"),
+            user_id: r.id,
+            username: r.username,
+            email: r.email,
+            created_at_utc: r.created_at_utc,
+            updated_at_utc: r.updated_at_utc,
         }))
     }
 }
@@ -125,55 +126,56 @@ impl Session {
         // Calculate expiration time
         let expires_at = Utc::now() + chrono::Duration::days(duration_days);
 
-        let row = sqlx::query(
+        let row = sqlx::query!(
             r#"
             INSERT INTO sessions (user_id, expires_at, user_agent, ip_address, primary_token_id)
             VALUES ($1, $2, $3, $4, $5)
-            RETURNING *
+            RETURNING id, user_id, expires_at, user_agent, ip_address, is_active, primary_token_id, created_at_utc, updated_at_utc
             "#,
+            user_id,
+            expires_at,
+            user_agent,
+            ip_address,
+            primary_token_id
         )
-        .bind(user_id)
-        .bind(expires_at)
-        .bind(user_agent)
-        .bind(ip_address)
-        .bind(primary_token_id)
         .fetch_one(pool)
         .await?;
 
         Ok(Session {
-            session_id: row.get("id"),
-            user_id: row.get("user_id"),
-            expires_at: row.get("expires_at"),
-            user_agent: row.get("user_agent"),
-            ip_address: row.get("ip_address"),
-            is_active: row.get("is_active"),
-            primary_token_id: row.get("primary_token_id"),
-            created_at_utc: row.get("created_at_utc"),
-            updated_at_utc: row.get("updated_at_utc"),
+            session_id: row.id,
+            user_id: row.user_id,
+            expires_at: row.expires_at,
+            user_agent: row.user_agent,
+            ip_address: row.ip_address,
+            is_active: row.is_active,
+            primary_token_id: row.primary_token_id,
+            created_at_utc: row.created_at_utc,
+            updated_at_utc: row.updated_at_utc,
         })
     }
 
     /// Get a session by its ID
     pub async fn get_by_id(pool: &PgPool, session_id: Uuid) -> cja::Result<Option<Session>> {
-        let row = sqlx::query(
+        let row = sqlx::query!(
             r#"
-            SELECT * FROM sessions WHERE id = $1
+            SELECT id, user_id, expires_at, user_agent, ip_address, is_active, primary_token_id, created_at_utc, updated_at_utc
+            FROM sessions WHERE id = $1
             "#,
+            session_id
         )
-        .bind(session_id)
         .fetch_optional(pool)
         .await?;
 
         Ok(row.map(|r| Session {
-            session_id: r.get("id"),
-            user_id: r.get("user_id"),
-            expires_at: r.get("expires_at"),
-            user_agent: r.get("user_agent"),
-            ip_address: r.get("ip_address"),
-            is_active: r.get("is_active"),
-            primary_token_id: r.get("primary_token_id"),
-            created_at_utc: r.get("created_at_utc"),
-            updated_at_utc: r.get("updated_at_utc"),
+            session_id: r.id,
+            user_id: r.user_id,
+            expires_at: r.expires_at,
+            user_agent: r.user_agent,
+            ip_address: r.ip_address,
+            is_active: r.is_active,
+            primary_token_id: r.primary_token_id,
+            created_at_utc: r.created_at_utc,
+            updated_at_utc: r.updated_at_utc,
         }))
     }
 
@@ -184,13 +186,13 @@ impl Session {
 
     /// Invalidate this session
     pub async fn invalidate(&mut self, pool: &PgPool) -> cja::Result<()> {
-        sqlx::query(
+        sqlx::query!(
             r#"
             UPDATE sessions SET is_active = FALSE
             WHERE id = $1
             "#,
+            self.session_id
         )
-        .bind(self.session_id)
         .execute(pool)
         .await?;
 
@@ -205,14 +207,14 @@ impl Session {
 
     /// Update the primary token for this session
     pub async fn set_primary_token(&mut self, pool: &PgPool, token_id: Uuid) -> cja::Result<()> {
-        sqlx::query(
+        sqlx::query!(
             r#"
             UPDATE sessions SET primary_token_id = $1, updated_at_utc = NOW()
             WHERE id = $2
             "#,
+            token_id,
+            self.session_id
         )
-        .bind(token_id)
-        .bind(self.session_id)
         .execute(pool)
         .await?;
 
@@ -222,13 +224,13 @@ impl Session {
 
     /// Clear the primary token for this session
     pub async fn clear_primary_token(&mut self, pool: &PgPool) -> cja::Result<()> {
-        sqlx::query(
+        sqlx::query!(
             r#"
             UPDATE sessions SET primary_token_id = NULL, updated_at_utc = NOW()
             WHERE id = $1
             "#,
+            self.session_id
         )
-        .bind(self.session_id)
         .execute(pool)
         .await?;
 
@@ -243,29 +245,29 @@ impl Session {
     ) -> cja::Result<Option<crate::oauth::OAuthTokenSet>> {
         if let Some(token_id) = self.primary_token_id {
             // Query the oauth_tokens table to get the token by ID
-            let row = sqlx::query(
+            let row = sqlx::query!(
                 r#"
                 SELECT uuid_id, did, access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id, handle
                 FROM oauth_tokens
                 WHERE uuid_id = $1
                 "#,
+                token_id
             )
-            .bind(token_id)
             .fetch_optional(pool)
             .await?;
 
             if let Some(row) = row {
                 // Convert the row to an OAuthTokenSet
                 return Ok(Some(crate::oauth::OAuthTokenSet {
-                    did: row.get("did"),
-                    access_token: row.get("access_token"),
-                    token_type: row.get("token_type"),
-                    expires_at: row.get::<i64, _>("expires_at") as u64,
-                    refresh_token: row.get("refresh_token"),
-                    scope: row.get("scope"),
-                    handle: row.get("handle"),
-                    dpop_jkt: row.get("dpop_jkt"),
-                    user_id: row.get("user_id"),
+                    did: row.did,
+                    access_token: row.access_token,
+                    token_type: row.token_type,
+                    expires_at: row.expires_at as u64,
+                    refresh_token: row.refresh_token,
+                    scope: row.scope,
+                    handle: row.handle,
+                    dpop_jkt: row.dpop_jkt,
+                    user_id: Some(row.user_id),
                 }));
             }
         }

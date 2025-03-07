@@ -1,8 +1,7 @@
-use cja::jobs::{EnqueueError, Job};
+use cja::jobs::Job;
 use serde::{Deserialize, Serialize};
 
 use crate::{oauth::OAuthTokenSet, state::AppState};
-use sqlx::Row;
 
 // This implements the Jobs struct required by the cja job worker
 cja::impl_job_registry!(
@@ -200,31 +199,28 @@ impl Job<AppState> for UpdateProfilePictureProgressJob {
         use tracing::{debug, error, info};
 
         // First, get the token from the database
-        let token = match sqlx::query(
+        let token = match sqlx::query!(
             r#"
-            SELECT * FROM oauth_tokens
+            SELECT did, access_token, token_type, handle, expires_at, 
+                   refresh_token, scope, dpop_jkt, user_id
+            FROM oauth_tokens
             WHERE id = $1
             "#,
+            self.token_id
         )
-        .bind(self.token_id)
         .fetch_optional(&app_state.db)
         .await? {
             Some(row) => {
-                let did: String = row.get("did");
-                let access_token: String = row.get("access_token");
-                let token_type: String = row.get("token_type");
-                let handle: Option<String> = row.get("handle");
-
                 crate::oauth::OAuthTokenSet {
-                    did,
-                    access_token,
-                    token_type,
-                    expires_at: row.get::<i64, _>("expires_at") as u64,
-                    refresh_token: row.get("refresh_token"),
-                    scope: row.get("scope"),
-                    handle,
-                    dpop_jkt: row.get("dpop_jkt"),
-                    user_id: row.get("user_id"),
+                    did: row.did,
+                    access_token: row.access_token,
+                    token_type: row.token_type,
+                    expires_at: row.expires_at as u64,
+                    refresh_token: row.refresh_token,
+                    scope: row.scope,
+                    handle: row.handle,
+                    dpop_jkt: row.dpop_jkt,
+                    user_id: Some(row.user_id),
                 }
             },
             None => {
@@ -437,7 +433,7 @@ async fn upload_image_to_bluesky(
     image_data: &[u8]
 ) -> cja::Result<String> {
     use color_eyre::eyre::eyre;
-    use tracing::{debug, error, info};
+    use tracing::{error, info};
     
     // Create a reqwest client
     let client = reqwest::Client::new();
@@ -509,7 +505,7 @@ async fn update_profile_with_image(
     blob_cid: &str
 ) -> cja::Result<()> {
     use color_eyre::eyre::eyre;
-    use tracing::{debug, error, info};
+    use tracing::{error, info};
     
     // First, we need to get the current profile to avoid losing other fields
     let client = reqwest::Client::new();

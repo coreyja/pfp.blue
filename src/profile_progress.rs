@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 /// Represents a profile picture progress setting in the database
@@ -27,62 +27,63 @@ impl ProfilePictureProgress {
         enabled: bool,
         original_blob_cid: Option<String>,
     ) -> cja::Result<Self> {
-        let row = sqlx::query(
+        let row = sqlx::query!(
             r#"
             INSERT INTO profile_picture_progress (token_id, enabled, original_blob_cid)
             VALUES ($1, $2, $3)
-            RETURNING *
+            RETURNING id, token_id, enabled, original_blob_cid, created_at_utc, updated_at_utc
             "#,
+            token_id,
+            enabled,
+            original_blob_cid
         )
-        .bind(token_id)
-        .bind(enabled)
-        .bind(original_blob_cid)
         .fetch_one(pool)
         .await?;
 
         Ok(Self {
-            id: row.get("id"),
-            token_id: row.get("token_id"),
-            enabled: row.get("enabled"),
-            original_blob_cid: row.get("original_blob_cid"),
-            created_at_utc: row.get("created_at_utc"),
-            updated_at_utc: row.get("updated_at_utc"),
+            id: row.id,
+            token_id: row.token_id,
+            enabled: row.enabled,
+            original_blob_cid: row.original_blob_cid,
+            created_at_utc: row.created_at_utc,
+            updated_at_utc: row.updated_at_utc,
         })
     }
 
     /// Get a profile picture progress setting by token ID
     pub async fn get_by_token_id(pool: &PgPool, token_id: Uuid) -> cja::Result<Option<Self>> {
-        let row = sqlx::query(
+        let row = sqlx::query!(
             r#"
-            SELECT * FROM profile_picture_progress
+            SELECT id, token_id, enabled, original_blob_cid, created_at_utc, updated_at_utc 
+            FROM profile_picture_progress
             WHERE token_id = $1
             "#,
+            token_id
         )
-        .bind(token_id)
         .fetch_optional(pool)
         .await?;
 
         Ok(row.map(|r| Self {
-            id: r.get("id"),
-            token_id: r.get("token_id"),
-            enabled: r.get("enabled"),
-            original_blob_cid: r.get("original_blob_cid"),
-            created_at_utc: r.get("created_at_utc"),
-            updated_at_utc: r.get("updated_at_utc"),
+            id: r.id,
+            token_id: r.token_id,
+            enabled: r.enabled,
+            original_blob_cid: r.original_blob_cid,
+            created_at_utc: r.created_at_utc,
+            updated_at_utc: r.updated_at_utc,
         }))
     }
 
     /// Update the enabled status
     pub async fn update_enabled(&mut self, pool: &PgPool, enabled: bool) -> cja::Result<()> {
-        sqlx::query(
+        sqlx::query!(
             r#"
             UPDATE profile_picture_progress
             SET enabled = $1, updated_at_utc = NOW()
             WHERE id = $2
             "#,
+            enabled,
+            self.id
         )
-        .bind(enabled)
-        .bind(self.id)
         .execute(pool)
         .await?;
 
@@ -96,15 +97,15 @@ impl ProfilePictureProgress {
         pool: &PgPool,
         original_blob_cid: Option<String>,
     ) -> cja::Result<()> {
-        sqlx::query(
+        sqlx::query!(
             r#"
             UPDATE profile_picture_progress
             SET original_blob_cid = $1, updated_at_utc = NOW()
             WHERE id = $2
             "#,
+            original_blob_cid.as_ref(),
+            self.id
         )
-        .bind(original_blob_cid.as_ref())
-        .bind(self.id)
         .execute(pool)
         .await?;
 
@@ -130,11 +131,12 @@ impl ProfilePictureProgress {
 
     /// Get all enabled profile picture progress settings
     pub async fn get_all_enabled(pool: &PgPool) -> cja::Result<Vec<Self>> {
-        let rows = sqlx::query(
+        let rows = sqlx::query!(
             r#"
-            SELECT * FROM profile_picture_progress
+            SELECT id, token_id, enabled, original_blob_cid, created_at_utc, updated_at_utc
+            FROM profile_picture_progress
             WHERE enabled = TRUE
-            "#,
+            "#
         )
         .fetch_all(pool)
         .await?;
@@ -142,12 +144,12 @@ impl ProfilePictureProgress {
         Ok(rows
             .into_iter()
             .map(|r| Self {
-                id: r.get("id"),
-                token_id: r.get("token_id"),
-                enabled: r.get("enabled"),
-                original_blob_cid: r.get("original_blob_cid"),
-                created_at_utc: r.get("created_at_utc"),
-                updated_at_utc: r.get("updated_at_utc"),
+                id: r.id,
+                token_id: r.token_id,
+                enabled: r.enabled,
+                original_blob_cid: r.original_blob_cid,
+                created_at_utc: r.created_at_utc,
+                updated_at_utc: r.updated_at_utc,
             })
             .collect())
     }
