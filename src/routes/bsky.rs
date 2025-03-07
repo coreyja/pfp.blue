@@ -782,7 +782,7 @@ pub async fn callback(
         .await
         {
             Ok(Some(row)) => {
-                let id: i32 = row.get("id");
+                let id: uuid::Uuid = row.get("id");
                 Some(id)
             },
             _ => None,
@@ -1050,7 +1050,7 @@ pub async fn set_primary_account(
     .fetch_optional(&state.db)
     .await {
         Ok(Some(row)) => {
-            let id: i32 = row.get("id");
+            let id: uuid::Uuid = row.get("id");
             id
         },
         Ok(None) => {

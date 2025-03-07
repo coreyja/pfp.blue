@@ -33,7 +33,7 @@ pub struct Session {
     /// Whether this session is active
     pub is_active: bool,
     /// ID of the primary OAuth token for this session (if set)
-    pub primary_token_id: Option<i32>,
+    pub primary_token_id: Option<Uuid>,
     /// When the session was created
     pub created_at_utc: DateTime<Utc>,
     /// When the session was last updated
@@ -120,7 +120,7 @@ impl Session {
         user_agent: Option<String>,
         ip_address: Option<String>,
         duration_days: i64,
-        primary_token_id: Option<i32>,
+        primary_token_id: Option<Uuid>,
     ) -> cja::Result<Session> {
         // Calculate expiration time
         let expires_at = Utc::now() + chrono::Duration::days(duration_days);
@@ -204,7 +204,7 @@ impl Session {
     }
 
     /// Update the primary token for this session
-    pub async fn set_primary_token(&mut self, pool: &PgPool, token_id: i32) -> cja::Result<()> {
+    pub async fn set_primary_token(&mut self, pool: &PgPool, token_id: Uuid) -> cja::Result<()> {
         sqlx::query(
             r#"
             UPDATE sessions SET primary_token_id = $1, updated_at_utc = NOW()
