@@ -8,7 +8,7 @@ use color_eyre::eyre::eyre;
 use maud::html;
 use serde::Deserialize;
 use sqlx::Row;
-use std::time::SystemTime;
+use std::{str::FromStr, time::SystemTime};
 use tower_cookies::{Cookie, Cookies};
 use tracing::{error, info};
 use uuid::Uuid;
@@ -266,97 +266,100 @@ async fn fetch_user_profile(
     Ok(profile_data)
 }
 
-/// Fetch a blob by its CID
+/// Fetch a blob by its CID directly from the user's PDS
 async fn fetch_blob_by_cid(
     _state: &AppState,
-    did: &str,
-    _token: &OAuthTokenSet,
+    did_or_handle: &str,
+    token: &OAuthTokenSet,
     cid: &str,
 ) -> cja::Result<Vec<u8>> {
-    info!("Fetching blob with CID: {}", cid);
+    info!("Fetching blob with CID: {} for DID/handle: {}", cid, did_or_handle);
 
+    // First, resolve the user's DID document to find their PDS endpoint
     let client = reqwest::Client::new();
+    let xrpc_client = std::sync::Arc::new(atrium_xrpc_client::reqwest::ReqwestClient::new("https://bsky.social"));
+    
+    // Check if the input is a handle or a DID
+    let did_obj = if did_or_handle.starts_with("did:") {
+        // It's already a DID
+        atrium_api::types::string::Did::from_str(did_or_handle)
+            .map_err(|e| eyre!("Invalid DID format: {}", e))?
+    } else {
+        // It's a handle, try to resolve it to a DID first
+        let handle = atrium_api::types::string::Handle::from_str(did_or_handle)
+            .map_err(|e| eyre!("Invalid handle format: {}", e))?;
+        
+        info!("Resolving handle {} to DID", did_or_handle);
+        crate::did::resolve_handle_to_did(&handle, xrpc_client.clone()).await?
+    };
+    
+    info!("Resolving DID document for {}", did_obj.as_str());
+    let did_document = crate::did::resolve_did_to_document(&did_obj, xrpc_client).await?;
+    
+    // Find the PDS service endpoint
+    let services = did_document
+        .service
+        .as_ref()
+        .ok_or_else(|| eyre!("No service endpoints found in DID document"))?;
 
-    // Try multiple URL formats for Bluesky images
-    let urls = [
-        // Format 1: Plain avatar format - most common for avatars
-        format!("https://cdn.bsky.app/img/avatar/plain/{}@jpeg", cid),
-        // Format 2: General full format
-        format!("https://cdn.bsky.app/img/feed/plain/{}@jpeg", cid),
-        // Format 3: Legacy format with DID
-        format!(
-            "https://av-cdn.bsky.app/img/avatar/plain/{}/{}@jpeg",
-            did, cid
-        ),
-        // Format 4: Plain bsky.network API
-        format!(
-            "https://bsky.network/xrpc/com.atproto.sync.getBlob?did={}&cid={}",
-            did, cid
-        ),
-        // Format 5: Direct bsky.social API
-        format!(
-            "https://bsky.social/xrpc/com.atproto.sync.getBlob?did={}&cid={}",
-            did, cid
-        ),
-        // Format 6: Legacy avatar format with did:plc
-        format!(
-            "https://avatar.bsky.social/img/avatar/plain/{}/{}@jpeg",
-            did, cid
-        ),
-    ];
+    let pds_service = services
+        .iter()
+        .find(|s| s.id == "#atproto_pds")
+        .ok_or_else(|| eyre!("No ATProto PDS service endpoint found in DID document"))?;
 
-    // We'll store any errors we encounter to return at the end if all URLs fail
-    let mut last_error: Option<(reqwest::StatusCode, String)> = None;
+    let pds_endpoint = &pds_service.service_endpoint;
+    info!("Found PDS endpoint: {}", pds_endpoint);
 
-    // Try each URL in turn
-    for (i, url) in urls.iter().enumerate() {
-        info!("Trying URL format {}: {}", i + 1, url);
+    // Construct the getBlob URL using the PDS endpoint with the resolved DID
+    let blob_url = format!("{}/xrpc/com.atproto.sync.getBlob?did={}&cid={}", 
+                         pds_endpoint, did_obj.as_str(), cid);
+    info!("Requesting blob from PDS: {}", blob_url);
 
-        match client.get(url).send().await {
-            Ok(response) => {
-                info!(
-                    "Response status from format {}: {}",
-                    i + 1,
-                    response.status()
-                );
-
-                if response.status().is_success() {
-                    // Success! Get the image data
-                    let blob_data = response.bytes().await?.to_vec();
-                    info!(
-                        "Successfully retrieved blob from format {}: {} bytes",
-                        i + 1,
-                        blob_data.len()
-                    );
+    // Create a request with the access token
+    let request = client.get(&blob_url);
+    
+    // Add the access token if available
+    let request = request.bearer_auth(&token.access_token);
+    
+    // Send the request
+    let response = request.send().await?;
+    
+    if !response.status().is_success() {
+        let status = response.status();
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Failed to read error response".to_string());
+            
+        info!("PDS request failed: {} - {}", status, error_text);
+        
+        // Try fallback to CDN as last resort using the resolved DID
+        info!("Trying fallback to CDN...");
+        let cdn_url = format!("https://avatar.bsky.social/img/avatar/plain/{}/{}@jpeg", 
+                            did_obj.as_str(), cid);
+        
+        match client.get(&cdn_url).send().await {
+            Ok(cdn_response) => {
+                if cdn_response.status().is_success() {
+                    let blob_data = cdn_response.bytes().await?.to_vec();
+                    info!("Successfully retrieved blob from CDN: {} bytes", blob_data.len());
                     return Ok(blob_data);
                 } else {
-                    // Store the error and try the next URL
-                    let status = response.status();
-                    let error_text = response
-                        .text()
-                        .await
-                        .unwrap_or_else(|_| "Failed to read error response".to_string());
-
-                    info!("Format {} failed: {} - {}", i + 1, status, error_text);
-                    last_error = Some((status, error_text));
+                    // Return the original PDS error
+                    Err(eyre!("Failed to get blob from PDS: {} - {}", status, error_text))
                 }
-            }
+            },
             Err(e) => {
-                info!("Request to format {} failed: {:?}", i + 1, e);
-                // Continue to the next URL
+                // Return the original PDS error with fallback info
+                Err(eyre!("Failed to get blob from PDS: {} - {}. CDN fallback also failed: {}", 
+                         status, error_text, e))
             }
         }
-    }
-
-    // If we get here, all URLs failed
-    if let Some((status, error_text)) = last_error {
-        Err(eyre!(
-            "All image URL formats failed. Last error: {} - {}",
-            status,
-            error_text
-        ))
     } else {
-        Err(eyre!("All image URL formats failed with connection errors"))
+        // Success! Get the image data
+        let blob_data = response.bytes().await?.to_vec();
+        info!("Successfully retrieved blob from PDS: {} bytes", blob_data.len());
+        Ok(blob_data)
     }
 }
 
