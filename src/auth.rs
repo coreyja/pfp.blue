@@ -100,7 +100,8 @@ pub async fn create_session_and_set_cookie(
     primary_token_id: Option<Uuid>,
 ) -> cja::Result<Session> {
     // Create a new session
-    let session = Session::create(pool, user_id, user_agent, ip_address, 30, primary_token_id).await?;
+    let session =
+        Session::create(pool, user_id, user_agent, ip_address, 30, primary_token_id).await?;
 
     // Set a secure cookie with the session ID
     let mut cookie = Cookie::new(SESSION_COOKIE_NAME, session.session_id.to_string());

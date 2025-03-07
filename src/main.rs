@@ -10,6 +10,7 @@ mod cron;
 mod did;
 mod jobs;
 mod oauth;
+mod profile_progress;
 mod routes;
 mod state;
 mod user;

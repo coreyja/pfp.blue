@@ -1,9 +1,14 @@
-use axum::extract::State;
-use axum::{response::IntoResponse, routing::get};
+use crate::{auth::AuthUser, state::AppState};
+use axum::extract::{Form, State};
+use axum::{
+    response::IntoResponse,
+    routing::{get, post},
+};
+use serde::Deserialize;
+use sqlx::Row;
 use tower_cookies::{Cookie, Cookies};
-use crate::state::AppState;
 
-mod bsky;
+pub mod bsky;
 
 pub fn routes(app_state: AppState) -> axum::Router {
     axum::Router::new()
@@ -11,6 +16,12 @@ pub fn routes(app_state: AppState) -> axum::Router {
         .route("/me", get(bsky::profile))
         .route("/login", get(login))
         .route("/logout", get(logout))
+        // Profile Picture Progress routes
+        .route("/profile_progress/toggle", post(toggle_profile_progress))
+        .route(
+            "/profile_progress/set_original",
+            post(set_original_profile_picture),
+        )
         // Bluesky OAuth routes
         .route("/oauth/bsky/metadata.json", get(bsky::client_metadata))
         .route("/oauth/bsky/authorize", get(bsky::authorize))
@@ -35,27 +46,27 @@ async fn root() -> impl IntoResponse {
                 div class="mb-6 flex justify-center" {
                     (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-500"><circle cx="12" cy="8" r="5"></circle><path d="M20 21v-2a7 7 0 0 0-14 0v2"></path><line x1="12" y1="8" x2="12" y2="8"></line><path d="M3 20h18a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1H9L3 12v7a1 1 0 0 0 1 1z"></path></svg>"#))
                 }
-                
+
                 h1 class="text-4xl font-bold text-gray-800 mb-3" { "pfp.blue" }
                 p class="text-lg text-gray-600 mb-8" { "Your Bluesky Profile Manager" }
-                
+
                 // Action buttons
                 div class="space-y-4" {
-                    a href="/me" 
-                        class="block w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-4 rounded-lg transition-colors duration-200" { 
-                        "View Your Profile" 
+                    a href="/me"
+                        class="block w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-4 rounded-lg transition-colors duration-200" {
+                        "View Your Profile"
                     }
-                    
-                    a href="/login" 
-                        class="block w-full bg-white hover:bg-gray-50 text-indigo-600 font-medium py-3 px-4 rounded-lg border border-indigo-300 hover:border-indigo-400 transition-colors duration-200" { 
-                        "Login" 
+
+                    a href="/login"
+                        class="block w-full bg-white hover:bg-gray-50 text-indigo-600 font-medium py-3 px-4 rounded-lg border border-indigo-300 hover:border-indigo-400 transition-colors duration-200" {
+                        "Login"
                     }
                 }
-                
+
                 // Features section
                 div class="mt-12" {
                     h2 class="text-xl font-semibold text-gray-800 mb-4" { "Features" }
-                    
+
                     div class="grid grid-cols-1 md:grid-cols-2 gap-4" {
                         div class="bg-blue-50 p-4 rounded-lg text-left" {
                             div class="flex items-center gap-2 mb-2" {
@@ -66,7 +77,7 @@ async fn root() -> impl IntoResponse {
                             }
                             p class="text-sm text-gray-600" { "Authenticate securely with your Bluesky account" }
                         }
-                        
+
                         div class="bg-indigo-50 p-4 rounded-lg text-left" {
                             div class="flex items-center gap-2 mb-2" {
                                 div class="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600" {
@@ -76,7 +87,7 @@ async fn root() -> impl IntoResponse {
                             }
                             p class="text-sm text-gray-600" { "Manage your Bluesky profile with ease" }
                         }
-                        
+
                         div class="bg-purple-50 p-4 rounded-lg text-left" {
                             div class="flex items-center gap-2 mb-2" {
                                 div class="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-600" {
@@ -86,7 +97,7 @@ async fn root() -> impl IntoResponse {
                             }
                             p class="text-sm text-gray-600" { "Link and manage multiple Bluesky accounts" }
                         }
-                        
+
                         div class="bg-pink-50 p-4 rounded-lg text-left" {
                             div class="flex items-center gap-2 mb-2" {
                                 div class="w-8 h-8 rounded-full bg-pink-100 flex items-center justify-center text-pink-600" {
@@ -99,7 +110,7 @@ async fn root() -> impl IntoResponse {
                     }
                 }
             }
-            
+
             // Footer credit
             div class="mt-8 text-center text-gray-500 text-sm" {
                 p { "© 2025 pfp.blue - Bluesky Profile Management" }
@@ -138,24 +149,24 @@ async fn login(State(state): State<AppState>) -> impl IntoResponse {
                             }
                             h2 class="text-xl font-semibold text-indigo-800" { "Login with Bluesky" }
                         }
-                        
+
                         // Description
                         p class="text-gray-600 mb-6" { "Enter your Bluesky handle (e.g., @username.bsky.social) or DID (e.g., did:plc:...) to connect your account." }
-                        
+
                         form action="/oauth/bsky/authorize" method="get" class="space-y-4" {
                             div class="relative" {
                                 div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none" {
                                     (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>"#))
                                 }
-                                input type="text" name="did" placeholder="Enter your handle or DID" 
+                                input type="text" name="did" placeholder="Enter your handle or DID"
                                     class="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-gray-900" {}
                                 input type="hidden" name="state" value="from_login_page" {}
                             }
-                            
-                            button type="submit" 
-                                class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center" { 
+
+                            button type="submit"
+                                class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center" {
                                 (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>"#))
-                                "Connect with Bluesky" 
+                                "Connect with Bluesky"
                             }
                         }
                     }
@@ -168,7 +179,7 @@ async fn login(State(state): State<AppState>) -> impl IntoResponse {
                     }
                 }
             }
-            
+
             // Debug info hidden in expandable section
             details class="mt-8 max-w-md mx-auto bg-white/70 rounded-lg shadow-sm p-4 text-sm text-gray-600" {
                 summary class="font-medium cursor-pointer" { "Debug Information" }
@@ -179,13 +190,168 @@ async fn login(State(state): State<AppState>) -> impl IntoResponse {
                     p { "Protocol: " span class="font-mono text-xs bg-gray-100 px-1 py-0.5 rounded" { (state.protocol) } }
                 }
             }
-            
+
             // Footer credit
             div class="mt-8 text-center text-gray-500 text-sm" {
                 p { "pfp.blue - Your Bluesky Profile Manager" }
             }
         }
     }
+}
+
+/// Toggle profile picture progress feature for a token
+#[derive(Deserialize)]
+struct ToggleProfileProgressParams {
+    token_id: String,
+    enabled: Option<String>,
+}
+
+async fn toggle_profile_progress(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Form(params): Form<ToggleProfileProgressParams>,
+) -> impl IntoResponse {
+    use tracing::{error, info};
+
+    // First, validate that this token belongs to the user
+    let token_result = sqlx::query(
+        r#"
+        SELECT id FROM oauth_tokens
+        WHERE did = $1 AND user_id = $2
+        "#,
+    )
+    .bind(&params.token_id)
+    .bind(user.user_id)
+    .fetch_optional(&state.db)
+    .await;
+
+    let token_id = match token_result {
+        Ok(Some(row)) => row.get::<uuid::Uuid, _>("id"),
+        Ok(None) => {
+            error!(
+                "Attempted to toggle progress for token not belonging to user: {}",
+                params.token_id
+            );
+            return axum::response::Redirect::to("/me").into_response();
+        }
+        Err(err) => {
+            error!("Database error when checking token ownership: {:?}", err);
+            return axum::response::Redirect::to("/me").into_response();
+        }
+    };
+
+    // Get or create the profile progress settings
+    let result = crate::profile_progress::ProfilePictureProgress::get_or_create(
+        &state.db,
+        token_id,
+        params.enabled.is_some(),
+        None,
+    )
+    .await;
+
+    match result {
+        Ok(mut settings) => {
+            // If settings were found or created, update the enabled status
+            if let Err(err) = settings
+                .update_enabled(&state.db, params.enabled.is_some())
+                .await
+            {
+                error!("Failed to update profile progress settings: {:?}", err);
+            } else {
+                info!(
+                    "Updated profile progress settings for token {}: enabled={}",
+                    token_id,
+                    params.enabled.is_some()
+                );
+            }
+        }
+        Err(err) => {
+            error!("Failed to get/create profile progress settings: {:?}", err);
+        }
+    }
+
+    // Redirect back to profile page
+    axum::response::Redirect::to("/me").into_response()
+}
+
+/// Set the original profile picture for progress visualization
+#[derive(Deserialize)]
+struct SetOriginalProfilePictureParams {
+    token_id: String,
+    blob_cid: String,
+}
+
+async fn set_original_profile_picture(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Form(params): Form<SetOriginalProfilePictureParams>,
+) -> impl IntoResponse {
+    use tracing::{error, info};
+
+    // First, validate that this token belongs to the user
+    let token_result = sqlx::query(
+        r#"
+        SELECT id FROM oauth_tokens
+        WHERE did = $1 AND user_id = $2
+        "#,
+    )
+    .bind(&params.token_id)
+    .bind(user.user_id)
+    .fetch_optional(&state.db)
+    .await;
+
+    let token_id = match token_result {
+        Ok(Some(row)) => row.get::<uuid::Uuid, _>("id"),
+        Ok(None) => {
+            error!(
+                "Attempted to set original profile picture for token not belonging to user: {}",
+                params.token_id
+            );
+            return axum::response::Redirect::to("/me").into_response();
+        }
+        Err(err) => {
+            error!("Database error when checking token ownership: {:?}", err);
+            return axum::response::Redirect::to("/me").into_response();
+        }
+    };
+
+    // Get or create the profile progress settings
+    let result = crate::profile_progress::ProfilePictureProgress::get_or_create(
+        &state.db,
+        token_id,
+        true, // Enable when setting an original profile picture
+        Some(params.blob_cid.clone()),
+    )
+    .await;
+
+    match result {
+        Ok(mut settings) => {
+            // Update the original blob CID
+            if let Err(err) = settings
+                .update_original_blob_cid(&state.db, Some(params.blob_cid.clone()))
+                .await
+            {
+                error!("Failed to update original blob CID: {:?}", err);
+            } else {
+                info!(
+                    "Updated original blob CID for token {}: {}",
+                    token_id, params.blob_cid
+                );
+
+                // Also enqueue a job to update the profile picture
+                let job = crate::jobs::UpdateProfilePictureProgressJob::new(token_id);
+                if let Err(e) = job.enqueue(&state).await {
+                    error!("Failed to enqueue profile picture update job: {:?}", e);
+                }
+            }
+        }
+        Err(err) => {
+            error!("Failed to get/create profile progress settings: {:?}", err);
+        }
+    }
+
+    // Redirect back to profile page
+    axum::response::Redirect::to("/me").into_response()
 }
 
 use maud::{Escaper, Render};
