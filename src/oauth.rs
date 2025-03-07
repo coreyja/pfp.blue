@@ -450,7 +450,6 @@ impl OAuthTokenSet {
         }
     }
 
-    /// Set the user ID for this token set
     pub fn with_user_id(mut self, user_id: uuid::Uuid) -> Self {
         self.user_id = Some(user_id);
         self

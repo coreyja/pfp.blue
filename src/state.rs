@@ -20,7 +20,6 @@ impl BlueskyOAuthConfig {
             public_key,
         };
 
-        // Verify keys at startup
         config.verify_keys()?;
 
         Ok(config)
@@ -33,7 +32,6 @@ impl BlueskyOAuthConfig {
         use std::process::Command;
         use tempfile::NamedTempFile;
 
-        // Decode base64-encoded private key
         let decoded_private_key = match base64::Engine::decode(
             &base64::engine::general_purpose::STANDARD,
             &self.private_key,
@@ -48,7 +46,6 @@ impl BlueskyOAuthConfig {
             format!("{:?}", decoded_private_key)
         };
 
-        // Write to temp file and verify with OpenSSL directly
         let mut private_temp_file =
             NamedTempFile::new().map_err(|e| eyre!("Failed to create temporary file: {}", e))?;
 
@@ -56,7 +53,6 @@ impl BlueskyOAuthConfig {
             .write_all(&decoded_private_key)
             .map_err(|e| eyre!("Failed to write to temporary file: {}", e))?;
 
-        // Try to verify the key with OpenSSL
         let private_output = Command::new("openssl")
             .arg("ec")
             .arg("-in")
@@ -74,7 +70,6 @@ impl BlueskyOAuthConfig {
             ));
         }
 
-        // Decode base64-encoded public key
         let decoded_public_key = match base64::Engine::decode(
             &base64::engine::general_purpose::STANDARD,
             &self.public_key,
@@ -89,7 +84,6 @@ impl BlueskyOAuthConfig {
             format!("{:?}", decoded_public_key)
         };
 
-        // Write to temp file and verify with OpenSSL directly
         let mut public_temp_file = NamedTempFile::new()
             .map_err(|e| eyre!("Failed to create temporary file for public key: {}", e))?;
 
@@ -97,7 +91,6 @@ impl BlueskyOAuthConfig {
             .write_all(&decoded_public_key)
             .map_err(|e| eyre!("Failed to write to temporary file for public key: {}", e))?;
 
-        // Try to verify the public key with OpenSSL
         let public_output = Command::new("openssl")
             .arg("ec")
             .arg("-pubin")

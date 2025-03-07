@@ -208,8 +208,6 @@ pub struct CallbackParams {
     pub error_description: Option<String>,
 }
 
-/// Handle the callback from the Bluesky authorization server
-/// Fetch a user's profile from Bluesky PDS
 async fn fetch_user_profile(
     state: &AppState,
     did: &str,
