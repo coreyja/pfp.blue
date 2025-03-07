@@ -273,12 +273,17 @@ async fn fetch_blob_by_cid(
     token: &OAuthTokenSet,
     cid: &str,
 ) -> cja::Result<Vec<u8>> {
-    info!("Fetching blob with CID: {} for DID/handle: {}", cid, did_or_handle);
+    info!(
+        "Fetching blob with CID: {} for DID/handle: {}",
+        cid, did_or_handle
+    );
 
     // First, resolve the user's DID document to find their PDS endpoint
     let client = reqwest::Client::new();
-    let xrpc_client = std::sync::Arc::new(atrium_xrpc_client::reqwest::ReqwestClient::new("https://bsky.social"));
-    
+    let xrpc_client = std::sync::Arc::new(atrium_xrpc_client::reqwest::ReqwestClient::new(
+        "https://bsky.social",
+    ));
+
     // Check if the input is a handle or a DID
     let did_obj = if did_or_handle.starts_with("did:") {
         // It's already a DID
@@ -288,14 +293,14 @@ async fn fetch_blob_by_cid(
         // It's a handle, try to resolve it to a DID first
         let handle = atrium_api::types::string::Handle::from_str(did_or_handle)
             .map_err(|e| eyre!("Invalid handle format: {}", e))?;
-        
+
         info!("Resolving handle {} to DID", did_or_handle);
         crate::did::resolve_handle_to_did(&handle, xrpc_client.clone()).await?
     };
-    
+
     info!("Resolving DID document for {}", did_obj.as_str());
     let did_document = crate::did::resolve_did_to_document(&did_obj, xrpc_client).await?;
-    
+
     // Find the PDS service endpoint
     let services = did_document
         .service
@@ -311,54 +316,72 @@ async fn fetch_blob_by_cid(
     info!("Found PDS endpoint: {}", pds_endpoint);
 
     // Construct the getBlob URL using the PDS endpoint with the resolved DID
-    let blob_url = format!("{}/xrpc/com.atproto.sync.getBlob?did={}&cid={}", 
-                         pds_endpoint, did_obj.as_str(), cid);
+    let blob_url = format!(
+        "{}/xrpc/com.atproto.sync.getBlob?did={}&cid={}",
+        pds_endpoint,
+        did_obj.as_str(),
+        cid
+    );
     info!("Requesting blob from PDS: {}", blob_url);
 
     // Create a request with the access token
     let request = client.get(&blob_url);
-    
-    // Add the access token if available
-    let request = request.bearer_auth(&token.access_token);
-    
+
     // Send the request
     let response = request.send().await?;
-    
+
     if !response.status().is_success() {
         let status = response.status();
         let error_text = response
             .text()
             .await
             .unwrap_or_else(|_| "Failed to read error response".to_string());
-            
+
         info!("PDS request failed: {} - {}", status, error_text);
-        
+
         // Try fallback to CDN as last resort using the resolved DID
         info!("Trying fallback to CDN...");
-        let cdn_url = format!("https://avatar.bsky.social/img/avatar/plain/{}/{}@jpeg", 
-                            did_obj.as_str(), cid);
-        
+        let cdn_url = format!(
+            "https://avatar.bsky.social/img/avatar/plain/{}/{}@jpeg",
+            did_obj.as_str(),
+            cid
+        );
+
         match client.get(&cdn_url).send().await {
             Ok(cdn_response) => {
                 if cdn_response.status().is_success() {
                     let blob_data = cdn_response.bytes().await?.to_vec();
-                    info!("Successfully retrieved blob from CDN: {} bytes", blob_data.len());
+                    info!(
+                        "Successfully retrieved blob from CDN: {} bytes",
+                        blob_data.len()
+                    );
                     return Ok(blob_data);
                 } else {
                     // Return the original PDS error
-                    Err(eyre!("Failed to get blob from PDS: {} - {}", status, error_text))
+                    Err(eyre!(
+                        "Failed to get blob from PDS: {} - {}",
+                        status,
+                        error_text
+                    ))
                 }
-            },
+            }
             Err(e) => {
                 // Return the original PDS error with fallback info
-                Err(eyre!("Failed to get blob from PDS: {} - {}. CDN fallback also failed: {}", 
-                         status, error_text, e))
+                Err(eyre!(
+                    "Failed to get blob from PDS: {} - {}. CDN fallback also failed: {}",
+                    status,
+                    error_text,
+                    e
+                ))
             }
         }
     } else {
         // Success! Get the image data
         let blob_data = response.bytes().await?.to_vec();
-        info!("Successfully retrieved blob from PDS: {} bytes", blob_data.len());
+        info!(
+            "Successfully retrieved blob from PDS: {} bytes",
+            blob_data.len()
+        );
         Ok(blob_data)
     }
 }
@@ -625,7 +648,7 @@ pub async fn callback(
     }
 
     info!("Authentication successful for DID: {}", session.did);
-    
+
     // Profile image fetching and display is handled in display_profile_multi function
 
     // Check if we already have a user from the token set
