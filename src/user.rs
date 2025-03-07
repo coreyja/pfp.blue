@@ -32,6 +32,8 @@ pub struct Session {
     pub ip_address: Option<String>,
     /// Whether this session is active
     pub is_active: bool,
+    /// ID of the primary OAuth token for this session (if set)
+    pub primary_token_id: Option<i32>,
     /// When the session was created
     pub created_at_utc: DateTime<Utc>,
     /// When the session was last updated
@@ -118,14 +120,15 @@ impl Session {
         user_agent: Option<String>,
         ip_address: Option<String>,
         duration_days: i64,
+        primary_token_id: Option<i32>,
     ) -> cja::Result<Session> {
         // Calculate expiration time
         let expires_at = Utc::now() + chrono::Duration::days(duration_days);
 
         let row = sqlx::query(
             r#"
-            INSERT INTO sessions (user_id, expires_at, user_agent, ip_address)
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO sessions (user_id, expires_at, user_agent, ip_address, primary_token_id)
+            VALUES ($1, $2, $3, $4, $5)
             RETURNING *
             "#,
         )
@@ -133,6 +136,7 @@ impl Session {
         .bind(expires_at)
         .bind(user_agent)
         .bind(ip_address)
+        .bind(primary_token_id)
         .fetch_one(pool)
         .await?;
 
@@ -143,6 +147,7 @@ impl Session {
             user_agent: row.get("user_agent"),
             ip_address: row.get("ip_address"),
             is_active: row.get("is_active"),
+            primary_token_id: row.get("primary_token_id"),
             created_at_utc: row.get("created_at_utc"),
             updated_at_utc: row.get("updated_at_utc"),
         })
@@ -166,6 +171,7 @@ impl Session {
             user_agent: r.get("user_agent"),
             ip_address: r.get("ip_address"),
             is_active: r.get("is_active"),
+            primary_token_id: r.get("primary_token_id"),
             created_at_utc: r.get("created_at_utc"),
             updated_at_utc: r.get("updated_at_utc"),
         }))
@@ -195,5 +201,72 @@ impl Session {
     /// Get a user for this session
     pub async fn get_user(&self, pool: &PgPool) -> cja::Result<Option<User>> {
         User::get_by_id(pool, self.user_id).await
+    }
+
+    /// Update the primary token for this session
+    pub async fn set_primary_token(&mut self, pool: &PgPool, token_id: i32) -> cja::Result<()> {
+        sqlx::query(
+            r#"
+            UPDATE sessions SET primary_token_id = $1, updated_at_utc = NOW()
+            WHERE session_id = $2
+            "#,
+        )
+        .bind(token_id)
+        .bind(self.session_id)
+        .execute(pool)
+        .await?;
+
+        self.primary_token_id = Some(token_id);
+        Ok(())
+    }
+
+    /// Clear the primary token for this session
+    pub async fn clear_primary_token(&mut self, pool: &PgPool) -> cja::Result<()> {
+        sqlx::query(
+            r#"
+            UPDATE sessions SET primary_token_id = NULL, updated_at_utc = NOW()
+            WHERE session_id = $1
+            "#,
+        )
+        .bind(self.session_id)
+        .execute(pool)
+        .await?;
+
+        self.primary_token_id = None;
+        Ok(())
+    }
+
+    /// Get the primary token for this session
+    pub async fn get_primary_token(&self, pool: &PgPool) -> cja::Result<Option<crate::oauth::OAuthTokenSet>> {
+        if let Some(token_id) = self.primary_token_id {
+            // Query the oauth_tokens table to get the token by ID
+            let row = sqlx::query(
+                r#"
+                SELECT id, did, access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id
+                FROM oauth_tokens
+                WHERE id = $1 AND is_active = TRUE
+                "#,
+            )
+            .bind(token_id)
+            .fetch_optional(pool)
+            .await?;
+
+            if let Some(row) = row {
+                // Convert the row to an OAuthTokenSet
+                return Ok(Some(crate::oauth::OAuthTokenSet {
+                    did: row.get("did"),
+                    access_token: row.get("access_token"),
+                    token_type: row.get("token_type"),
+                    expires_at: row.get::<i64, _>("expires_at") as u64,
+                    refresh_token: row.get("refresh_token"),
+                    scope: row.get("scope"),
+                    dpop_jkt: row.get("dpop_jkt"),
+                    user_id: row.get("user_id"),
+                }));
+            }
+        }
+        
+        // If no primary token is set or it's not found/active, return None
+        Ok(None)
     }
 }

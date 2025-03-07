@@ -21,6 +21,7 @@ pub fn routes(app_state: AppState) -> axum::Router {
         .route("/oauth/bsky/callback", get(bsky::callback))
         .route("/oauth/bsky/token", get(bsky::get_token))
         .route("/oauth/bsky/revoke", get(bsky::revoke_token))
+        .route("/oauth/bsky/set-primary", get(bsky::set_primary_account))
         // Add trace layer for debugging
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(app_state)

@@ -687,12 +687,30 @@ pub async fn callback(
         let ip_address = None; // Simplified to not use client IP address
 
         // Create a session
+        // Get the token id to use as primary token
+        let token_id = match sqlx::query(
+            r#"
+            SELECT id FROM oauth_tokens WHERE did = $1 AND is_active = TRUE
+            "#,
+        )
+        .bind(&token_set.did)
+        .fetch_optional(&state.db)
+        .await
+        {
+            Ok(Some(row)) => {
+                let id: i32 = row.get("id");
+                Some(id)
+            },
+            _ => None,
+        };
+
         if let Err(err) = crate::auth::create_session_and_set_cookie(
             &state.db,
             &cookies,
             user_id,
             user_agent_str,
             ip_address,
+            token_id, // Set this token as primary
         )
         .await
         {
@@ -800,7 +818,9 @@ pub async fn get_token(
                         "did": new_token.did,
                         "access_token": new_token.access_token,
                         "token_type": new_token.token_type,
-                        "expires_in": new_token.expires_at - SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
+                        "expires_in": if new_token.expires_at > SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() {
+                            new_token.expires_at - SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs()
+                        } else { 0 },
                         "scope": new_token.scope,
                         "status": "refreshed"
                     })).into_response();
@@ -841,7 +861,9 @@ pub async fn get_token(
         "did": token.did,
         "access_token": token.access_token,
         "token_type": token.token_type,
-        "expires_in": token.expires_at - SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
+        "expires_in": if token.expires_at > SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() {
+            token.expires_at - SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs()
+        } else { 0 },
         "scope": token.scope,
         "status": "valid"
     })).into_response()
@@ -884,9 +906,75 @@ pub struct RevokeTokenParams {
     pub did: String,
 }
 
+/// Set a specific Bluesky account as the primary one
+pub async fn set_primary_account(
+    State(state): State<AppState>,
+    cookies: Cookies,
+    crate::auth::AuthUser(user): crate::auth::AuthUser,
+    Query(params): Query<SetPrimaryAccountParams>,
+) -> impl IntoResponse {
+    // Get the session
+    let session_id = match crate::auth::get_session_id_from_cookie(&cookies) {
+        Some(id) => id,
+        None => {
+            error!("No valid session found");
+            return (StatusCode::INTERNAL_SERVER_ERROR, "Session not found").into_response();
+        }
+    };
+    
+    let mut session = match crate::auth::validate_session(&state.db, session_id).await {
+        Ok(Some(s)) => s,
+        _ => {
+            error!("Session validation failed");
+            return Redirect::to("/login").into_response();
+        }
+    };
+    
+    // Verify that this DID belongs to this user
+    let token = match sqlx::query(
+        r#"
+        SELECT id FROM oauth_tokens 
+        WHERE did = $1 AND user_id = $2 AND is_active = TRUE
+        LIMIT 1
+        "#,
+    )
+    .bind(&params.did)
+    .bind(user.user_id)
+    .fetch_optional(&state.db)
+    .await {
+        Ok(Some(row)) => {
+            let id: i32 = row.get("id");
+            id
+        },
+        Ok(None) => {
+            error!("Attempted to set primary account for DID not belonging to user: {}", params.did);
+            return (StatusCode::FORBIDDEN, "This account doesn't belong to you").into_response();
+        },
+        Err(err) => {
+            error!("Database error when checking DID ownership: {:?}", err);
+            return (StatusCode::INTERNAL_SERVER_ERROR, "Database error").into_response();
+        }
+    };
+    
+    // Update the session with the new primary token
+    if let Err(err) = session.set_primary_token(&state.db, token).await {
+        error!("Failed to update primary token: {:?}", err);
+        return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to update primary account").into_response();
+    }
+    
+    // Redirect back to profile page
+    Redirect::to("/me").into_response()
+}
+
+#[derive(Deserialize)]
+pub struct SetPrimaryAccountParams {
+    pub did: String,
+}
+
 /// Profile page that requires authentication
 pub async fn profile(
     State(state): State<AppState>,
+    cookies: Cookies,
     crate::auth::AuthUser(user): crate::auth::AuthUser,
 ) -> impl IntoResponse {
     // Get all tokens for this user
@@ -913,8 +1001,32 @@ pub async fn profile(
         }.into_response();
     }
 
-    // Use the first token as the primary one
-    let primary_token = tokens[0].clone();
+    // Get session to check for a set primary token
+    let session_id = match crate::auth::get_session_id_from_cookie(&cookies) {
+        Some(id) => id,
+        None => {
+            error!("No valid session found");
+            return (StatusCode::INTERNAL_SERVER_ERROR, "Session not found").into_response();
+        }
+    };
+    
+    let session = match crate::auth::validate_session(&state.db, session_id).await {
+        Ok(Some(s)) => s,
+        _ => {
+            error!("Session validation failed");
+            return (StatusCode::INTERNAL_SERVER_ERROR, "Invalid session").into_response();
+        }
+    };
+    
+    // Use primary token from session if available, otherwise use the first token
+    let primary_token = if let Ok(Some(token)) = session.get_primary_token(&state.db).await {
+        token
+    } else if !tokens.is_empty() {
+        tokens[0].clone()
+    } else {
+        error!("No tokens available for this user");
+        return (StatusCode::BAD_REQUEST, "No Bluesky accounts linked").into_response();
+    };
 
     // Check if the primary token is expired and try to refresh it
     if primary_token.is_expired() {
@@ -1145,7 +1257,14 @@ async fn display_profile_multi(
 
             div class="token-info" {
                 h3 { "Authentication Info" }
-                p { "Access token expires in: " (primary_token.expires_at - SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs()) " seconds" }
+                p { "Access token expires in: " ({
+                    let now = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
+                    if primary_token.expires_at > now {
+                        primary_token.expires_at - now
+                    } else {
+                        0
+                    }
+                }) " seconds" }
                 p { "Has refresh token: " (primary_token.refresh_token.is_some()) }
             }
 
@@ -1159,8 +1278,17 @@ async fn display_profile_multi(
                             strong { "DID: " (token.did) }
                             @if token.did == primary_token.did {
                                 span style="color: green;" { " (Current)" }
+                            } @else {
+                                a href={"/oauth/bsky/set-primary?did=" (token.did)} style="margin-left: 10px;" { "Set as Primary" }
                             }
-                            p { "Expires in: " (token.expires_at - SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs()) " seconds" }
+                            p { "Expires in: " ({
+                                let now = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
+                                if token.expires_at > now {
+                                    token.expires_at - now
+                                } else {
+                                    0
+                                }
+                            }) " seconds" }
                         }
                     }
                 }
