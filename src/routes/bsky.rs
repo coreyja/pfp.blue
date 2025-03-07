@@ -523,8 +523,27 @@ pub async fn callback(
         }
     };
     
-    // Create a token set with JWK thumbprint
-    let token_set = match OAuthTokenSet::from_token_response_with_jwk(
+    // Check if there's an existing user session
+    let current_user_id = if let Some(session_id) = crate::auth::get_session_id_from_cookie(&cookies) {
+        match crate::auth::validate_session(&state.db, session_id).await {
+            Ok(Some(user_session)) => {
+                // User is already logged in, get their ID
+                match user_session.get_user(&state.db).await {
+                    Ok(Some(user)) => {
+                        info!("Found existing user session, linking new account to user_id: {}", user.user_id);
+                        Some(user.user_id)
+                    },
+                    _ => None
+                }
+            },
+            _ => None
+        }
+    } else {
+        None
+    };
+    
+    // Create a token set with JWK thumbprint and user_id if we have one
+    let mut token_set = match OAuthTokenSet::from_token_response_with_jwk(
         &token_response, 
         session.did.clone(),
         &state.bsky_oauth.public_key
@@ -536,6 +555,11 @@ pub async fn callback(
             OAuthTokenSet::from_token_response(token_response, session.did.clone())
         }
     };
+    
+    // If we found a user session, associate this token with that user
+    if let Some(user_id) = current_user_id {
+        token_set.user_id = Some(user_id);
+    }
     
     // Store the token in the database
     if let Err(err) = oauth::db::store_token(&state.db, &token_set).await {
@@ -628,39 +652,58 @@ pub async fn callback(
         format!("data:{};base64,{}", mime_type, base64::Engine::encode(&base64::engine::general_purpose::STANDARD, blob))
     });
     
-    // Find or create a user for this token
-    let user = match crate::user::User::get_by_did(&state.db, &session.did).await {
-        Ok(Some(user)) => user,
-        Ok(None) => {
-            // Create a new user
-            match crate::user::User::create(&state.db, None, None).await {
-                Ok(user) => user,
-                Err(err) => {
-                    error!("Failed to create user: {:?}", err);
-                    return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to create user").into_response();
+    // Check if we already have a user from the token set
+    let user_id = if let Some(user_id) = token_set.user_id {
+        // We already have a linked user from the existing session
+        user_id
+    } else {
+        // We need to find or create a user for this token
+        match crate::user::User::get_by_did(&state.db, &session.did).await {
+            Ok(Some(user)) => user.user_id,
+            Ok(None) => {
+                // Create a new user
+                match crate::user::User::create(&state.db, None, None).await {
+                    Ok(user) => user.user_id,
+                    Err(err) => {
+                        error!("Failed to create user: {:?}", err);
+                        return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to create user").into_response();
+                    }
                 }
+            },
+            Err(err) => {
+                error!("Failed to find user: {:?}", err);
+                return (StatusCode::INTERNAL_SERVER_ERROR, "Database error").into_response();
             }
-        },
-        Err(err) => {
-            error!("Failed to find user: {:?}", err);
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Database error").into_response();
         }
     };
     
-    // Create a session for this user
-    let user_agent_str = None; // Simplify by not using User-Agent header for now
-    let ip_address = None; // Simplified to not use client IP address
+    // Check if we already have a session
+    let have_session = if let Some(session_id) = crate::auth::get_session_id_from_cookie(&cookies) {
+        match crate::auth::validate_session(&state.db, session_id).await {
+            Ok(Some(_)) => true,
+            _ => false
+        }
+    } else {
+        false
+    };
     
-    // Create a session
-    if let Err(err) = crate::auth::create_session_and_set_cookie(
-        &state.db, 
-        &cookies, 
-        user.user_id,
-        user_agent_str,
-        ip_address,
-    ).await {
-        error!("Failed to create session: {:?}", err);
-        return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to create session").into_response();
+    // Only create a new session if we don't already have one
+    if !have_session {
+        // Create a session for this user
+        let user_agent_str = None; // Simplify by not using User-Agent header for now
+        let ip_address = None; // Simplified to not use client IP address
+        
+        // Create a session
+        if let Err(err) = crate::auth::create_session_and_set_cookie(
+            &state.db, 
+            &cookies, 
+            user_id,
+            user_agent_str,
+            ip_address,
+        ).await {
+            error!("Failed to create session: {:?}", err);
+            return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to create session").into_response();
+        }
     }
     
     // For backward compatibility, also set the legacy DID cookie
@@ -852,7 +895,11 @@ pub async fn profile(
         return maud::html! {
             h1 { "Your Profile" }
             p { "You don't have any Bluesky accounts linked yet." }
-            a href="/oauth/bsky/authorize" { "Link a Bluesky Account" }
+            
+            form action="/oauth/bsky/authorize" method="get" {
+                input type="text" name="did" placeholder="Enter Bluesky handle or DID" style="width: 250px;" {}
+                button type="submit" { "Link a Bluesky Account" }
+            }
         }.into_response();
     }
     
@@ -1090,7 +1137,10 @@ async fn display_profile_multi(state: &AppState, primary_token: OAuthTokenSet, a
                 }
                 
                 p {
-                    a href="/oauth/bsky/authorize" { "Link Another Bluesky Account" }
+                    form action="/oauth/bsky/authorize" method="get" {
+                        input type="text" name="did" placeholder="Enter Bluesky handle or DID" style="width: 250px;" {}
+                        button type="submit" { "Link Another Bluesky Account" }
+                    }
                 }
             }
             

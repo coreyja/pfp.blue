@@ -67,13 +67,13 @@ impl FromRequestParts<AppState> for AuthUser {
 // and provides access to the user, which is what we typically need
 
 /// Get the session ID from the cookie
-fn get_session_id_from_cookie(cookies: &Cookies) -> Option<Uuid> {
+pub fn get_session_id_from_cookie(cookies: &Cookies) -> Option<Uuid> {
     cookies.get(SESSION_COOKIE_NAME)
         .and_then(|cookie| cookie.value().parse::<Uuid>().ok())
 }
 
 /// Validate a session
-async fn validate_session(pool: &sqlx::PgPool, session_id: Uuid) -> cja::Result<Option<Session>> {
+pub async fn validate_session(pool: &sqlx::PgPool, session_id: Uuid) -> cja::Result<Option<Session>> {
     let session = Session::get_by_id(pool, session_id).await?;
     
     if let Some(ref session) = session {
