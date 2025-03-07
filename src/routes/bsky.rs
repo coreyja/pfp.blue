@@ -274,7 +274,7 @@ async fn fetch_user_profile(
     } else {
         None
     };
-    
+
     // If we found a handle in the profile, make sure it's updated in the database
     if let Some(handle_str) = extracted_handle {
         // Check if handle is different than what we have saved
@@ -282,7 +282,7 @@ async fn fetch_user_profile(
             Some(current_handle) => current_handle != &handle_str,
             None => true, // No handle stored yet, need to update
         };
-        
+
         if should_update {
             // Update the handle in the database
             if let Err(err) = oauth::db::update_token_handle(&state.db, did, &handle_str).await {
@@ -303,9 +303,9 @@ async fn fetch_user_profile(
 /// Function to fetch profile data for display only (no authentication/DPoP needed)
 async fn fetch_profile_for_display(did: &str) -> cja::Result<serde_json::Value> {
     use color_eyre::eyre::eyre;
-    
+
     let client = reqwest::Client::new();
-    
+
     // Make unauthenticated API request to get profile
     let response = client
         .get("https://bsky.social/xrpc/com.atproto.repo.getRecord")
@@ -337,7 +337,7 @@ async fn fetch_profile_for_display(did: &str) -> cja::Result<serde_json::Value> 
 }
 
 /// Fetch a blob by its CID directly from the user's PDS
-async fn fetch_blob_by_cid(did_or_handle: &str, cid: &str) -> cja::Result<Vec<u8>> {
+pub async fn fetch_blob_by_cid(did_or_handle: &str, cid: &str) -> cja::Result<Vec<u8>> {
     info!(
         "Fetching blob with CID: {} for DID/handle: {}",
         cid, did_or_handle
@@ -784,7 +784,7 @@ pub async fn callback(
             Ok(Some(row)) => {
                 let id: uuid::Uuid = row.get("id");
                 Some(id)
-            },
+            }
             _ => None,
         };
 
@@ -845,14 +845,17 @@ pub async fn get_token(
                 .into_response();
         }
     };
-    
+
     // Also fetch profile in the background to ensure handle is up to date
     // Use the job system to do this asynchronously
     if let Err(err) = crate::jobs::UpdateProfileHandleJob::from_token(&token)
         .enqueue(&state)
         .await
     {
-        error!("Failed to enqueue handle update job in get_token: {:?}", err);
+        error!(
+            "Failed to enqueue handle update job in get_token: {:?}",
+            err
+        );
     } else {
         info!("Queued handle update job for DID: {}", token.did);
     }
@@ -915,9 +918,15 @@ pub async fn get_token(
                         .enqueue(&state)
                         .await
                     {
-                        error!("Failed to enqueue handle update job after token refresh: {:?}", err);
+                        error!(
+                            "Failed to enqueue handle update job after token refresh: {:?}",
+                            err
+                        );
                     } else {
-                        info!("Queued handle update job after token refresh for {}", &new_token.did);
+                        info!(
+                            "Queued handle update job after token refresh for {}",
+                            &new_token.did
+                        );
                     }
 
                     // Return the refreshed token
@@ -1028,7 +1037,7 @@ pub async fn set_primary_account(
             return (StatusCode::INTERNAL_SERVER_ERROR, "Session not found").into_response();
         }
     };
-    
+
     let mut session = match crate::auth::validate_session(&state.db, session_id).await {
         Ok(Some(s)) => s,
         _ => {
@@ -1036,11 +1045,11 @@ pub async fn set_primary_account(
             return Redirect::to("/login").into_response();
         }
     };
-    
+
     // Verify that this DID belongs to this user
     let token = match sqlx::query(
         r#"
-        SELECT id FROM oauth_tokens 
+        SELECT id FROM oauth_tokens
         WHERE did = $1 AND user_id = $2
         LIMIT 1
         "#,
@@ -1048,27 +1057,35 @@ pub async fn set_primary_account(
     .bind(&params.did)
     .bind(user.user_id)
     .fetch_optional(&state.db)
-    .await {
+    .await
+    {
         Ok(Some(row)) => {
             let id: uuid::Uuid = row.get("id");
             id
-        },
+        }
         Ok(None) => {
-            error!("Attempted to set primary account for DID not belonging to user: {}", params.did);
+            error!(
+                "Attempted to set primary account for DID not belonging to user: {}",
+                params.did
+            );
             return (StatusCode::FORBIDDEN, "This account doesn't belong to you").into_response();
-        },
+        }
         Err(err) => {
             error!("Database error when checking DID ownership: {:?}", err);
             return (StatusCode::INTERNAL_SERVER_ERROR, "Database error").into_response();
         }
     };
-    
+
     // Update the session with the new primary token
     if let Err(err) = session.set_primary_token(&state.db, token).await {
         error!("Failed to update primary token: {:?}", err);
-        return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to update primary account").into_response();
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to update primary account",
+        )
+            .into_response();
     }
-    
+
     // Redirect back to profile page
     Redirect::to("/me").into_response()
 }
@@ -1096,7 +1113,7 @@ pub async fn profile(
                 .into_response();
         }
     };
-    
+
     // Start background jobs to update handles for all tokens
     // This ensures we have the latest handle data when displaying the profile
     for token in &tokens {
@@ -1104,7 +1121,10 @@ pub async fn profile(
             .enqueue(&state)
             .await
         {
-            error!("Failed to enqueue handle update job for DID {}: {:?}", token.did, err);
+            error!(
+                "Failed to enqueue handle update job for DID {}: {:?}",
+                token.did, err
+            );
         }
     }
 
@@ -1120,10 +1140,10 @@ pub async fn profile(
                     div class="mb-6 flex justify-center" {
                         (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" width="150" height="150" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-400"><circle cx="12" cy="8" r="5"></circle><path d="M20 21v-2a7 7 0 0 0-14 0v2"></path><line x1="12" y1="8" x2="12" y2="8"></line><path d="M3 20h18a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1H9L3 12v7a1 1 0 0 0 1 1z"></path></svg>"#))
                     }
-                    
+
                     h1 class="text-3xl font-bold text-gray-800 mb-4" { "Welcome to Your Profile!" }
                     p class="text-gray-600 mb-8" { "You don't have any Bluesky accounts linked yet. Let's get started!" }
-                    
+
                     // Playful form
                     div class="bg-gradient-to-r from-indigo-50 to-blue-50 rounded-xl p-6 border border-dashed border-indigo-200" {
                         form action="/oauth/bsky/authorize" method="get" class="space-y-4" {
@@ -1134,23 +1154,23 @@ pub async fn profile(
                                 }
                                 h2 class="text-lg font-semibold text-indigo-800" { "Connect Your Bluesky" }
                             }
-                            
+
                             div class="relative" {
                                 div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none" {
                                     (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>"#))
                                 }
-                                input type="text" name="did" placeholder="Enter Bluesky handle or DID" 
+                                input type="text" name="did" placeholder="Enter Bluesky handle or DID"
                                     class="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-gray-900" {}
                             }
-                            
-                            button type="submit" 
-                                class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center" { 
+
+                            button type="submit"
+                                class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center" {
                                 (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>"#))
-                                "Link Bluesky Account" 
+                                "Link Bluesky Account"
                             }
                         }
                     }
-                    
+
                     // Tips section
                     div class="mt-8 text-left" {
                         h3 class="text-lg font-semibold text-gray-800 mb-3" { "Why link your Bluesky account?" }
@@ -1169,7 +1189,7 @@ pub async fn profile(
                             }
                         }
                     }
-                    
+
                     // Footer links
                     div class="mt-8 pt-4 border-t border-gray-200" {
                         div class="flex justify-center gap-4" {
@@ -1179,7 +1199,7 @@ pub async fn profile(
                         }
                     }
                 }
-                
+
                 // Footer credit
                 div class="mt-10 text-center text-gray-500 text-sm" {
                     p { "pfp.blue - Your Bluesky Profile Manager" }
@@ -1196,7 +1216,7 @@ pub async fn profile(
             return (StatusCode::INTERNAL_SERVER_ERROR, "Session not found").into_response();
         }
     };
-    
+
     let session = match crate::auth::validate_session(&state.db, session_id).await {
         Ok(Some(s)) => s,
         _ => {
@@ -1204,7 +1224,7 @@ pub async fn profile(
             return (StatusCode::INTERNAL_SERVER_ERROR, "Invalid session").into_response();
         }
     };
-    
+
     // Use primary token from session if available, otherwise use the first token
     let primary_token = if let Ok(Some(token)) = session.get_primary_token(&state.db).await {
         token
@@ -1258,7 +1278,9 @@ pub async fn profile(
                     ) {
                         Ok(token) => {
                             // Set the user_id and preserve the handle
-                            token.with_user_id(user.user_id).with_handle_from(&primary_token)
+                            token
+                                .with_user_id(user.user_id)
+                                .with_handle_from(&primary_token)
                         }
                         Err(err) => {
                             error!("Failed to create token set with JWK: {:?}", err);
@@ -1288,11 +1310,17 @@ pub async fn profile(
                         .enqueue(&state)
                         .await
                     {
-                        error!("Failed to enqueue handle update job after token refresh: {:?}", err);
+                        error!(
+                            "Failed to enqueue handle update job after token refresh: {:?}",
+                            err
+                        );
                     } else {
-                        info!("Queued handle update job after token refresh for {}", &new_token.did);
+                        info!(
+                            "Queued handle update job after token refresh for {}",
+                            &new_token.did
+                        );
                     }
-                    
+
                     // Refresh all tokens
                     let tokens = match oauth::db::get_tokens_for_user(&state.db, user.user_id).await
                     {
@@ -1324,9 +1352,9 @@ pub async fn profile(
 async fn get_token_endpoint_for_did(pool: &sqlx::PgPool, did: &str) -> cja::Result<Option<String>> {
     let row = sqlx::query(
         r#"
-        SELECT token_endpoint FROM oauth_sessions 
-        WHERE did = $1 
-        ORDER BY updated_at_utc DESC 
+        SELECT token_endpoint FROM oauth_sessions
+        WHERE did = $1
+        ORDER BY updated_at_utc DESC
         LIMIT 1
         "#,
     )
@@ -1346,11 +1374,11 @@ async fn display_profile_multi(
     // Queue a job to update the handle in the background
     if let Err(err) = crate::jobs::UpdateProfileHandleJob::from_token(&primary_token)
         .enqueue(state)
-        .await 
+        .await
     {
         error!("Failed to enqueue handle update job for display: {:?}", err);
     }
-    
+
     // Fetch profile data directly (we don't have to make this async since we're also updating in background)
     let profile_data = match fetch_profile_for_display(&primary_token.did).await {
         Ok(data) => Some(data),
@@ -1482,7 +1510,7 @@ async fn display_profile_multi(
                                 p class="text-lg text-indigo-600 font-semibold mb-2" { "@" (h) }
                             }
                             p class="text-sm text-gray-500 mb-4 max-w-md truncate" { (primary_token.did) }
-                            
+
                             // Playful badges
                             div class="flex flex-wrap justify-center md:justify-start gap-2 mt-2" {
                                 div class="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full" { "Profile" }
@@ -1530,7 +1558,7 @@ async fn display_profile_multi(
                     // Linked accounts section
                     div class="mb-8" {
                         h3 class="text-xl font-bold text-gray-800 mb-4" { "Linked Bluesky Accounts" }
-                        
+
                         div class="space-y-3" {
                             @for token in &all_tokens {
                                 div class="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-md transition duration-200 relative overflow-hidden" {
@@ -1542,7 +1570,7 @@ async fn display_profile_multi(
                                             }
                                         }
                                     }
-                                    
+
                                     div class="flex flex-col sm:flex-row sm:items-center justify-between" {
                                         div class="mb-2 sm:mb-0" {
                                             @if let Some(handle) = &token.handle {
@@ -1560,11 +1588,11 @@ async fn display_profile_multi(
                                                 }
                                             }) " seconds" }
                                         }
-                                        
+
                                         @if token.did != primary_token.did {
-                                            a href={"/oauth/bsky/set-primary?did=" (token.did)} 
-                                              class="text-sm bg-indigo-100 hover:bg-indigo-200 text-indigo-800 px-3 py-1 rounded-full inline-flex items-center transition-colors duration-200" { 
-                                                "Set as Primary" 
+                                            a href={"/oauth/bsky/set-primary?did=" (token.did)}
+                                              class="text-sm bg-indigo-100 hover:bg-indigo-200 text-indigo-800 px-3 py-1 rounded-full inline-flex items-center transition-colors duration-200" {
+                                                "Set as Primary"
                                             }
                                         }
                                     }
@@ -1579,13 +1607,13 @@ async fn display_profile_multi(
                                     div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none" {
                                         (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>"#))
                                     }
-                                    input type="text" name="did" placeholder="Enter Bluesky handle or DID" 
+                                    input type="text" name="did" placeholder="Enter Bluesky handle or DID"
                                         class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-gray-900" {}
                                 }
-                                button type="submit" 
-                                    class="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center" { 
+                                button type="submit"
+                                    class="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center" {
                                     (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>"#))
-                                    "Link Account" 
+                                    "Link Account"
                                 }
                             }
                         }
@@ -1600,6 +1628,105 @@ async fn display_profile_multi(
                                 pre class="bg-gray-900 text-gray-100 p-4 rounded-b-lg overflow-x-auto text-sm" {
                                     code {
                                         (serde_json::to_string_pretty(data).unwrap_or_else(|_| "Failed to format profile data".to_string()))
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Profile Picture Progress feature
+                    div class="mb-8" {
+                        h3 class="text-xl font-bold text-gray-800 mb-4" { "Profile Picture Progress" }
+                        div class="bg-indigo-50 rounded-xl p-5 border border-indigo-200" {
+                            p class="text-gray-700 mb-4" {
+                                "This feature automatically updates your profile picture to show progress from your handle. "
+                                "Use a fraction (e.g. 3/10) or percentage (e.g. 30%) in your handle, and we'll visualize it!"
+                            }
+
+                            // Get profile progress settings for this token
+                            @let progress_settings = match sqlx::query(
+                                r#"
+                                SELECT * FROM profile_picture_progress
+                                WHERE token_id = $1
+                                "#
+                            ).bind(primary_token.did.clone())
+                              .fetch_optional(&state.db)
+                              .await {
+                                Ok(Some(row)) => {
+                                    let enabled: bool = row.get("enabled");
+                                    let original_blob_cid: Option<String> = row.get("original_blob_cid");
+                                    (enabled, original_blob_cid)
+                                },
+                                _ => (false, None),
+                            };
+
+                            // Toggle switch for enabling/disabling
+                            form action="/profile_progress/toggle" method="post" class="flex items-center justify-between mb-4 p-3 bg-white rounded-lg shadow-sm" {
+                                div {
+                                    p class="font-medium text-gray-900" { "Enable Progress Visualization" }
+                                    p class="text-sm text-gray-500" { "Automatically update your profile picture based on progress in your handle" }
+                                }
+
+                                input type="hidden" name="token_id" value=(primary_token.did) {}
+
+                                label class="relative inline-flex items-center cursor-pointer" {
+                                    @if progress_settings.0 {
+                                        input type="checkbox" name="enabled" value="true" checked class="sr-only peer" {}
+                                    } @else {
+                                        input type="checkbox" name="enabled" value="true" class="sr-only peer" {}
+                                    }
+                                    span class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600" {}
+                                }
+
+                                button type="submit" class="ml-2 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1 rounded text-sm" {
+                                    "Save"
+                                }
+                            }
+
+                            // Original profile picture selection
+                            form action="/profile_progress/set_original" method="post" class="p-3 bg-white rounded-lg shadow-sm" {
+                                p class="font-medium text-gray-900 mb-2" { "Original Profile Picture" }
+                                p class="text-sm text-gray-500 mb-4" { "Select the profile picture to use as the base for progress visualization" }
+
+                                input type="hidden" name="token_id" value=(primary_token.did) {}
+
+                                @if let Some(original_cid) = &progress_settings.1 {
+                                    div class="mb-4 flex items-center" {
+                                        p class="text-sm text-gray-600 mr-2" { "Current original: " }
+                                        code class="bg-gray-100 px-2 py-1 rounded text-sm" { (original_cid) }
+                                    }
+                                }
+
+                                @if let Some(img_src) = &avatar_base64 {
+                                    div class="flex items-center space-x-4" {
+                                        // Display current profile picture
+                                        div class="w-16 h-16 rounded-full overflow-hidden bg-white" {
+                                            img src=(img_src) alt="Current Profile Picture" class="w-full h-full object-cover" {}
+                                        }
+
+                                        // Use current button
+                                        @if let Some(cid) = avatar_blob_cid.clone() {
+                                            input type="hidden" name="blob_cid" value=(cid) {}
+                                            button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1 rounded" {
+                                                "Use Current Profile Picture"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Show how to format handle
+                            div class="mt-4 p-3 bg-white rounded-lg shadow-sm" {
+                                p class="font-medium text-gray-900 mb-2" { "How to format your handle" }
+                                div class="space-y-2 text-sm text-gray-600" {
+                                    p { "Your current handle: " @if let Some(h) = &handle {
+                                        strong { "@" (h) }
+                                    } @else { "None" }}
+                                    p { "To show progress, format your handle with one of these patterns:" }
+                                    ul class="list-disc list-inside ml-2 space-y-1" {
+                                        li { "Fraction: " code class="bg-gray-100 px-1" { "username.3/10" } " — Shows 30% progress" }
+                                        li { "Percentage: " code class="bg-gray-100 px-1" { "username.30%" } " — Shows 30% progress" }
+                                        li { "Decimal: " code class="bg-gray-100 px-1" { "username.30.5%" } " — Shows 30.5% progress" }
                                     }
                                 }
                             }
@@ -1623,7 +1750,7 @@ async fn display_profile_multi(
                     }
                 }
             }
-            
+
             // Footer with credits
             div class="mt-10 text-center text-gray-500 text-sm" {
                 p { "Designed with 💙 using TailwindCSS" }

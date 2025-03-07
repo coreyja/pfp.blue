@@ -237,7 +237,10 @@ impl Session {
     }
 
     /// Get the primary token for this session
-    pub async fn get_primary_token(&self, pool: &PgPool) -> cja::Result<Option<crate::oauth::OAuthTokenSet>> {
+    pub async fn get_primary_token(
+        &self,
+        pool: &PgPool,
+    ) -> cja::Result<Option<crate::oauth::OAuthTokenSet>> {
         if let Some(token_id) = self.primary_token_id {
             // Query the oauth_tokens table to get the token by ID
             let row = sqlx::query(
@@ -266,7 +269,7 @@ impl Session {
                 }));
             }
         }
-        
+
         // If no primary token is set or it's not found, return None
         Ok(None)
     }

@@ -457,21 +457,25 @@ impl OAuthTokenSet {
         self.user_id = Some(user_id);
         self
     }
-    
+
     /// Copy the handle from another token
     pub fn with_handle_from(mut self, other: &OAuthTokenSet) -> Self {
         self.handle = other.handle.clone();
         self
     }
-    
+
     /// Set the handle directly
     pub fn with_handle(mut self, handle: String) -> Self {
         self.handle = Some(handle);
         self
     }
-    
+
     /// Update the handle in the database
-    pub async fn update_handle_in_db(&mut self, pool: &sqlx::PgPool, handle: &str) -> cja::Result<()> {
+    pub async fn update_handle_in_db(
+        &mut self,
+        pool: &sqlx::PgPool,
+        handle: &str,
+    ) -> cja::Result<()> {
         // Update in the database
         db::update_token_handle(pool, &self.did, handle).await?;
         // Update in memory as well
@@ -1150,10 +1154,12 @@ pub mod db {
         } else {
             None // We already have a handle, no need to fetch
         };
-        
-        let existing_handle = existing_row.as_ref().and_then(|row| row.get::<Option<String>, _>("handle"));
+
+        let existing_handle = existing_row
+            .as_ref()
+            .and_then(|row| row.get::<Option<String>, _>("handle"));
         let handle_to_use = token_set.handle.clone().or(existing_handle);
-        
+
         // Log whether we're preserving the handle
         if token_set.handle.is_none() && handle_to_use.is_some() {
             tracing::info!(
