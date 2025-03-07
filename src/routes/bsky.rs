@@ -270,7 +270,7 @@ async fn fetch_user_profile(
 async fn fetch_blob_by_cid(
     _state: &AppState,
     did_or_handle: &str,
-    token: &OAuthTokenSet,
+    _token: &OAuthTokenSet,
     cid: &str,
 ) -> cja::Result<Vec<u8>> {
     info!(
@@ -324,7 +324,7 @@ async fn fetch_blob_by_cid(
     );
     info!("Requesting blob from PDS: {}", blob_url);
 
-    // Create a request with the access token
+    // Create a request for the blob
     let request = client.get(&blob_url);
 
     // Send the request
@@ -355,7 +355,7 @@ async fn fetch_blob_by_cid(
                         "Successfully retrieved blob from CDN: {} bytes",
                         blob_data.len()
                     );
-                    return Ok(blob_data);
+                    Ok(blob_data)
                 } else {
                     // Return the original PDS error
                     Err(eyre!(
