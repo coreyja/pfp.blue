@@ -1644,10 +1644,11 @@ async fn display_profile_multi(
                             // Get profile progress settings for this token
                             @let progress_settings = match sqlx::query(
                                 r#"
-                                SELECT * FROM profile_picture_progress
-                                WHERE token_id = $1
+                                SELECT p.* FROM profile_picture_progress p
+                                JOIN oauth_tokens t ON p.token_id = t.id
+                                WHERE t.did = $1
                                 "#
-                            ).bind(primary_token.did.clone())
+                            ).bind(&primary_token.did)
                               .fetch_optional(&state.db)
                               .await {
                                 Ok(Some(row)) => {

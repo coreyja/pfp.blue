@@ -202,7 +202,7 @@ async fn login(State(state): State<AppState>) -> impl IntoResponse {
 /// Toggle profile picture progress feature for a token
 #[derive(Deserialize)]
 struct ToggleProfileProgressParams {
-    token_id: String,
+    token_id: String, // This is the DID string, not a UUID
     enabled: Option<String>,
 }
 
@@ -277,7 +277,7 @@ async fn toggle_profile_progress(
 /// Set the original profile picture for progress visualization
 #[derive(Deserialize)]
 struct SetOriginalProfilePictureParams {
-    token_id: String,
+    token_id: String, // This is the DID string, not a UUID
     blob_cid: String,
 }
 
