@@ -27,27 +27,6 @@ pub async fn resolve_handle_to_did(
 
 pub const DEFAULT_PLC_DIRECTORY_URL: &str = "https://plc.directory/";
 
-pub async fn resolve_handle_to_did_document(
-    handle: &Handle,
-    client: Arc<ReqwestClient>,
-) -> cja::Result<DidDocument> {
-    let did = resolve_handle_to_did(handle, client.clone()).await?;
-    let document = resolve_did_to_document(&did, client.clone()).await?;
-
-    if let Some(aka) = &document.also_known_as {
-        if !aka.contains(&format!("at://{}", handle.as_str())) {
-            return Err(atrium_identity::Error::DidDocument(format!(
-                "did document for `{}` does not include the handle `{}`",
-                did.as_str(),
-                handle.as_str()
-            ))
-            .into());
-        }
-    }
-
-    Ok(document)
-}
-
 pub async fn resolve_did_to_document(
     did: &Did,
     client: Arc<ReqwestClient>,
@@ -68,11 +47,8 @@ pub struct PDSMetadata {
 
 #[derive(serde::Deserialize, Debug)]
 pub struct AuthServerMetadata {
-    pub issuer: String,
-    pub pushed_authorization_request_endpoint: String,
     pub authorization_endpoint: String,
     pub token_endpoint: String,
-    pub scopes_supported: Vec<String>,
 }
 
 pub async fn document_to_auth_server_metadata(

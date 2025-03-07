@@ -108,21 +108,6 @@ impl User {
             updated_at_utc: r.get("updated_at_utc"),
         }))
     }
-
-    /// Get all DIDs (from OAuth tokens) associated with this user
-    pub async fn get_dids(&self, pool: &PgPool) -> cja::Result<Vec<String>> {
-        let rows = sqlx::query(
-            r#"
-            SELECT DISTINCT did FROM oauth_tokens
-            WHERE user_id = $1 AND is_active = TRUE
-            "#,
-        )
-        .bind(self.user_id)
-        .fetch_all(pool)
-        .await?;
-
-        Ok(rows.into_iter().map(|r| r.get("did")).collect())
-    }
 }
 
 impl Session {

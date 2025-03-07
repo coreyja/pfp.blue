@@ -1199,9 +1199,3 @@ async fn display_profile_multi(
         }
     }
 }
-
-/// Legacy profile display function (for backward compatibility)
-async fn display_profile(state: &AppState, token: OAuthTokenSet) -> maud::Markup {
-    let token_clone = token.clone();
-    display_profile_multi(state, token, vec![token_clone]).await
-}

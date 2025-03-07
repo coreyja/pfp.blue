@@ -7,6 +7,8 @@ use sqlx::{postgres::PgPoolOptions, PgPool};
 pub struct BlueskyOAuthConfig {
     pub private_key: String,
     pub public_key: String,
+    // Kept for compatibility with environment variables but not used
+    #[deprecated(note = "not used")]
     pub client_secret: String,
 }
 

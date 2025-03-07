@@ -504,22 +504,6 @@ pub fn create_dpop_proof(
         .map_err(|e| eyre!("Failed to get current time: {}", e))?
         .as_secs();
 
-    // // Use the server-provided nonce if available, otherwise generate one
-    // let nonce = match server_nonce {
-    //     Some(nonce) => {
-    //         tracing::debug!("Using server-provided DPoP nonce: {}", nonce);
-    //         nonce.to_string()
-    //     }
-    //     None => {
-    //         // Generate a random nonce
-    //         let mut nonce_bytes = [0u8; 16];
-    //         OsRng.fill_bytes(&mut nonce_bytes);
-    //         let nonce = base64_url_encode(&nonce_bytes);
-    //         tracing::debug!("Generated random DPoP nonce: {}", nonce);
-    //         nonce
-    //     }
-    // };
-
     // Generate JWK for header
     let jwk = generate_jwk(&oauth_config.public_key)?;
 
@@ -1024,11 +1008,6 @@ impl OAuthSession {
         // Sessions expire after 1 hour
         self.created_at + 3600 < now
     }
-
-    /// Set the token set for this session
-    pub fn set_token_set(&mut self, token_set: OAuthTokenSet) {
-        self.token_set = Some(token_set);
-    }
 }
 
 /// Database functions for managing OAuth sessions and tokens
@@ -1244,23 +1223,6 @@ pub mod db {
         Ok(())
     }
 
-    /// Updates the DPoP JWK thumbprint for a token
-    pub async fn update_token_jwk(pool: &PgPool, did: &str, dpop_jkt: &str) -> cja::Result<()> {
-        sqlx::query(
-            r#"
-            UPDATE oauth_tokens
-            SET dpop_jkt = $2, updated_at_utc = NOW()
-            WHERE did = $1 AND is_active = TRUE
-            "#,
-        )
-        .bind(did)
-        .bind(dpop_jkt)
-        .execute(pool)
-        .await?;
-
-        Ok(())
-    }
-
     /// Gets the most recent DPoP nonce for a DID
     pub async fn get_latest_nonce(pool: &PgPool, did: &str) -> cja::Result<Option<String>> {
         // Find the most recent session for this DID that has a nonce
@@ -1284,87 +1246,6 @@ pub mod db {
                 .map(String::from);
 
             return Ok(nonce);
-        }
-
-        Ok(None)
-    }
-
-    /// Creates a DPoP proof for a PDS API request
-    pub async fn create_api_dpop_proof(
-        pool: &PgPool,
-        oauth_config: &BlueskyOAuthConfig,
-        did: &str,
-        http_method: &str,
-        endpoint_url: &str,
-    ) -> cja::Result<String> {
-        // First try to get any stored nonce
-        let dpop_nonce = get_latest_nonce(pool, did).await?;
-
-        // Get the active token to check for JWK thumbprint
-        if let Ok(Some(token)) = get_token(pool, did).await {
-            // If we don't have a JWK thumbprint, calculate and store it
-            if token.dpop_jkt.is_none() {
-                let calculated_jkt = calculate_jwk_thumbprint(&oauth_config.public_key)?;
-                update_token_jwk(pool, did, &calculated_jkt).await?;
-            }
-        }
-
-        // Create the DPoP proof
-        let dpop_proof = create_dpop_proof(
-            oauth_config,
-            http_method,
-            endpoint_url,
-            dpop_nonce.as_deref(),
-        )?;
-
-        Ok(dpop_proof)
-    }
-
-    /// Takes a response and extracts/updates any DPoP nonce for future use
-    pub async fn process_dpop_response(
-        pool: &PgPool,
-        did: &str,
-        response_headers: &reqwest::header::HeaderMap,
-    ) -> cja::Result<Option<String>> {
-        // Check for the DPoP-Nonce header in the response
-        let dpop_nonce = response_headers
-            .get("DPoP-Nonce")
-            .and_then(|h| h.to_str().ok())
-            .map(|s| {
-                tracing::debug!("Received DPoP-Nonce header in API request: {}", s);
-                s.to_string()
-            });
-
-        if let Some(nonce) = dpop_nonce {
-            // Look for existing sessions for this DID
-            let row = sqlx::query(
-                r#"
-                SELECT session_id FROM oauth_sessions 
-                WHERE did = $1 
-                ORDER BY updated_at_utc DESC 
-                LIMIT 1
-                "#,
-            )
-            .bind(did)
-            .fetch_optional(pool)
-            .await?;
-
-            if let Some(row) = row {
-                let session_id: Uuid = row.get("session_id");
-                update_session_nonce(pool, session_id, &nonce).await?;
-            } else {
-                // Create a new session to store the nonce
-                let session = OAuthSession::new(
-                    did.to_string(),
-                    None,
-                    "dummy_endpoint".to_string(), // Not used for this purpose
-                );
-
-                let session_id = store_session(pool, &session).await?;
-                update_session_nonce(pool, session_id, &nonce).await?;
-            }
-
-            return Ok(Some(nonce));
         }
 
         Ok(None)
