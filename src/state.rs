@@ -7,21 +7,17 @@ use sqlx::{postgres::PgPoolOptions, PgPool};
 pub struct BlueskyOAuthConfig {
     pub private_key: String,
     pub public_key: String,
-    // Kept for compatibility with environment variables but not used
-    #[deprecated(note = "not used")]
-    pub client_secret: String,
 }
 
 impl BlueskyOAuthConfig {
     pub fn from_env() -> cja::Result<Self> {
         let private_key = std::env::var("OAUTH_PRIVATE_KEY")?;
         let public_key = std::env::var("OAUTH_PUBLIC_KEY")?;
-        let client_secret = std::env::var("OAUTH_CLIENT_SECRET")?;
+        // Note: OAUTH_CLIENT_SECRET is no longer used
 
         let config = Self {
             private_key,
             public_key,
-            client_secret,
         };
 
         // Verify keys at startup
