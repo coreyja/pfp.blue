@@ -773,7 +773,7 @@ pub async fn callback(
         // Get the token id to use as primary token
         let token_id = match sqlx::query(
             r#"
-            SELECT id FROM oauth_tokens WHERE did = $1
+            SELECT uuid_id FROM oauth_tokens WHERE did = $1
             "#,
         )
         .bind(&token_set.did)
@@ -781,7 +781,7 @@ pub async fn callback(
         .await
         {
             Ok(Some(row)) => {
-                let id: uuid::Uuid = row.get("id");
+                let id: uuid::Uuid = row.get("uuid_id");
                 Some(id)
             }
             _ => None,
@@ -1047,7 +1047,7 @@ pub async fn set_primary_account(
     // Verify that this DID belongs to this user
     let token = match sqlx::query(
         r#"
-        SELECT id FROM oauth_tokens
+        SELECT uuid_id FROM oauth_tokens
         WHERE did = $1 AND user_id = $2
         LIMIT 1
         "#,
@@ -1058,7 +1058,7 @@ pub async fn set_primary_account(
     .await
     {
         Ok(Some(row)) => {
-            let id: uuid::Uuid = row.get("id");
+            let id: uuid::Uuid = row.get("uuid_id");
             id
         }
         Ok(None) => {

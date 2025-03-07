@@ -245,9 +245,9 @@ impl Session {
             // Query the oauth_tokens table to get the token by ID
             let row = sqlx::query(
                 r#"
-                SELECT id, did, access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id, handle
+                SELECT uuid_id, did, access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id, handle
                 FROM oauth_tokens
-                WHERE id = $1
+                WHERE uuid_id = $1
                 "#,
             )
             .bind(token_id)
