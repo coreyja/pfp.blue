@@ -424,6 +424,8 @@ pub struct OAuthTokenSet {
     pub scope: String,
     /// The Bluesky DID this token is associated with
     pub did: String,
+    /// The Bluesky handle (username) associated with this DID
+    pub handle: Option<String>,
     /// DPoP confirmation key (JWK thumbprint)
     pub dpop_jkt: Option<String>,
     /// User ID that owns this token
@@ -445,6 +447,7 @@ impl OAuthTokenSet {
             refresh_token: response.refresh_token,
             scope: response.scope,
             did,
+            handle: None, // Will be updated later when we fetch profile data
             dpop_jkt: response.dpop_confirmation.map(|cnf| cnf.jkt),
             user_id: None,
         }
@@ -453,6 +456,27 @@ impl OAuthTokenSet {
     pub fn with_user_id(mut self, user_id: uuid::Uuid) -> Self {
         self.user_id = Some(user_id);
         self
+    }
+    
+    /// Copy the handle from another token
+    pub fn with_handle_from(mut self, other: &OAuthTokenSet) -> Self {
+        self.handle = other.handle.clone();
+        self
+    }
+    
+    /// Set the handle directly
+    pub fn with_handle(mut self, handle: String) -> Self {
+        self.handle = Some(handle);
+        self
+    }
+    
+    /// Update the handle in the database
+    pub async fn update_handle_in_db(&mut self, pool: &sqlx::PgPool, handle: &str) -> cja::Result<()> {
+        // Update in the database
+        db::update_token_handle(pool, &self.did, handle).await?;
+        // Update in memory as well
+        self.handle = Some(handle.to_string());
+        Ok(())
     }
 
     /// Create a new OAuthTokenSet from a TokenResponse with a calculated JWK thumbprint
@@ -1111,7 +1135,28 @@ pub mod db {
             }
         };
 
-        // First, deactivate any existing active tokens for this DID
+        // First, check if there's an existing active token for this DID to preserve the handle if needed
+        let existing_handle = if token_set.handle.is_none() {
+            // Only fetch the existing handle if the new token doesn't have one
+            match sqlx::query(
+                r#"
+                SELECT handle FROM oauth_tokens 
+                WHERE did = $1 AND is_active = TRUE AND handle IS NOT NULL
+                ORDER BY created_at_utc DESC LIMIT 1
+                "#,
+            )
+            .bind(&token_set.did)
+            .fetch_optional(pool)
+            .await?
+            {
+                Some(row) => row.get::<Option<String>, _>("handle"),
+                None => None,
+            }
+        } else {
+            None // We already have a handle, no need to fetch
+        };
+
+        // Deactivate any existing active tokens for this DID
         sqlx::query(
             r#"
             UPDATE oauth_tokens
@@ -1123,12 +1168,24 @@ pub mod db {
         .execute(pool)
         .await?;
 
-        // Then insert the new token including DPoP JKT if present
+        // Then insert the new token including DPoP JKT and handle if present
+        // Use existing handle if we found one and the new token doesn't have one
+        let handle_to_use = token_set.handle.clone().or(existing_handle);
+        
+        // Log whether we're preserving the handle
+        if token_set.handle.is_none() && handle_to_use.is_some() {
+            tracing::info!(
+                "Preserving handle {:?} for DID {} when storing new token",
+                handle_to_use,
+                token_set.did
+            );
+        }
+
         sqlx::query(
             r#"
             INSERT INTO oauth_tokens (
-                did, access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                did, access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id, handle
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             "#,
         )
         .bind(&token_set.did)
@@ -1139,6 +1196,7 @@ pub mod db {
         .bind(&token_set.scope)
         .bind(&token_set.dpop_jkt)
         .bind(user_id)
+        .bind(&handle_to_use)
         .execute(pool)
         .await?;
 
@@ -1149,7 +1207,7 @@ pub mod db {
     pub async fn get_token(pool: &PgPool, did: &str) -> cja::Result<Option<OAuthTokenSet>> {
         let row = sqlx::query(
             r#"
-            SELECT access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id
+            SELECT access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id, handle
             FROM oauth_tokens
             WHERE did = $1 AND is_active = TRUE
             ORDER BY created_at_utc DESC
@@ -1167,6 +1225,7 @@ pub mod db {
             expires_at: row.get::<i64, _>("expires_at") as u64,
             refresh_token: row.get("refresh_token"),
             scope: row.get("scope"),
+            handle: row.get("handle"),
             dpop_jkt: row.get("dpop_jkt"),
             user_id: row.get("user_id"),
         }))
@@ -1179,7 +1238,7 @@ pub mod db {
     ) -> cja::Result<Vec<OAuthTokenSet>> {
         let rows = sqlx::query(
             r#"
-            SELECT did, access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id
+            SELECT did, access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id, handle
             FROM oauth_tokens
             WHERE user_id = $1 AND is_active = TRUE
             ORDER BY created_at_utc DESC
@@ -1198,6 +1257,7 @@ pub mod db {
                 expires_at: row.get::<i64, _>("expires_at") as u64,
                 refresh_token: row.get("refresh_token"),
                 scope: row.get("scope"),
+                handle: row.get("handle"),
                 dpop_jkt: row.get("dpop_jkt"),
                 user_id: row.get("user_id"),
             })
@@ -1216,6 +1276,23 @@ pub mod db {
             "#,
         )
         .bind(did)
+        .execute(pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Updates the handle for a token
+    pub async fn update_token_handle(pool: &PgPool, did: &str, handle: &str) -> cja::Result<()> {
+        sqlx::query(
+            r#"
+            UPDATE oauth_tokens
+            SET handle = $2, updated_at_utc = NOW()
+            WHERE did = $1 AND is_active = TRUE
+            "#,
+        )
+        .bind(did)
+        .bind(handle)
         .execute(pool)
         .await?;
 

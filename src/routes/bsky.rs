@@ -208,6 +208,9 @@ pub struct CallbackParams {
     pub error_description: Option<String>,
 }
 
+/// This function is used by the job to fetch profile data and update the handle in the DB
+// Left in as a reference, but not used directly - we use the job system instead
+#[allow(dead_code)]
 async fn fetch_user_profile(
     state: &AppState,
     did: &str,
@@ -261,6 +264,75 @@ async fn fetch_user_profile(
     // Parse the response JSON
     let profile_data = response.json::<serde_json::Value>().await?;
 
+    // Extract the handle from the profile data and update it in the database
+    let extracted_handle = if let Some(value) = profile_data.get("value") {
+        if let Some(handle_val) = value.get("handle") {
+            handle_val.as_str().map(|s| s.to_string())
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    
+    // If we found a handle in the profile, make sure it's updated in the database
+    if let Some(handle_str) = extracted_handle {
+        // Check if handle is different than what we have saved
+        let should_update = match &token.handle {
+            Some(current_handle) => current_handle != &handle_str,
+            None => true, // No handle stored yet, need to update
+        };
+        
+        if should_update {
+            // Update the handle in the database
+            if let Err(err) = oauth::db::update_token_handle(&state.db, did, &handle_str).await {
+                tracing::warn!("Failed to update handle in database: {:?}", err);
+            } else {
+                tracing::info!("Updated handle for DID {}: {}", did, handle_str);
+            }
+        } else {
+            tracing::debug!("Handle for DID {} already up to date: {}", did, handle_str);
+        }
+    } else {
+        tracing::warn!("No handle found in profile data for DID: {}", did);
+    }
+
+    Ok(profile_data)
+}
+
+/// Function to fetch profile data for display only (no authentication/DPoP needed)
+async fn fetch_profile_for_display(did: &str) -> cja::Result<serde_json::Value> {
+    use color_eyre::eyre::eyre;
+    
+    let client = reqwest::Client::new();
+    
+    // Make unauthenticated API request to get profile
+    let response = client
+        .get("https://bsky.social/xrpc/com.atproto.repo.getRecord")
+        .query(&[
+            ("repo", did),
+            ("collection", "app.bsky.actor.profile"),
+            ("rkey", "self"),
+        ])
+        .send()
+        .await?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Failed to read error response".to_string());
+
+        return Err(eyre!(
+            "Failed to fetch user profile: {} - {}",
+            status,
+            error_text
+        ));
+    }
+
+    // Parse the response JSON
+    let profile_data = response.json::<serde_json::Value>().await?;
     Ok(profile_data)
 }
 
@@ -640,6 +712,18 @@ pub async fn callback(
             .into_response();
     }
 
+    // Immediately fetch profile to get and update the handle
+    // Use the job system to do this in the background
+    if let Err(err) = crate::jobs::UpdateProfileHandleJob::from_token(&token_set)
+        .enqueue(&state)
+        .await
+    {
+        // Log the error but continue - not fatal
+        error!("Failed to enqueue handle update job: {:?}", err);
+    } else {
+        info!("Queued handle update job for DID: {}", session.did);
+    }
+
     info!("Authentication successful for DID: {}", session.did);
 
     // Profile image fetching and display is handled in display_profile_multi function
@@ -761,6 +845,17 @@ pub async fn get_token(
                 .into_response();
         }
     };
+    
+    // Also fetch profile in the background to ensure handle is up to date
+    // Use the job system to do this asynchronously
+    if let Err(err) = crate::jobs::UpdateProfileHandleJob::from_token(&token)
+        .enqueue(&state)
+        .await
+    {
+        error!("Failed to enqueue handle update job in get_token: {:?}", err);
+    } else {
+        info!("Queued handle update job for DID: {}", token.did);
+    }
 
     // Check if the token is expired
     if token.is_expired() {
@@ -789,17 +884,18 @@ pub async fn get_token(
             .await
             {
                 Ok(token_response) => {
-                    // Create a new token set with JWK thumbprint
+                    // Create a new token set with JWK thumbprint and preserve the handle
                     let new_token = match OAuthTokenSet::from_token_response_with_jwk(
                         &token_response,
                         token.did.clone(),
                         &state.bsky_oauth.public_key,
                     ) {
-                        Ok(token) => token,
+                        Ok(new_token) => new_token.with_handle_from(&token),
                         Err(err) => {
                             error!("Failed to create token set with JWK: {:?}", err);
                             // Fallback to standard token creation
                             OAuthTokenSet::from_token_response(token_response, token.did.clone())
+                                .with_handle_from(&token)
                         }
                     };
 
@@ -811,6 +907,17 @@ pub async fn get_token(
                             "Failed to store refreshed token".to_string(),
                         )
                             .into_response();
+                    }
+
+                    // Also fetch profile to update handle if needed (don't block on this)
+                    // Use the job system to do this asynchronously
+                    if let Err(err) = crate::jobs::UpdateProfileHandleJob::from_token(&new_token)
+                        .enqueue(&state)
+                        .await
+                    {
+                        error!("Failed to enqueue handle update job after token refresh: {:?}", err);
+                    } else {
+                        info!("Queued handle update job after token refresh for {}", &new_token.did);
                     }
 
                     // Return the refreshed token
@@ -989,6 +1096,17 @@ pub async fn profile(
                 .into_response();
         }
     };
+    
+    // Start background jobs to update handles for all tokens
+    // This ensures we have the latest handle data when displaying the profile
+    for token in &tokens {
+        if let Err(err) = crate::jobs::UpdateProfileHandleJob::from_token(token)
+            .enqueue(&state)
+            .await
+        {
+            error!("Failed to enqueue handle update job for DID {}: {:?}", token.did, err);
+        }
+    }
 
     if tokens.is_empty() {
         return maud::html! {
@@ -1132,15 +1250,15 @@ pub async fn profile(
             .await
             {
                 Ok(token_response) => {
-                    // Create a new token set with JWK thumbprint
+                    // Create a new token set with JWK thumbprint and preserve the handle
                     let new_token = match OAuthTokenSet::from_token_response_with_jwk(
                         &token_response,
                         primary_token.did.clone(),
                         &state.bsky_oauth.public_key,
                     ) {
                         Ok(token) => {
-                            // Set the user_id
-                            token.with_user_id(user.user_id)
+                            // Set the user_id and preserve the handle
+                            token.with_user_id(user.user_id).with_handle_from(&primary_token)
                         }
                         Err(err) => {
                             error!("Failed to create token set with JWK: {:?}", err);
@@ -1150,6 +1268,7 @@ pub async fn profile(
                                 primary_token.did.clone(),
                             )
                             .with_user_id(user.user_id)
+                            .with_handle_from(&primary_token)
                         }
                     };
 
@@ -1163,6 +1282,17 @@ pub async fn profile(
                             .into_response();
                     }
 
+                    // Also fetch profile to update handle if needed (don't block on this)
+                    // Use the job system to do this asynchronously
+                    if let Err(err) = crate::jobs::UpdateProfileHandleJob::from_token(&new_token)
+                        .enqueue(&state)
+                        .await
+                    {
+                        error!("Failed to enqueue handle update job after token refresh: {:?}", err);
+                    } else {
+                        info!("Queued handle update job after token refresh for {}", &new_token.did);
+                    }
+                    
                     // Refresh all tokens
                     let tokens = match oauth::db::get_tokens_for_user(&state.db, user.user_id).await
                     {
@@ -1213,11 +1343,19 @@ async fn display_profile_multi(
     primary_token: OAuthTokenSet,
     all_tokens: Vec<OAuthTokenSet>,
 ) -> maud::Markup {
-    // Fetch primary profile data
-    let profile_data = match fetch_user_profile(state, &primary_token.did, &primary_token).await {
+    // Queue a job to update the handle in the background
+    if let Err(err) = crate::jobs::UpdateProfileHandleJob::from_token(&primary_token)
+        .enqueue(state)
+        .await 
+    {
+        error!("Failed to enqueue handle update job for display: {:?}", err);
+    }
+    
+    // Fetch profile data directly (we don't have to make this async since we're also updating in background)
+    let profile_data = match fetch_profile_for_display(&primary_token.did).await {
         Ok(data) => Some(data),
         Err(e) => {
-            error!("Failed to fetch user profile: {:?}", e);
+            error!("Failed to fetch user profile for display: {:?}", e);
             None
         }
     };
@@ -1407,7 +1545,12 @@ async fn display_profile_multi(
                                     
                                     div class="flex flex-col sm:flex-row sm:items-center justify-between" {
                                         div class="mb-2 sm:mb-0" {
-                                            p class="font-medium text-gray-900 mb-1 truncate max-w-xs" { (token.did) }
+                                            @if let Some(handle) = &token.handle {
+                                                p class="font-medium text-gray-900 mb-1 truncate max-w-xs" { "@" (handle) }
+                                                p class="text-xs text-gray-500 mb-1 truncate max-w-xs" { (token.did) }
+                                            } @else {
+                                                p class="font-medium text-gray-900 mb-1 truncate max-w-xs" { (token.did) }
+                                            }
                                             p class="text-sm text-gray-500" { "Expires in: " ({
                                                 let now = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
                                                 if token.expires_at > now {

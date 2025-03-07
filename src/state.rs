@@ -140,7 +140,7 @@ impl AppState {
             .build();
 
         let bsky_oauth = BlueskyOAuthConfig::from_env()?;
-
+        
         Ok(Self {
             db: pool,
             cookie_key,
