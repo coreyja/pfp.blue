@@ -10,6 +10,8 @@
 - Test: `cargo test`
 - Test single: `cargo test <test_name>`
 - Run database migrations: `sqlx migrate run`
+- Create migration: `sqlx migrate add --source migrations <migration_name>`
+- Recreate DB from scratch: `cargo sqlx db drop -y && cargo sqlx db create && cargo sqlx migrate run`
 
 ## Background Jobs
 
@@ -92,3 +94,42 @@ Jobs are processed in the background and will retry on failure.
 - Error messages: Be descriptive and actionable
 - Error propagation: Use `?` operator, avoid unwrap/expect in production code
 - Tracing: Use tracing macros for observability (info, debug, etc.)
+
+## Database Schema
+
+Key tables and their primary key columns:
+- `users`: `id` (UUID)
+- `sessions`: `id` (UUID)
+- `oauth_tokens`: `id` (UUID) and `uuid_id` (UUID) - the latter is used for foreign keys
+- `oauth_sessions`: `id` (UUID)
+- `jobs`: `job_id` (UUID)
+- `crons`: `cron_id` (UUID)
+- `profile_picture_progress`: `id` (UUID)
+
+All UUID columns have the default value set to `gen_random_uuid()`.
+
+Important relationships:
+- `oauth_tokens.user_id` references `users.id`
+- `sessions.user_id` references `users.id`
+- `sessions.primary_token_id` references `oauth_tokens.uuid_id`
+- `profile_picture_progress.token_id` references `oauth_tokens.id`
+
+When adding new tables, ensure:
+1. UUID primary keys use `gen_random_uuid()` as default
+2. Foreign keys reference the correct column (check if it's `id` or a different name)
+3. Include the proper timestamps (`created_at_utc` and `updated_at_utc`)
+
+## Authentication System
+
+The project uses a multi-layered authentication system:
+1. OAuth integration with Bluesky for authentication
+2. Session system for maintaining user state
+3. Linked accounts system where multiple Bluesky accounts can be linked to one user
+
+Key components:
+- `OAuthSession` - Temporary session for OAuth flow
+- `OAuthTokenSet` - Stores access tokens, refresh tokens, etc.
+- `Session` - User session after authentication
+- `User` - Represents a user in the system
+
+OAuth flow creates `OAuthSession`, which leads to `OAuthTokenSet`, which can be associated with `User`. A `Session` is created for the user when they authenticate.
