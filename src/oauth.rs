@@ -1057,8 +1057,8 @@ pub mod db {
         sqlx::query(
             r#"
             INSERT INTO oauth_sessions (
-                session_id, did, state, token_endpoint, created_at, data
-            ) VALUES ($1, $2, $3, $4, $5, $6)
+                id, session_id, did, state, token_endpoint, created_at, data
+            ) VALUES (DEFAULT, $1, $2, $3, $4, $5, $6)
             "#,
         )
         .bind(session_id)
