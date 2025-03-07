@@ -5,7 +5,7 @@ use uuid::Uuid;
 /// Represents a user in the system
 #[derive(Debug, Clone)]
 pub struct User {
-    /// Unique user ID
+    /// Unique user ID (matches database column 'id')
     pub user_id: Uuid,
     /// Optional username
     pub username: Option<String>,
@@ -45,7 +45,7 @@ impl User {
     pub async fn get_by_id(pool: &PgPool, user_id: Uuid) -> cja::Result<Option<User>> {
         let row = sqlx::query(
             r#"
-            SELECT * FROM users WHERE user_id = $1
+            SELECT * FROM users WHERE id = $1
             "#,
         )
         .bind(user_id)
@@ -53,7 +53,7 @@ impl User {
         .await?;
 
         Ok(row.map(|r| User {
-            user_id: r.get("user_id"),
+            user_id: r.get("id"),
             username: r.get("username"),
             email: r.get("email"),
             created_at_utc: r.get("created_at_utc"),
@@ -80,7 +80,7 @@ impl User {
         .await?;
 
         Ok(User {
-            user_id: row.get("user_id"),
+            user_id: row.get("id"),
             username: row.get("username"),
             email: row.get("email"),
             created_at_utc: row.get("created_at_utc"),
@@ -93,7 +93,7 @@ impl User {
         let row = sqlx::query(
             r#"
             SELECT u.* FROM users u
-            JOIN oauth_tokens ot ON u.user_id = ot.user_id
+            JOIN oauth_tokens ot ON u.id = ot.user_id
             WHERE ot.did = $1
             LIMIT 1
             "#,
@@ -103,7 +103,7 @@ impl User {
         .await?;
 
         Ok(row.map(|r| User {
-            user_id: r.get("user_id"),
+            user_id: r.get("id"),
             username: r.get("username"),
             email: r.get("email"),
             created_at_utc: r.get("created_at_utc"),
@@ -141,7 +141,7 @@ impl Session {
         .await?;
 
         Ok(Session {
-            session_id: row.get("session_id"),
+            session_id: row.get("id"),
             user_id: row.get("user_id"),
             expires_at: row.get("expires_at"),
             user_agent: row.get("user_agent"),
@@ -157,7 +157,7 @@ impl Session {
     pub async fn get_by_id(pool: &PgPool, session_id: Uuid) -> cja::Result<Option<Session>> {
         let row = sqlx::query(
             r#"
-            SELECT * FROM sessions WHERE session_id = $1
+            SELECT * FROM sessions WHERE id = $1
             "#,
         )
         .bind(session_id)
@@ -165,7 +165,7 @@ impl Session {
         .await?;
 
         Ok(row.map(|r| Session {
-            session_id: r.get("session_id"),
+            session_id: r.get("id"),
             user_id: r.get("user_id"),
             expires_at: r.get("expires_at"),
             user_agent: r.get("user_agent"),
@@ -187,7 +187,7 @@ impl Session {
         sqlx::query(
             r#"
             UPDATE sessions SET is_active = FALSE
-            WHERE session_id = $1
+            WHERE id = $1
             "#,
         )
         .bind(self.session_id)
@@ -208,7 +208,7 @@ impl Session {
         sqlx::query(
             r#"
             UPDATE sessions SET primary_token_id = $1, updated_at_utc = NOW()
-            WHERE session_id = $2
+            WHERE id = $2
             "#,
         )
         .bind(token_id)
@@ -225,7 +225,7 @@ impl Session {
         sqlx::query(
             r#"
             UPDATE sessions SET primary_token_id = NULL, updated_at_utc = NOW()
-            WHERE session_id = $1
+            WHERE id = $1
             "#,
         )
         .bind(self.session_id)
