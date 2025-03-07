@@ -149,9 +149,9 @@ pub async fn authorize(
             }
         };
 
-    // Create and store the OAuth session
+    // Create and store the OAuth session with the resolved DID
     let session = OAuthSession::new(
-        did_str,
+        did.to_string(), // Use the resolved DID, not the original input (which might be a handle)
         params.state.clone(),
         auth_metadata.token_endpoint.clone(),
     );
