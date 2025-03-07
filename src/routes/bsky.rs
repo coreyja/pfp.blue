@@ -267,10 +267,7 @@ async fn fetch_user_profile(
 }
 
 /// Fetch a blob by its CID directly from the user's PDS
-async fn fetch_blob_by_cid(
-    did_or_handle: &str,
-    cid: &str,
-) -> cja::Result<Vec<u8>> {
+async fn fetch_blob_by_cid(did_or_handle: &str, cid: &str) -> cja::Result<Vec<u8>> {
     info!(
         "Fetching blob with CID: {} for DID/handle: {}",
         cid, did_or_handle
