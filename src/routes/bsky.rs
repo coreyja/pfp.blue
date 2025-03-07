@@ -992,11 +992,80 @@ pub async fn profile(
 
     if tokens.is_empty() {
         return maud::html! {
-            h1 { "Your Profile" }
-            p { "You don't have any Bluesky accounts linked yet." }
-            form action="/oauth/bsky/authorize" method="get" {
-                input type="text" name="did" placeholder="Enter Bluesky handle or DID" style="width: 250px;" {}
-                button type="submit" { "Link a Bluesky Account" }
+            // Add Tailwind CSS from CDN
+            script src="https://unpkg.com/@tailwindcss/browser@4" {}
+
+            // Empty state with playful design
+            div class="min-h-screen bg-gradient-to-br from-blue-100 via-indigo-50 to-purple-100 py-8 px-4 sm:px-6 lg:px-8" {
+                div class="max-w-md mx-auto bg-white rounded-2xl shadow-xl overflow-hidden text-center p-8" {
+                    // Fun illustration
+                    div class="mb-6 flex justify-center" {
+                        (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" width="150" height="150" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-400"><circle cx="12" cy="8" r="5"></circle><path d="M20 21v-2a7 7 0 0 0-14 0v2"></path><line x1="12" y1="8" x2="12" y2="8"></line><path d="M3 20h18a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1H9L3 12v7a1 1 0 0 0 1 1z"></path></svg>"#))
+                    }
+                    
+                    h1 class="text-3xl font-bold text-gray-800 mb-4" { "Welcome to Your Profile!" }
+                    p class="text-gray-600 mb-8" { "You don't have any Bluesky accounts linked yet. Let's get started!" }
+                    
+                    // Playful form
+                    div class="bg-gradient-to-r from-indigo-50 to-blue-50 rounded-xl p-6 border border-dashed border-indigo-200" {
+                        form action="/oauth/bsky/authorize" method="get" class="space-y-4" {
+                            // Fun section header
+                            div class="flex items-center gap-2 mb-2" {
+                                div class="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600" {
+                                    "🚀"
+                                }
+                                h2 class="text-lg font-semibold text-indigo-800" { "Connect Your Bluesky" }
+                            }
+                            
+                            div class="relative" {
+                                div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none" {
+                                    (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>"#))
+                                }
+                                input type="text" name="did" placeholder="Enter Bluesky handle or DID" 
+                                    class="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-gray-900" {}
+                            }
+                            
+                            button type="submit" 
+                                class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center" { 
+                                (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>"#))
+                                "Link Bluesky Account" 
+                            }
+                        }
+                    }
+                    
+                    // Tips section
+                    div class="mt-8 text-left" {
+                        h3 class="text-lg font-semibold text-gray-800 mb-3" { "Why link your Bluesky account?" }
+                        ul class="space-y-2 text-gray-600" {
+                            li class="flex gap-2" {
+                                (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-green-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>"#))
+                                span { "Manage your Bluesky profile with ease" }
+                            }
+                            li class="flex gap-2" {
+                                (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-green-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>"#))
+                                span { "Multiple account support" }
+                            }
+                            li class="flex gap-2" {
+                                (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-green-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>"#))
+                                span { "Seamless authentication" }
+                            }
+                        }
+                    }
+                    
+                    // Footer links
+                    div class="mt-8 pt-4 border-t border-gray-200" {
+                        div class="flex justify-center gap-4" {
+                            a href="/" class="text-indigo-600 hover:text-indigo-800 transition-colors duration-200" { "Back to Home" }
+                            span class="text-gray-300" { "|" }
+                            a href="/login" class="text-indigo-600 hover:text-indigo-800 transition-colors duration-200" { "Try Different Login" }
+                        }
+                    }
+                }
+                
+                // Footer credit
+                div class="mt-10 text-center text-gray-500 text-sm" {
+                    p { "pfp.blue - Your Bluesky Profile Manager" }
+                }
             }
         }.into_response();
     }
@@ -1234,93 +1303,188 @@ async fn display_profile_multi(
 
     // Create profile display
     html! {
-        h1 { "Your Profile" }
+        // Add Tailwind CSS from CDN
+        script src="https://unpkg.com/@tailwindcss/browser@4" {}
 
-        div class="profile-container" {
-            div class="profile-header" {
-                @if let Some(img_src) = &avatar_base64 {
-                    img src=(img_src) alt="Profile Picture" style="max-width: 150px; max-height: 150px; border-radius: 50%;" {}
-                } @else {
-                    div style="width: 150px; height: 150px; background-color: #ccc; border-radius: 50%; display: flex; align-items: center; justify-content: center;" {
-                        "No Image"
+        // Main container with a fun background gradient
+        div class="min-h-screen bg-gradient-to-br from-blue-100 via-indigo-50 to-purple-100 py-8 px-4 sm:px-6 lg:px-8" {
+            div class="max-w-3xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden" {
+                // Profile header with fun curves
+                div class="relative h-48 bg-gradient-to-r from-blue-500 to-indigo-600" {
+                    div class="absolute left-0 right-0 bottom-0" {
+                        (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 100" class="w-full h-20 fill-white"><path d="M0,64L80,69.3C160,75,320,85,480,80C640,75,800,53,960,42.7C1120,32,1280,32,1360,32L1440,32L1440,100L1360,100C1280,100,1120,100,960,100C800,100,640,100,480,100C320,100,160,100,80,100L0,100Z"></path></svg>"#))
                     }
                 }
 
-                div class="profile-info" {
-                    h2 { (display_name) }
-                    @if let Some(h) = &handle {
-                        p { "@" (h) }
-                    }
-                    p { "DID: " (primary_token.did) }
-                }
-            }
-
-            div class="token-info" {
-                h3 { "Authentication Info" }
-                p { "Access token expires in: " ({
-                    let now = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
-                    if primary_token.expires_at > now {
-                        primary_token.expires_at - now
-                    } else {
-                        0
-                    }
-                }) " seconds" }
-                p { "Has refresh token: " (primary_token.refresh_token.is_some()) }
-            }
-
-            // Display all linked accounts
-            div class="linked-accounts" {
-                h3 { "Linked Bluesky Accounts" }
-
-                ul {
-                    @for token in &all_tokens {
-                        li {
-                            strong { "DID: " (token.did) }
-                            @if token.did == primary_token.did {
-                                span style="color: green;" { " (Current)" }
-                            } @else {
-                                a href={"/oauth/bsky/set-primary?did=" (token.did)} style="margin-left: 10px;" { "Set as Primary" }
-                            }
-                            p { "Expires in: " ({
-                                let now = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
-                                if token.expires_at > now {
-                                    token.expires_at - now
-                                } else {
-                                    0
+                // Profile content
+                div class="px-6 py-8 -mt-20 relative z-10" {
+                    // Avatar and name section
+                    div class="flex flex-col md:flex-row items-center mb-8" {
+                        // Avatar with playful border
+                        div class="relative mb-4 md:mb-0 md:mr-6" {
+                            @if let Some(img_src) = &avatar_base64 {
+                                div class="rounded-full w-36 h-36 border-4 border-white shadow-lg overflow-hidden bg-white" {
+                                    img src=(img_src) alt="Profile Picture" class="w-full h-full object-cover" {}
                                 }
-                            }) " seconds" }
+                            } @else {
+                                div class="rounded-full w-36 h-36 border-4 border-white shadow-lg overflow-hidden bg-gradient-to-br from-blue-300 to-indigo-300 flex items-center justify-center text-white font-bold" {
+                                    "No Image"
+                                }
+                            }
+                            // Fun decorative element
+                            div class="absolute -bottom-2 -right-2 w-10 h-10 rounded-full bg-yellow-400 shadow-md border-2 border-white flex items-center justify-center text-white text-xl" {
+                                "👋"
+                            }
                         }
-                    }
-                }
 
-                p {
-                    form action="/oauth/bsky/authorize" method="get" {
-                        input type="text" name="did" placeholder="Enter Bluesky handle or DID" style="width: 250px;" {}
-                        button type="submit" { "Link Another Bluesky Account" }
-                    }
-                }
-            }
-
-            @if let Some(data) = &profile_data {
-                div class="profile-data" {
-                    h3 { "Profile Data" }
-                    details {
-                        summary { "View Raw JSON" }
-                        pre {
-                            code {
-                                (serde_json::to_string_pretty(data).unwrap_or_else(|_| "Failed to format profile data".to_string()))
+                        // Profile info
+                        div class="text-center md:text-left" {
+                            h1 class="text-3xl font-bold text-gray-800 mb-1" { (display_name) }
+                            @if let Some(h) = &handle {
+                                p class="text-lg text-indigo-600 font-semibold mb-2" { "@" (h) }
+                            }
+                            p class="text-sm text-gray-500 mb-4 max-w-md truncate" { (primary_token.did) }
+                            
+                            // Playful badges
+                            div class="flex flex-wrap justify-center md:justify-start gap-2 mt-2" {
+                                div class="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full" { "Profile" }
+                                div class="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full" { "Bluesky" }
+                                div class="bg-purple-100 text-purple-800 text-xs px-2 py-1 rounded-full" { "pfp.blue" }
                             }
                         }
                     }
+
+                    // Tabs for different sections
+                    div class="border-b border-gray-200 mb-6" {
+                        div class="flex overflow-x-auto" {
+                            button class="px-4 py-2 text-indigo-600 border-b-2 border-indigo-600 font-medium" { "Accounts" }
+                            button class="px-4 py-2 text-gray-500 hover:text-indigo-600" { "Activity" }
+                            button class="px-4 py-2 text-gray-500 hover:text-indigo-600" { "Settings" }
+                        }
+                    }
+
+                    // Token info card
+                    div class="bg-indigo-50 rounded-xl p-4 mb-6" {
+                        h3 class="text-lg font-semibold text-indigo-800 mb-2" { "Authentication Status" }
+                        div class="grid grid-cols-1 md:grid-cols-2 gap-4" {
+                            div class="bg-white rounded-lg p-3 shadow-sm" {
+                                p class="text-sm text-gray-500" { "Token Expires In" }
+                                p class="text-lg font-semibold" { ({
+                                    let now = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
+                                    if primary_token.expires_at > now {
+                                        primary_token.expires_at - now
+                                    } else {
+                                        0
+                                    }
+                                }) " seconds" }
+                            }
+                            div class="bg-white rounded-lg p-3 shadow-sm" {
+                                p class="text-sm text-gray-500" { "Refresh Token" }
+                                @if primary_token.refresh_token.is_some() {
+                                    p class="text-lg font-semibold text-green-600" { "Available ✓" }
+                                } @else {
+                                    p class="text-lg font-semibold text-red-600" { "Not Available ✗" }
+                                }
+                            }
+                        }
+                    }
+
+                    // Linked accounts section
+                    div class="mb-8" {
+                        h3 class="text-xl font-bold text-gray-800 mb-4" { "Linked Bluesky Accounts" }
+                        
+                        div class="space-y-3" {
+                            @for token in &all_tokens {
+                                div class="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-md transition duration-200 relative overflow-hidden" {
+                                    // Fun decorative element for primary account
+                                    @if token.did == primary_token.did {
+                                        div class="absolute top-0 right-0" {
+                                            div class="bg-green-500 text-white text-xs transform rotate-45 px-8 py-1 translate-x-6 -translate-y-1 shadow-sm" {
+                                                "PRIMARY"
+                                            }
+                                        }
+                                    }
+                                    
+                                    div class="flex flex-col sm:flex-row sm:items-center justify-between" {
+                                        div class="mb-2 sm:mb-0" {
+                                            p class="font-medium text-gray-900 mb-1 truncate max-w-xs" { (token.did) }
+                                            p class="text-sm text-gray-500" { "Expires in: " ({
+                                                let now = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
+                                                if token.expires_at > now {
+                                                    token.expires_at - now
+                                                } else {
+                                                    0
+                                                }
+                                            }) " seconds" }
+                                        }
+                                        
+                                        @if token.did != primary_token.did {
+                                            a href={"/oauth/bsky/set-primary?did=" (token.did)} 
+                                              class="text-sm bg-indigo-100 hover:bg-indigo-200 text-indigo-800 px-3 py-1 rounded-full inline-flex items-center transition-colors duration-200" { 
+                                                "Set as Primary" 
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Add new account form with playful design
+                        div class="mt-6 bg-gradient-to-r from-indigo-50 to-blue-50 rounded-xl p-5 border border-dashed border-indigo-200" {
+                            form action="/oauth/bsky/authorize" method="get" class="flex flex-col sm:flex-row gap-2 items-center" {
+                                div class="relative flex-grow" {
+                                    div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none" {
+                                        (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>"#))
+                                    }
+                                    input type="text" name="did" placeholder="Enter Bluesky handle or DID" 
+                                        class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-gray-900" {}
+                                }
+                                button type="submit" 
+                                    class="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center" { 
+                                    (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>"#))
+                                    "Link Account" 
+                                }
+                            }
+                        }
+                    }
+
+                    // Profile data section with improved styling
+                    @if let Some(data) = &profile_data {
+                        div class="mb-8" {
+                            h3 class="text-xl font-bold text-gray-800 mb-4" { "Profile Data" }
+                            details class="bg-gray-50 rounded-lg border border-gray-200" {
+                                summary class="cursor-pointer font-medium text-gray-700 p-4 hover:bg-gray-100" { "View Raw JSON" }
+                                pre class="bg-gray-900 text-gray-100 p-4 rounded-b-lg overflow-x-auto text-sm" {
+                                    code {
+                                        (serde_json::to_string_pretty(data).unwrap_or_else(|_| "Failed to format profile data".to_string()))
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Action buttons footer
+                    div class="flex flex-wrap justify-center gap-3 pt-4 border-t border-gray-200" {
+                        a href="/" class="flex items-center text-gray-700 hover:text-indigo-600 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors duration-200" {
+                            (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7m-7-7v14" /></svg>"#))
+                            "Home"
+                        }
+                        a href="/logout" class="flex items-center text-gray-700 hover:text-indigo-600 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors duration-200" {
+                            (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>"#))
+                            "Logout"
+                        }
+                        a href="/login" class="flex items-center text-gray-700 hover:text-indigo-600 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors duration-200" {
+                            (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" /></svg>"#))
+                            "Switch User"
+                        }
+                    }
                 }
             }
-
-            p {
-                a href="/" { "Return to Home" }
-                " | "
-                a href="/logout" { "Logout" }
-                " | "
-                a href="/login" { "Sign in as another user" }
+            
+            // Footer with credits
+            div class="mt-10 text-center text-gray-500 text-sm" {
+                p { "Designed with 💙 using TailwindCSS" }
+                p class="mt-1" { "pfp.blue - Your Bluesky Profile Manager" }
             }
         }
     }
