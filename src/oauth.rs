@@ -1135,57 +1135,50 @@ pub mod db {
             }
         };
 
-        // First, check if there's an existing active token for this DID to preserve the handle if needed
-        let existing_handle = if token_set.handle.is_none() {
+        // Check if there's an existing token for this DID to preserve the handle if needed
+        let existing_row = if token_set.handle.is_none() {
             // Only fetch the existing handle if the new token doesn't have one
-            match sqlx::query(
+            sqlx::query(
                 r#"
-                SELECT handle FROM oauth_tokens 
-                WHERE did = $1 AND is_active = TRUE AND handle IS NOT NULL
-                ORDER BY created_at_utc DESC LIMIT 1
+                SELECT id, handle FROM oauth_tokens 
+                WHERE did = $1 AND handle IS NOT NULL
                 "#,
             )
             .bind(&token_set.did)
             .fetch_optional(pool)
             .await?
-            {
-                Some(row) => row.get::<Option<String>, _>("handle"),
-                None => None,
-            }
         } else {
             None // We already have a handle, no need to fetch
         };
-
-        // Deactivate any existing active tokens for this DID
-        sqlx::query(
-            r#"
-            UPDATE oauth_tokens
-            SET is_active = FALSE, updated_at_utc = NOW()
-            WHERE did = $1 AND is_active = TRUE
-            "#,
-        )
-        .bind(&token_set.did)
-        .execute(pool)
-        .await?;
-
-        // Then insert the new token including DPoP JKT and handle if present
-        // Use existing handle if we found one and the new token doesn't have one
+        
+        let existing_handle = existing_row.as_ref().and_then(|row| row.get::<Option<String>, _>("handle"));
         let handle_to_use = token_set.handle.clone().or(existing_handle);
         
         // Log whether we're preserving the handle
         if token_set.handle.is_none() && handle_to_use.is_some() {
             tracing::info!(
-                "Preserving handle {:?} for DID {} when storing new token",
+                "Preserving handle {:?} for DID {} when updating token",
                 handle_to_use,
                 token_set.did
             );
         }
 
+        // Use upsert (INSERT ... ON CONFLICT ... DO UPDATE) to insert or update the token
         sqlx::query(
             r#"
             INSERT INTO oauth_tokens (
                 did, access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id, handle
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            ON CONFLICT (did) DO UPDATE SET
+                access_token = EXCLUDED.access_token,
+                token_type = EXCLUDED.token_type,
+                expires_at = EXCLUDED.expires_at,
+                refresh_token = EXCLUDED.refresh_token,
+                scope = EXCLUDED.scope,
+                dpop_jkt = EXCLUDED.dpop_jkt,
+                user_id = EXCLUDED.user_id,
+                handle = COALESCE(EXCLUDED.handle, oauth_tokens.handle),
+                updated_at_utc = NOW()
             "#,
         )
         .bind(&token_set.did)
@@ -1203,15 +1196,13 @@ pub mod db {
         Ok(())
     }
 
-    /// Retrieves the most recent active OAuth token for a DID
+    /// Retrieves the OAuth token for a DID
     pub async fn get_token(pool: &PgPool, did: &str) -> cja::Result<Option<OAuthTokenSet>> {
         let row = sqlx::query(
             r#"
             SELECT access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id, handle
             FROM oauth_tokens
-            WHERE did = $1 AND is_active = TRUE
-            ORDER BY created_at_utc DESC
-            LIMIT 1
+            WHERE did = $1
             "#,
         )
         .bind(did)
@@ -1231,7 +1222,7 @@ pub mod db {
         }))
     }
 
-    /// Retrieves all active tokens for a user
+    /// Retrieves all tokens for a user
     pub async fn get_tokens_for_user(
         pool: &PgPool,
         user_id: uuid::Uuid,
@@ -1240,8 +1231,8 @@ pub mod db {
             r#"
             SELECT did, access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id, handle
             FROM oauth_tokens
-            WHERE user_id = $1 AND is_active = TRUE
-            ORDER BY created_at_utc DESC
+            WHERE user_id = $1
+            ORDER BY updated_at_utc DESC
             "#,
         )
         .bind(user_id)
@@ -1266,13 +1257,12 @@ pub mod db {
         Ok(tokens)
     }
 
-    /// Marks a token as inactive
-    pub async fn deactivate_token(pool: &PgPool, did: &str) -> cja::Result<()> {
+    /// Deletes a token for a DID
+    pub async fn delete_token(pool: &PgPool, did: &str) -> cja::Result<()> {
         sqlx::query(
             r#"
-            UPDATE oauth_tokens
-            SET is_active = FALSE, updated_at_utc = NOW()
-            WHERE did = $1 AND is_active = TRUE
+            DELETE FROM oauth_tokens
+            WHERE did = $1
             "#,
         )
         .bind(did)
@@ -1288,7 +1278,7 @@ pub mod db {
             r#"
             UPDATE oauth_tokens
             SET handle = $2, updated_at_utc = NOW()
-            WHERE did = $1 AND is_active = TRUE
+            WHERE did = $1
             "#,
         )
         .bind(did)

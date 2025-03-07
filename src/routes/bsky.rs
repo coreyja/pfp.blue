@@ -774,7 +774,7 @@ pub async fn callback(
         // Get the token id to use as primary token
         let token_id = match sqlx::query(
             r#"
-            SELECT id FROM oauth_tokens WHERE did = $1 AND is_active = TRUE
+            SELECT id FROM oauth_tokens WHERE did = $1
             "#,
         )
         .bind(&token_set.did)
@@ -935,9 +935,9 @@ pub async fn get_token(
                 Err(err) => {
                     error!("Failed to refresh token: {:?}", err);
 
-                    // Deactivate the expired token
-                    if let Err(e) = oauth::db::deactivate_token(&state.db, &token.did).await {
-                        error!("Failed to deactivate expired token: {:?}", e);
+                    // Delete the expired token
+                    if let Err(e) = oauth::db::delete_token(&state.db, &token.did).await {
+                        error!("Failed to delete expired token: {:?}", e);
                     }
 
                     return (
@@ -950,9 +950,9 @@ pub async fn get_token(
         } else {
             // No refresh token, need to authenticate again
 
-            // Deactivate the expired token
-            if let Err(e) = oauth::db::deactivate_token(&state.db, &token.did).await {
-                error!("Failed to deactivate expired token: {:?}", e);
+            // Delete the expired token
+            if let Err(e) = oauth::db::delete_token(&state.db, &token.did).await {
+                error!("Failed to delete expired token: {:?}", e);
             }
 
             return (
@@ -976,13 +976,13 @@ pub async fn get_token(
     })).into_response()
 }
 
-/// Invalidate a token for a DID
+/// Delete a token for a DID
 pub async fn revoke_token(
     State(state): State<AppState>,
     Query(params): Query<RevokeTokenParams>,
 ) -> impl IntoResponse {
-    // Deactivate the token
-    match oauth::db::deactivate_token(&state.db, &params.did).await {
+    // Delete the token
+    match oauth::db::delete_token(&state.db, &params.did).await {
         Ok(_) => Json(serde_json::json!({
             "status": "success",
             "message": "Token revoked successfully"
@@ -1041,7 +1041,7 @@ pub async fn set_primary_account(
     let token = match sqlx::query(
         r#"
         SELECT id FROM oauth_tokens 
-        WHERE did = $1 AND user_id = $2 AND is_active = TRUE
+        WHERE did = $1 AND user_id = $2
         LIMIT 1
         "#,
     )

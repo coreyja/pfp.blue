@@ -94,7 +94,7 @@ impl User {
             r#"
             SELECT u.* FROM users u
             JOIN oauth_tokens ot ON u.user_id = ot.user_id
-            WHERE ot.did = $1 AND ot.is_active = TRUE
+            WHERE ot.did = $1
             LIMIT 1
             "#,
         )
@@ -242,9 +242,9 @@ impl Session {
             // Query the oauth_tokens table to get the token by ID
             let row = sqlx::query(
                 r#"
-                SELECT id, did, access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id
+                SELECT id, did, access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id, handle
                 FROM oauth_tokens
-                WHERE id = $1 AND is_active = TRUE
+                WHERE id = $1
                 "#,
             )
             .bind(token_id)
@@ -260,13 +260,14 @@ impl Session {
                     expires_at: row.get::<i64, _>("expires_at") as u64,
                     refresh_token: row.get("refresh_token"),
                     scope: row.get("scope"),
+                    handle: row.get("handle"),
                     dpop_jkt: row.get("dpop_jkt"),
                     user_id: row.get("user_id"),
                 }));
             }
         }
         
-        // If no primary token is set or it's not found/active, return None
+        // If no primary token is set or it's not found, return None
         Ok(None)
     }
 }
