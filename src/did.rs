@@ -47,8 +47,11 @@ pub struct PDSMetadata {
 
 #[derive(serde::Deserialize, Debug)]
 pub struct AuthServerMetadata {
+    pub issuer: String,
+    pub pushed_authorization_request_endpoint: String,
     pub authorization_endpoint: String,
     pub token_endpoint: String,
+    pub scopes_supported: Vec<String>,
 }
 
 pub async fn document_to_auth_server_metadata(
