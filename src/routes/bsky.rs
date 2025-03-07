@@ -714,8 +714,7 @@ pub async fn callback(
 
     // Immediately fetch profile to get and update the handle
     // Use the job system to do this in the background
-    if let Err(err) = crate::jobs::UpdateProfileHandleJob::from_token(&token_set)
-        .enqueue(&state)
+    if let Err(err) = crate::jobs::UpdateProfileHandleJob::from_token(&token_set).enqueue(&state)
         .await
     {
         // Log the error but continue - not fatal
@@ -848,8 +847,7 @@ pub async fn get_token(
 
     // Also fetch profile in the background to ensure handle is up to date
     // Use the job system to do this asynchronously
-    if let Err(err) = crate::jobs::UpdateProfileHandleJob::from_token(&token)
-        .enqueue(&state)
+    if let Err(err) = crate::jobs::UpdateProfileHandleJob::from_token(&token).enqueue(&state)
         .await
     {
         error!(
@@ -1373,7 +1371,7 @@ async fn display_profile_multi(
 ) -> maud::Markup {
     // Queue a job to update the handle in the background
     if let Err(err) = crate::jobs::UpdateProfileHandleJob::from_token(&primary_token)
-        .enqueue(state)
+        .enqueue(&state)
         .await
     {
         error!("Failed to enqueue handle update job for display: {:?}", err);
