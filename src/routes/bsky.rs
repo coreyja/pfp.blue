@@ -256,11 +256,11 @@ async fn fetch_profile_for_display(did: &str) -> cja::Result<serde_json::Value> 
     info!("Found PDS endpoint for profile display: {}", pds_endpoint);
 
     // Construct the full URL to the PDS endpoint
-    let getRecord_url = format!("{}/xrpc/com.atproto.repo.getRecord", pds_endpoint);
+    let get_record_url = format!("{}/xrpc/com.atproto.repo.getRecord", pds_endpoint);
 
     // Make unauthenticated API request to get profile directly from user's PDS
     let response = client
-        .get(&getRecord_url)
+        .get(&get_record_url)
         .query(&[
             ("repo", did),
             ("collection", "app.bsky.actor.profile"),

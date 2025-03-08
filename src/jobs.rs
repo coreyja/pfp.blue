@@ -2,7 +2,7 @@ use cja::jobs::Job;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 
-use crate::{oauth::OAuthTokenSet, state::AppState};
+use crate::{oauth::{self, OAuthTokenSet, create_dpop_proof_with_ath}, state::AppState};
 
 // This implements the Jobs struct required by the cja job worker
 cja::impl_job_registry!(
@@ -108,14 +108,19 @@ impl Job<AppState> for UpdateProfileHandleJob {
         info!("Found PDS endpoint for DID {}: {}", self.did, pds_endpoint);
 
         // Construct the full URL to the PDS endpoint
-        let getRecord_url = format!("{}/xrpc/com.atproto.repo.getRecord", pds_endpoint);
+        let get_record_url = format!("{}/xrpc/com.atproto.repo.getRecord", pds_endpoint);
         
-        // Create a DPoP proof for this API call using the PDS endpoint
-        let dpop_proof = match crate::oauth::create_dpop_proof(
+        // Access token hash is required for requests to PDS
+        
+        // Start with no nonce and handle any in the error response
+        // Create a DPoP proof for this API call using the PDS endpoint (no nonce initially)
+        // Include access token hash (ath)
+        let dpop_proof = match create_dpop_proof_with_ath(
             &app_state.bsky_oauth,
             "GET",
-            &getRecord_url,
+            &get_record_url,
             None,
+            &token.access_token,
         ) {
             Ok(proof) => proof,
             Err(err) => {
@@ -125,8 +130,8 @@ impl Job<AppState> for UpdateProfileHandleJob {
         };
 
         // Make the API request to get user profile directly from their PDS
-        let response = match client
-            .get(&getRecord_url)
+        let mut response_result = client
+            .get(&get_record_url)
             .query(&[
                 ("repo", &self.did),
                 ("collection", &String::from("app.bsky.actor.profile")),
@@ -135,7 +140,53 @@ impl Job<AppState> for UpdateProfileHandleJob {
             .header("Authorization", format!("DPoP {}", token.access_token))
             .header("DPoP", dpop_proof)
             .send()
-            .await
+            .await;
+            
+        // Handle nonce errors by trying again if needed
+        if let Ok(response) = &response_result {
+            if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+                // Check if there's a DPoP-Nonce in the error response
+                if let Some(new_nonce) = response
+                    .headers()
+                    .get("DPoP-Nonce")
+                    .and_then(|h| h.to_str().ok())
+                {
+                    info!("Received new DPoP-Nonce in error response: {}", new_nonce);
+                    
+                    // Create a new DPoP proof with the provided nonce and access token hash
+                    let new_dpop_proof = match create_dpop_proof_with_ath(
+                        &app_state.bsky_oauth,
+                        "GET",
+                        &get_record_url,
+                        Some(new_nonce),
+                        &token.access_token,
+                    ) {
+                        Ok(proof) => proof,
+                        Err(err) => {
+                            error!("Failed to create DPoP proof with new nonce: {:?}", err);
+                            return Err(err);
+                        }
+                    };
+                    
+                    // Retry the request with the new nonce
+                    info!("Retrying profile retrieval with new DPoP-Nonce");
+                    response_result = client
+                        .get(&get_record_url)
+                        .query(&[
+                            ("repo", &self.did),
+                            ("collection", &String::from("app.bsky.actor.profile")),
+                            ("rkey", &String::from("self")),
+                        ])
+                        .header("Authorization", format!("DPoP {}", token.access_token))
+                        .header("DPoP", new_dpop_proof)
+                        .send()
+                        .await;
+                }
+            }
+        }
+        
+        // Handle the final result
+        let response = match response_result
         {
             Ok(resp) => resp,
             Err(err) => {
@@ -581,22 +632,66 @@ async fn upload_image_to_bluesky(
     // Construct the full URL to the PDS endpoint
     let upload_url = format!("{}/xrpc/com.atproto.repo.uploadBlob", pds_endpoint);
     
-    // Create a DPoP proof for the upload
-    let dpop_proof = crate::oauth::create_dpop_proof(
+    // For uploadBlob, we'll try directly with no nonce first
+    // and then handle any nonce in the error response
+    
+    // We need to pass the access token to create_dpop_proof to calculate ath (access token hash)
+    let dpop_proof = create_dpop_proof_with_ath(
         &app_state.bsky_oauth,
         "POST",
         &upload_url,
         None,
+        &token.access_token,
     )?;
 
     // Make the API request to upload the blob directly to the user's PDS
-    let response = client
+    let mut response_result = client
         .post(&upload_url)
         .header("Authorization", format!("DPoP {}", token.access_token))
         .header("DPoP", dpop_proof)
         .multipart(form)
         .send()
-        .await?;
+        .await;
+    
+    // Handle nonce errors by trying again if needed
+    if let Ok(response) = &response_result {
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            // Check if there's a DPoP-Nonce in the error response
+            if let Some(new_nonce) = response
+                .headers()
+                .get("DPoP-Nonce")
+                .and_then(|h| h.to_str().ok())
+            {
+                info!("Received new DPoP-Nonce in error response: {}", new_nonce);
+                
+                // Create a new DPoP proof with the provided nonce and access token hash
+                let new_dpop_proof = create_dpop_proof_with_ath(
+                    &app_state.bsky_oauth,
+                    "POST",
+                    &upload_url,
+                    Some(new_nonce),
+                    &token.access_token,
+                )?;
+                
+                // Retry the request with the new nonce
+                // Need to recreate the form since we can't clone it
+                let new_part = reqwest::multipart::Part::bytes(image_data.to_vec()).file_name("profile.png");
+                let new_form = reqwest::multipart::Form::new().part("file", new_part);
+                
+                info!("Retrying upload with new DPoP-Nonce");
+                response_result = client
+                    .post(&upload_url)
+                    .header("Authorization", format!("DPoP {}", token.access_token))
+                    .header("DPoP", new_dpop_proof)
+                    .multipart(new_form)
+                    .send()
+                    .await;
+            }
+        }
+    }
+    
+    // Unwrap the final result
+    let response = response_result?;
 
     if !response.status().is_success() {
         let status = response.status();
@@ -694,19 +789,21 @@ async fn update_profile_with_image(
     info!("Found PDS endpoint for profile update: {}", pds_endpoint);
 
     // Construct the full URL to the PDS endpoint for getRecord
-    let getRecord_url = format!("{}/xrpc/com.atproto.repo.getRecord", pds_endpoint);
+    let get_record_url = format!("{}/xrpc/com.atproto.repo.getRecord", pds_endpoint);
 
-    // Create a DPoP proof for getting the profile
-    let get_dpop_proof = crate::oauth::create_dpop_proof(
+    // Start with no nonce and handle any in the error response
+    // Create a DPoP proof for getting the profile with access token hash
+    let get_dpop_proof = create_dpop_proof_with_ath(
         &app_state.bsky_oauth,
         "GET",
-        &getRecord_url,
+        &get_record_url,
         None,
+        &token.access_token,
     )?;
 
     // Make the API request to get current profile directly from user's PDS
-    let get_response = client
-        .get(&getRecord_url)
+    let mut get_response_result = client
+        .get(&get_record_url)
         .query(&[
             ("repo", &token.did),
             ("collection", &String::from("app.bsky.actor.profile")),
@@ -715,7 +812,47 @@ async fn update_profile_with_image(
         .header("Authorization", format!("DPoP {}", token.access_token))
         .header("DPoP", get_dpop_proof)
         .send()
-        .await?;
+        .await;
+    
+    // Handle nonce errors by trying again if needed
+    if let Ok(response) = &get_response_result {
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            // Check if there's a DPoP-Nonce in the error response
+            if let Some(new_nonce) = response
+                .headers()
+                .get("DPoP-Nonce")
+                .and_then(|h| h.to_str().ok())
+            {
+                info!("Received new DPoP-Nonce in error response: {}", new_nonce);
+                
+                // Create a new DPoP proof with the provided nonce and access token hash
+                let new_dpop_proof = create_dpop_proof_with_ath(
+                    &app_state.bsky_oauth,
+                    "GET",
+                    &get_record_url,
+                    Some(new_nonce),
+                    &token.access_token,
+                )?;
+                
+                // Retry the request with the new nonce
+                info!("Retrying profile retrieval with new DPoP-Nonce");
+                get_response_result = client
+                    .get(&get_record_url)
+                    .query(&[
+                        ("repo", &token.did),
+                        ("collection", &String::from("app.bsky.actor.profile")),
+                        ("rkey", &String::from("self")),
+                    ])
+                    .header("Authorization", format!("DPoP {}", token.access_token))
+                    .header("DPoP", new_dpop_proof)
+                    .send()
+                    .await;
+            }
+        }
+    }
+    
+    // Unwrap the final result
+    let get_response = get_response_result?;
 
     if !get_response.status().is_success() {
         let status = get_response.status();
@@ -757,14 +894,16 @@ async fn update_profile_with_image(
     }
 
     // Construct the full URL to the PDS endpoint for putRecord
-    let putRecord_url = format!("{}/xrpc/com.atproto.repo.putRecord", pds_endpoint);
+    let put_record_url = format!("{}/xrpc/com.atproto.repo.putRecord", pds_endpoint);
 
-    // Create a DPoP proof for updating the profile
-    let put_dpop_proof = crate::oauth::create_dpop_proof(
+    // Start with no nonce and handle any in the error response
+    // Create a DPoP proof for updating the profile with access token hash
+    let put_dpop_proof = create_dpop_proof_with_ath(
         &app_state.bsky_oauth,
         "POST",
-        &putRecord_url,
+        &put_record_url,
         None,
+        &token.access_token,
     )?;
 
     // Create the request body
@@ -776,13 +915,49 @@ async fn update_profile_with_image(
     });
 
     // Make the API request to update the profile directly on the user's PDS
-    let put_response = client
-        .post(&putRecord_url)
+    let mut put_response_result = client
+        .post(&put_record_url)
         .header("Authorization", format!("DPoP {}", token.access_token))
         .header("DPoP", put_dpop_proof)
         .json(&put_body)
         .send()
-        .await?;
+        .await;
+    
+    // Handle nonce errors by trying again if needed
+    if let Ok(response) = &put_response_result {
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            // Check if there's a DPoP-Nonce in the error response
+            if let Some(new_nonce) = response
+                .headers()
+                .get("DPoP-Nonce")
+                .and_then(|h| h.to_str().ok())
+            {
+                info!("Received new DPoP-Nonce in error response: {}", new_nonce);
+                
+                // Create a new DPoP proof with the provided nonce and access token hash
+                let new_dpop_proof = create_dpop_proof_with_ath(
+                    &app_state.bsky_oauth,
+                    "POST",
+                    &put_record_url,
+                    Some(new_nonce),
+                    &token.access_token,
+                )?;
+                
+                // Retry the request with the new nonce
+                info!("Retrying profile update with new DPoP-Nonce");
+                put_response_result = client
+                    .post(&put_record_url)
+                    .header("Authorization", format!("DPoP {}", token.access_token))
+                    .header("DPoP", new_dpop_proof)
+                    .json(&put_body)
+                    .send()
+                    .await;
+            }
+        }
+    }
+    
+    // Unwrap the final result
+    let put_response = put_response_result?;
 
     if !put_response.status().is_success() {
         let status = put_response.status();

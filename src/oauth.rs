@@ -521,10 +521,37 @@ pub fn create_dpop_proof(
     endpoint_url: &str,
     server_nonce: Option<&str>,
 ) -> cja::Result<String> {
+    // Call the implementation with access token parameter as None
+    create_dpop_proof_impl(oauth_config, http_method, endpoint_url, server_nonce, None)
+}
+
+/// Create a DPoP proof that includes the access token hash (ath) claim
+/// This is needed for some PDS servers that require the ath claim
+pub fn create_dpop_proof_with_ath(
+    oauth_config: &BlueskyOAuthConfig,
+    http_method: &str,
+    endpoint_url: &str,
+    server_nonce: Option<&str>,
+    access_token: &str,
+) -> cja::Result<String> {
+    // Call the implementation with the access token
+    create_dpop_proof_impl(oauth_config, http_method, endpoint_url, server_nonce, Some(access_token))
+}
+
+/// Internal implementation for creating DPoP proofs with or without access token hash
+fn create_dpop_proof_impl(
+    oauth_config: &BlueskyOAuthConfig,
+    http_method: &str,
+    endpoint_url: &str,
+    server_nonce: Option<&str>,
+    access_token: Option<&str>,
+) -> cja::Result<String> {
     use std::io::Write;
     use std::process::Command;
     use std::time::{SystemTime, UNIX_EPOCH};
     use tempfile::NamedTempFile;
+    use sha2::{Digest, Sha256};
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -557,8 +584,25 @@ pub fn create_dpop_proof(
         "exp": now + 300, // 5 minutes in the future
     });
 
+    // Add nonce claim if provided
     if let Some(nonce) = server_nonce {
         payload_json["nonce"] = nonce.to_owned().into();
+    }
+
+    // Add ath (access token hash) claim if access token is provided
+    if let Some(token) = access_token {
+        // Calculate SHA-256 hash of the access token
+        let mut hasher = Sha256::new();
+        hasher.update(token.as_bytes());
+        let token_hash = hasher.finalize();
+        
+        // Base64url encode the hash
+        let ath = URL_SAFE_NO_PAD.encode(token_hash);
+        
+        // Add the ath claim to the payload
+        payload_json["ath"] = ath.into();
+        
+        tracing::debug!("Added access token hash (ath) to DPoP proof");
     }
 
     let payload_json = payload_json.to_string();
