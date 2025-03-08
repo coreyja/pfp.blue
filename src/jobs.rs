@@ -406,14 +406,11 @@ impl Job<AppState> for UpdateProfilePictureProgressJob {
 
         // Upload the new image to Bluesky
         match upload_image_to_bluesky(&app_state, &token, &progress_image_data).await {
-            Ok(cid) => {
-                info!(
-                    "Successfully uploaded progress image to Bluesky with CID: {}",
-                    cid
-                );
+            Ok(blob_object) => {
+                info!("Successfully uploaded progress image to Bluesky");
 
-                // Update profile with the new image
-                match update_profile_with_image(&app_state, &token, &cid).await {
+                // Update profile with the new image blob
+                match update_profile_with_image(&app_state, &token, blob_object).await {
                     Ok(_) => {
                         info!(
                             "Successfully updated profile with progress image for token ID {}",
@@ -570,12 +567,12 @@ async fn generate_progress_image(
     }
 }
 
-/// Upload an image to Bluesky and return the CID
+/// Upload an image to Bluesky and return the blob object
 async fn upload_image_to_bluesky(
     app_state: &AppState,
     token: &OAuthTokenSet,
     image_data: &[u8],
-) -> cja::Result<String> {
+) -> cja::Result<serde_json::Value> {
     use color_eyre::eyre::eyre;
     use tracing::{error, info};
 
@@ -707,29 +704,18 @@ async fn upload_image_to_bluesky(
     // Parse the response JSON
     let response_data = response.json::<serde_json::Value>().await?;
 
-    // Extract the blob CID
-    let blob_cid = if let Some(blob) = response_data.get("blob") {
-        if let Some(cid) = blob.get("$link") {
-            cid.as_str().map(|s| s.to_string())
-        } else {
-            None
+    // Extract the entire blob object
+    if let Some(blob) = response_data.get("blob").cloned() {
+        // Log the blob information for debugging
+        if let Some(blob_ref) = blob.get("ref") {
+            if let Some(link) = blob_ref.get("$link").and_then(|l| l.as_str()) {
+                info!("Successfully uploaded blob with CID: {}", link);
+            }
         }
+        Ok(blob)
     } else {
-        None
-    };
-
-    match blob_cid {
-        Some(cid) => {
-            info!("Successfully uploaded blob with CID: {}", cid);
-            Ok(cid)
-        }
-        None => {
-            error!(
-                "Failed to extract blob CID from response: {:?}",
-                response_data
-            );
-            Err(eyre!("Failed to extract blob CID from response"))
-        }
+        error!("Failed to extract blob object from response: {:?}", response_data);
+        Err(eyre!("Failed to extract blob object from response"))
     }
 }
 
@@ -737,7 +723,7 @@ async fn upload_image_to_bluesky(
 async fn update_profile_with_image(
     app_state: &AppState,
     token: &OAuthTokenSet,
-    blob_cid: &str,
+    blob_object: serde_json::Value,
 ) -> cja::Result<()> {
     use color_eyre::eyre::eyre;
     use tracing::{error, info};
@@ -878,17 +864,8 @@ async fn update_profile_with_image(
 
     // Ensure profile_value is a mutable object
     if let serde_json::Value::Object(ref mut obj) = profile_value {
-        // Update the avatar field with the new blob CID
-        obj.insert(
-            "avatar".to_string(),
-            serde_json::json!({
-                "$type": "blob",
-                "ref": {
-                    "$link": blob_cid
-                },
-                "mimeType": "image/png"
-            }),
-        );
+        // Update the avatar field with the complete blob object
+        obj.insert("avatar".to_string(), blob_object);
     } else {
         return Err(eyre!("Profile value is not an object"));
     }
