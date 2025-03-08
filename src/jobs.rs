@@ -291,7 +291,7 @@ impl Job<AppState> for UpdateProfilePictureProgressJob {
         use tracing::{debug, error, info};
 
         // First, get the token from the database
-        let token = match sqlx::query!(
+        let mut token = match sqlx::query!(
             r#"
             SELECT did, access_token, token_type, handle, expires_at, 
                    refresh_token, scope, dpop_jkt, user_id
@@ -320,6 +320,112 @@ impl Job<AppState> for UpdateProfilePictureProgressJob {
                 return Err(eyre!("No token found for ID"));
             }
         };
+        
+        // Check if the token is expired and try to refresh it if needed
+        if token.is_expired() {
+            info!("Token for DID {} is expired, attempting to refresh", token.did);
+            
+            // Only try to refresh if we have a refresh token
+            if let Some(refresh_token) = &token.refresh_token {
+                // Get the client ID using the proper method from the app_state
+                let client_id = app_state.client_id();
+                
+                // Try to get the token endpoint
+                let token_endpoint = match crate::routes::bsky::get_token_endpoint_for_did(&app_state.db, &token.did).await {
+                    Ok(Some(endpoint)) => endpoint,
+                    _ => {
+                        // Resolve the PDS endpoint for the token
+                        let xrpc_client = std::sync::Arc::new(atrium_xrpc_client::reqwest::ReqwestClient::new(
+                            "https://bsky.social",
+                        ));
+                        
+                        match atrium_api::types::string::Did::new(token.did.clone()) {
+                            Ok(did_obj) => {
+                                match crate::did::resolve_did_to_document(&did_obj, xrpc_client).await {
+                                    Ok(did_document) => {
+                                        if let Some(services) = did_document.service.as_ref() {
+                                            if let Some(pds_service) = services.iter().find(|s| s.id == "#atproto_pds") {
+                                                let pds_endpoint = &pds_service.service_endpoint;
+                                                let refresh_endpoint = format!("{}/xrpc/com.atproto.server.refreshSession", pds_endpoint);
+                                                info!("Resolved PDS endpoint for refresh: {}", refresh_endpoint);
+                                                refresh_endpoint
+                                            } else {
+                                                // Fallback to bsky.social if no PDS service found
+                                                "https://bsky.social/xrpc/com.atproto.server.refreshSession".to_string()
+                                            }
+                                        } else {
+                                            // Fallback to bsky.social if no services found
+                                            "https://bsky.social/xrpc/com.atproto.server.refreshSession".to_string()
+                                        }
+                                    },
+                                    Err(_) => {
+                                        // Fallback to bsky.social on resolution error
+                                        "https://bsky.social/xrpc/com.atproto.server.refreshSession".to_string()
+                                    }
+                                }
+                            },
+                            Err(_) => {
+                                // Fallback to bsky.social on DID parse error
+                                "https://bsky.social/xrpc/com.atproto.server.refreshSession".to_string()
+                            }
+                        }
+                    }
+                };
+                
+                // Get the latest DPoP nonce from the database
+                let dpop_nonce = match crate::oauth::db::get_latest_nonce(&app_state.db, &token.did).await {
+                    Ok(nonce) => nonce,
+                    Err(err) => {
+                        error!("Failed to get DPoP nonce: {:?}", err);
+                        None
+                    }
+                };
+                
+                // Try to refresh the token
+                match crate::oauth::refresh_token(
+                    &app_state.bsky_oauth,
+                    &token_endpoint,
+                    &client_id,
+                    refresh_token,
+                    dpop_nonce.as_deref(),
+                ).await {
+                    Ok(token_response) => {
+                        info!("Successfully refreshed token for DID {}", token.did);
+                        
+                        // Create a new token set from the response
+                        let new_token = match crate::oauth::OAuthTokenSet::from_token_response_with_jwk(
+                            &token_response,
+                            token.did.clone(),
+                            &app_state.bsky_oauth.public_key,
+                        ) {
+                            Ok(new_token) => new_token.with_handle_from(&token),
+                            Err(err) => {
+                                error!("Failed to create token set with JWK: {:?}", err);
+                                // Fallback to standard token creation
+                                crate::oauth::OAuthTokenSet::from_token_response(token_response, token.did.clone())
+                                    .with_handle_from(&token)
+                            }
+                        };
+                        
+                        // Store the refreshed token
+                        if let Err(err) = crate::oauth::db::store_token(&app_state.db, &new_token).await {
+                            error!("Failed to store refreshed token: {:?}", err);
+                            return Err(eyre!("Failed to store refreshed token"));
+                        }
+                        
+                        // Use the refreshed token for the rest of the job
+                        token = new_token;
+                    },
+                    Err(err) => {
+                        error!("Failed to refresh token: {:?}", err);
+                        return Err(eyre!("Failed to refresh expired token: {}", err));
+                    }
+                }
+            } else {
+                error!("Token is expired but no refresh token is available for DID {}", token.did);
+                return Err(eyre!("Token is expired and no refresh token is available"));
+            }
+        }
 
         // Get the progress settings for this token
         let progress = match crate::profile_progress::ProfilePictureProgress::get_by_token_id(

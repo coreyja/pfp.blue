@@ -1337,7 +1337,7 @@ pub async fn profile(
 }
 
 /// Helper function to get the token endpoint for a DID from stored sessions
-async fn get_token_endpoint_for_did(pool: &sqlx::PgPool, did: &str) -> cja::Result<Option<String>> {
+pub async fn get_token_endpoint_for_did(pool: &sqlx::PgPool, did: &str) -> cja::Result<Option<String>> {
     let row = sqlx::query(
         r#"
         SELECT token_endpoint FROM oauth_sessions
