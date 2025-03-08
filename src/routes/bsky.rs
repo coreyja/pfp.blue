@@ -4,6 +4,7 @@ use axum::{
     response::{IntoResponse, Redirect},
     Json,
 };
+use cja::jobs::Job as _;
 use color_eyre::eyre::eyre;
 use maud::html;
 use serde::Deserialize;
@@ -208,107 +209,58 @@ pub struct CallbackParams {
     pub error_description: Option<String>,
 }
 
-/// This function is used by the job to fetch profile data and update the handle in the DB
-// Left in as a reference, but not used directly - we use the job system instead
-#[allow(dead_code)]
-async fn fetch_user_profile(
-    state: &AppState,
-    did: &str,
-    token: &OAuthTokenSet,
-) -> cja::Result<serde_json::Value> {
-    let client = reqwest::Client::new();
-
-    // Create a DPoP proof for this API call
-    let dpop_proof = oauth::create_dpop_proof(
-        &state.bsky_oauth,
-        "GET",
-        "https://bsky.social/xrpc/com.atproto.repo.getRecord", // Use standard PDS URL
-        None,
-    )?;
-
-    // Make the API request to get user profile
-    let response = client
-        .get("https://bsky.social/xrpc/com.atproto.repo.getRecord")
-        .query(&[
-            ("repo", did),
-            ("collection", "app.bsky.actor.profile"),
-            ("rkey", "self"),
-        ])
-        .header("Authorization", format!("DPoP {}", token.access_token))
-        .header("DPoP", dpop_proof)
-        .send()
-        .await?;
-
-    // Check if we have a DPoP nonce in the response and store it
-    if let Some(nonce_header) = response.headers().get("DPoP-Nonce") {
-        if let Ok(nonce) = nonce_header.to_str() {
-            tracing::debug!("Received DPoP-Nonce from profile request: {}", nonce);
-            // We don't need to store it here since we're not retrying
-        }
-    }
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let error_text = response
-            .text()
-            .await
-            .unwrap_or_else(|_| "Failed to read error response".to_string());
-
-        return Err(eyre!(
-            "Failed to fetch user profile: {} - {}",
-            status,
-            error_text
-        ));
-    }
-
-    // Parse the response JSON
-    let profile_data = response.json::<serde_json::Value>().await?;
-
-    // Extract the handle from the profile data and update it in the database
-    let extracted_handle = if let Some(value) = profile_data.get("value") {
-        if let Some(handle_val) = value.get("handle") {
-            handle_val.as_str().map(|s| s.to_string())
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-
-    // If we found a handle in the profile, make sure it's updated in the database
-    if let Some(handle_str) = extracted_handle {
-        // Check if handle is different than what we have saved
-        let should_update = match &token.handle {
-            Some(current_handle) => current_handle != &handle_str,
-            None => true, // No handle stored yet, need to update
-        };
-
-        if should_update {
-            // Update the handle in the database
-            if let Err(err) = oauth::db::update_token_handle(&state.db, did, &handle_str).await {
-                tracing::warn!("Failed to update handle in database: {:?}", err);
-            } else {
-                tracing::info!("Updated handle for DID {}: {}", did, handle_str);
-            }
-        } else {
-            tracing::debug!("Handle for DID {} already up to date: {}", did, handle_str);
-        }
-    } else {
-        tracing::warn!("No handle found in profile data for DID: {}", did);
-    }
-
-    Ok(profile_data)
-}
-
 /// Function to fetch profile data for display only (no authentication/DPoP needed)
 async fn fetch_profile_for_display(did: &str) -> cja::Result<serde_json::Value> {
     use color_eyre::eyre::eyre;
+    use tracing::info;
 
     let client = reqwest::Client::new();
 
-    // Make unauthenticated API request to get profile
+    // First, resolve the DID document to find the PDS endpoint
+    let xrpc_client = std::sync::Arc::new(atrium_xrpc_client::reqwest::ReqwestClient::new(
+        "https://bsky.social",
+    ));
+    
+    // Convert string DID to DID object
+    let did_obj = match atrium_api::types::string::Did::new(did.to_string()) {
+        Ok(did) => did,
+        Err(err) => {
+            return Err(eyre!("Invalid DID format: {}", err));
+        }
+    };
+    
+    // Resolve DID to document
+    let did_document = match crate::did::resolve_did_to_document(&did_obj, xrpc_client).await {
+        Ok(doc) => doc,
+        Err(err) => {
+            return Err(eyre!("Failed to resolve DID document: {}", err));
+        }
+    };
+    
+    // Find the PDS service endpoint
+    let services = match did_document.service.as_ref() {
+        Some(services) => services,
+        None => {
+            return Err(eyre!("No service endpoints found in DID document"));
+        }
+    };
+
+    let pds_service = match services.iter().find(|s| s.id == "#atproto_pds") {
+        Some(service) => service,
+        None => {
+            return Err(eyre!("No ATProto PDS service endpoint found in DID document"));
+        }
+    };
+
+    let pds_endpoint = &pds_service.service_endpoint;
+    info!("Found PDS endpoint for profile display: {}", pds_endpoint);
+
+    // Construct the full URL to the PDS endpoint
+    let getRecord_url = format!("{}/xrpc/com.atproto.repo.getRecord", pds_endpoint);
+
+    // Make unauthenticated API request to get profile directly from user's PDS
     let response = client
-        .get("https://bsky.social/xrpc/com.atproto.repo.getRecord")
+        .get(&getRecord_url)
         .query(&[
             ("repo", did),
             ("collection", "app.bsky.actor.profile"),
@@ -714,7 +666,8 @@ pub async fn callback(
 
     // Immediately fetch profile to get and update the handle
     // Use the job system to do this in the background
-    if let Err(err) = crate::jobs::UpdateProfileHandleJob::from_token(&token_set).enqueue(&state)
+    if let Err(err) = crate::jobs::UpdateProfileHandleJob::from_token(&token_set)
+        .enqueue(state.clone(), "callback".to_string())
         .await
     {
         // Log the error but continue - not fatal
@@ -847,7 +800,8 @@ pub async fn get_token(
 
     // Also fetch profile in the background to ensure handle is up to date
     // Use the job system to do this asynchronously
-    if let Err(err) = crate::jobs::UpdateProfileHandleJob::from_token(&token).enqueue(&state)
+    if let Err(err) = crate::jobs::UpdateProfileHandleJob::from_token(&token)
+        .enqueue(state.clone(), "get_token".to_string())
         .await
     {
         error!(
@@ -913,7 +867,7 @@ pub async fn get_token(
                     // Also fetch profile to update handle if needed (don't block on this)
                     // Use the job system to do this asynchronously
                     if let Err(err) = crate::jobs::UpdateProfileHandleJob::from_token(&new_token)
-                        .enqueue(&state)
+                        .enqueue(state.clone(), "get_token".to_string())
                         .await
                     {
                         error!(
@@ -1116,7 +1070,7 @@ pub async fn profile(
     // This ensures we have the latest handle data when displaying the profile
     for token in &tokens {
         if let Err(err) = crate::jobs::UpdateProfileHandleJob::from_token(token)
-            .enqueue(&state)
+            .enqueue(state.clone(), "profile_route".to_string())
             .await
         {
             error!(
@@ -1253,8 +1207,44 @@ pub async fn profile(
                 match get_token_endpoint_for_did(&state.db, &primary_token.did).await {
                     Ok(Some(endpoint)) => endpoint,
                     _ => {
-                        // Fallback to bsky.social
-                        "https://bsky.social/xrpc/com.atproto.server.refreshSession".to_string()
+                        // We need to resolve the PDS to get the correct endpoint
+                        info!("No stored token endpoint found for DID: {}, resolving PDS", &primary_token.did);
+                        
+                        // Try to resolve the PDS endpoint
+                        let xrpc_client = std::sync::Arc::new(atrium_xrpc_client::reqwest::ReqwestClient::new(
+                            "https://bsky.social",
+                        ));
+                        
+                        match atrium_api::types::string::Did::new(primary_token.did.clone()) {
+                            Ok(did_obj) => {
+                                match crate::did::resolve_did_to_document(&did_obj, xrpc_client).await {
+                                    Ok(did_document) => {
+                                        if let Some(services) = did_document.service.as_ref() {
+                                            if let Some(pds_service) = services.iter().find(|s| s.id == "#atproto_pds") {
+                                                let pds_endpoint = &pds_service.service_endpoint;
+                                                let refresh_endpoint = format!("{}/xrpc/com.atproto.server.refreshSession", pds_endpoint);
+                                                info!("Resolved PDS endpoint for refresh: {}", refresh_endpoint);
+                                                refresh_endpoint
+                                            } else {
+                                                // Fallback to bsky.social if no PDS service found
+                                                "https://bsky.social/xrpc/com.atproto.server.refreshSession".to_string()
+                                            }
+                                        } else {
+                                            // Fallback to bsky.social if no services found
+                                            "https://bsky.social/xrpc/com.atproto.server.refreshSession".to_string()
+                                        }
+                                    },
+                                    Err(_) => {
+                                        // Fallback to bsky.social on resolution error
+                                        "https://bsky.social/xrpc/com.atproto.server.refreshSession".to_string()
+                                    }
+                                }
+                            },
+                            Err(_) => {
+                                // Fallback to bsky.social on DID parse error
+                                "https://bsky.social/xrpc/com.atproto.server.refreshSession".to_string()
+                            }
+                        }
                     }
                 };
 
@@ -1305,7 +1295,7 @@ pub async fn profile(
                     // Also fetch profile to update handle if needed (don't block on this)
                     // Use the job system to do this asynchronously
                     if let Err(err) = crate::jobs::UpdateProfileHandleJob::from_token(&new_token)
-                        .enqueue(&state)
+                        .enqueue(state.clone(), "profile_route".to_string())
                         .await
                     {
                         error!(
@@ -1371,7 +1361,7 @@ async fn display_profile_multi(
 ) -> maud::Markup {
     // Queue a job to update the handle in the background
     if let Err(err) = crate::jobs::UpdateProfileHandleJob::from_token(&primary_token)
-        .enqueue(&state)
+        .enqueue(state.clone(), "display_profile_multi".to_string())
         .await
     {
         error!("Failed to enqueue handle update job for display: {:?}", err);

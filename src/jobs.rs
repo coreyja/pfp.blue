@@ -1,5 +1,6 @@
 use cja::jobs::Job;
 use serde::{Deserialize, Serialize};
+use tracing::debug;
 
 use crate::{oauth::OAuthTokenSet, state::AppState};
 
@@ -37,13 +38,6 @@ impl UpdateProfileHandleJob {
             did: token.did.clone(),
         }
     }
-
-    /// Queue this job to run asynchronously
-    pub async fn enqueue(self, app_state: &AppState) -> cja::Result<()> {
-        <Self as Job<AppState>>::enqueue(self, app_state.clone(), String::new())
-            .await
-            .map_err(|e| color_eyre::eyre::eyre!("Failed to enqueue job: {}", e))
-    }
 }
 
 #[async_trait::async_trait]
@@ -70,11 +64,57 @@ impl Job<AppState> for UpdateProfileHandleJob {
 
         let client = reqwest::Client::new();
 
-        // Create a DPoP proof for this API call
+        // First, resolve the DID document to find PDS endpoint
+        let xrpc_client = std::sync::Arc::new(atrium_xrpc_client::reqwest::ReqwestClient::new(
+            "https://bsky.social",
+        ));
+        
+        // Convert string DID to DID object
+        let did = match atrium_api::types::string::Did::new(self.did.clone()) {
+            Ok(did) => did,
+            Err(err) => {
+                error!("Invalid DID format: {:?}", err);
+                return Err(eyre!("Invalid DID format: {}", err));
+            }
+        };
+        
+        // Resolve DID to document
+        let did_document = match crate::did::resolve_did_to_document(&did, xrpc_client).await {
+            Ok(doc) => doc,
+            Err(err) => {
+                error!("Failed to resolve DID document: {:?}", err);
+                return Err(eyre!("Failed to resolve DID document: {}", err));
+            }
+        };
+        
+        // Find the PDS service endpoint
+        let services = match did_document.service.as_ref() {
+            Some(services) => services,
+            None => {
+                error!("No service endpoints found in DID document");
+                return Err(eyre!("No service endpoints found in DID document"));
+            }
+        };
+
+        let pds_service = match services.iter().find(|s| s.id == "#atproto_pds") {
+            Some(service) => service,
+            None => {
+                error!("No ATProto PDS service endpoint found in DID document");
+                return Err(eyre!("No ATProto PDS service endpoint found in DID document"));
+            }
+        };
+
+        let pds_endpoint = &pds_service.service_endpoint;
+        info!("Found PDS endpoint for DID {}: {}", self.did, pds_endpoint);
+
+        // Construct the full URL to the PDS endpoint
+        let getRecord_url = format!("{}/xrpc/com.atproto.repo.getRecord", pds_endpoint);
+        
+        // Create a DPoP proof for this API call using the PDS endpoint
         let dpop_proof = match crate::oauth::create_dpop_proof(
             &app_state.bsky_oauth,
             "GET",
-            "https://bsky.social/xrpc/com.atproto.repo.getRecord",
+            &getRecord_url,
             None,
         ) {
             Ok(proof) => proof,
@@ -84,9 +124,9 @@ impl Job<AppState> for UpdateProfileHandleJob {
             }
         };
 
-        // Make the API request to get user profile
+        // Make the API request to get user profile directly from their PDS
         let response = match client
-            .get("https://bsky.social/xrpc/com.atproto.repo.getRecord")
+            .get(&getRecord_url)
             .query(&[
                 ("repo", &self.did),
                 ("collection", &String::from("app.bsky.actor.profile")),
@@ -268,7 +308,13 @@ impl Job<AppState> for UpdateProfilePictureProgressJob {
         // Extract progress fraction or percentage from handle
         let (numerator, denominator) = match &token.handle {
             Some(handle) => extract_progress_from_handle(handle).unwrap_or((0.0, 1.0)),
-            None => (0.0, 1.0), // Default to 0% if no handle is found
+            None => {
+                debug!(
+                    "No handle found for token ID {}, defaulting to 0%",
+                    self.token_id
+                );
+                (0.0, 1.0)
+            }
         };
 
         // Calculate the progress percentage
@@ -381,6 +427,7 @@ async fn generate_progress_image(
     use imageproc::rect::Rect;
     use std::io::Cursor;
 
+    debug!("Generating progress image");
     // Load the original image
     let img = match image::load_from_memory(original_image_data) {
         Ok(img) => img,
@@ -395,12 +442,16 @@ async fn generate_progress_image(
     let height = img.height();
     let size = width.min(height);
 
+    debug!("Image dimensions: {}x{} Size: {}", width, height, size);
+
     // Center coordinates
     let center_x = width / 2;
     let center_y = height / 2;
 
     // Radius of the progress circle (slightly smaller than the image)
     let radius = (size / 2) as i32 - 10;
+
+    debug!("Radius: {}", radius);
 
     // Progress bar style
     let bar_width = 10;
@@ -412,6 +463,8 @@ async fn generate_progress_image(
     let overlay_height = 30;
     let bottom_rect = Rect::at(0, (height - overlay_height) as i32).of_size(width, overlay_height);
     draw_filled_rect_mut(&mut img, bottom_rect, Rgba([0, 0, 0, 150]));
+
+    debug!("Drew overlay for text");
 
     // Starting angle is -90 degrees (top center)
     let start_angle = -90.0_f64.to_radians();
@@ -425,6 +478,8 @@ async fn generate_progress_image(
         draw_filled_circle_mut(&mut img, (x as i32, y as i32), bar_width / 2, bg_color);
     }
 
+    debug!("Drew background circle");
+
     // Draw the progress arc
     for angle_deg in 0..=(progress * 360.0) as i32 {
         let angle = start_angle + (angle_deg as f64).to_radians();
@@ -434,6 +489,8 @@ async fn generate_progress_image(
         draw_filled_circle_mut(&mut img, (x as i32, y as i32), bar_width / 2, bar_color);
     }
 
+    debug!("Drew progress arc");
+
     // Draw outline circle
     draw_hollow_circle_mut(
         &mut img,
@@ -442,10 +499,16 @@ async fn generate_progress_image(
         outline_color,
     );
 
+    debug!("Drew outline circle");
+
     // Add a progress bar at the bottom
     let indicator_width = (width as f64 * progress) as u32;
+    debug!("Indicator width: {}", indicator_width);
     let indicator_rect = Rect::at(0, (height - 5) as i32).of_size(indicator_width, 5);
+    debug!("Indicator rect: {:?}", indicator_rect);
     draw_filled_rect_mut(&mut img, indicator_rect, bar_color);
+
+    debug!("Drew progress bar");
 
     // Convert the image back to bytes
     let mut buffer = Vec::new();
@@ -468,21 +531,67 @@ async fn upload_image_to_bluesky(
     // Create a reqwest client
     let client = reqwest::Client::new();
 
+    // First, resolve the DID document to find PDS endpoint
+    let xrpc_client = std::sync::Arc::new(atrium_xrpc_client::reqwest::ReqwestClient::new(
+        "https://bsky.social",
+    ));
+    
+    // Convert string DID to DID object
+    let did = match atrium_api::types::string::Did::new(token.did.clone()) {
+        Ok(did) => did,
+        Err(err) => {
+            error!("Invalid DID format: {:?}", err);
+            return Err(eyre!("Invalid DID format: {}", err));
+        }
+    };
+    
+    // Resolve DID to document
+    let did_document = match crate::did::resolve_did_to_document(&did, xrpc_client).await {
+        Ok(doc) => doc,
+        Err(err) => {
+            error!("Failed to resolve DID document: {:?}", err);
+            return Err(eyre!("Failed to resolve DID document: {}", err));
+        }
+    };
+    
+    // Find the PDS service endpoint
+    let services = match did_document.service.as_ref() {
+        Some(services) => services,
+        None => {
+            error!("No service endpoints found in DID document");
+            return Err(eyre!("No service endpoints found in DID document"));
+        }
+    };
+
+    let pds_service = match services.iter().find(|s| s.id == "#atproto_pds") {
+        Some(service) => service,
+        None => {
+            error!("No ATProto PDS service endpoint found in DID document");
+            return Err(eyre!("No ATProto PDS service endpoint found in DID document"));
+        }
+    };
+
+    let pds_endpoint = &pds_service.service_endpoint;
+    info!("Found PDS endpoint for upload: {}", pds_endpoint);
+
     // Create a multipart form with the image data - simplified to work with current reqwest version
     let part = reqwest::multipart::Part::bytes(image_data.to_vec()).file_name("profile.png");
     let form = reqwest::multipart::Form::new().part("file", part);
 
+    // Construct the full URL to the PDS endpoint
+    let upload_url = format!("{}/xrpc/com.atproto.repo.uploadBlob", pds_endpoint);
+    
     // Create a DPoP proof for the upload
     let dpop_proof = crate::oauth::create_dpop_proof(
         &app_state.bsky_oauth,
         "POST",
-        "https://bsky.social/xrpc/com.atproto.repo.uploadBlob",
+        &upload_url,
         None,
     )?;
 
-    // Make the API request to upload the blob
+    // Make the API request to upload the blob directly to the user's PDS
     let response = client
-        .post("https://bsky.social/xrpc/com.atproto.repo.uploadBlob")
+        .post(&upload_url)
         .header("Authorization", format!("DPoP {}", token.access_token))
         .header("DPoP", dpop_proof)
         .multipart(form)
@@ -541,17 +650,63 @@ async fn update_profile_with_image(
     // First, we need to get the current profile to avoid losing other fields
     let client = reqwest::Client::new();
 
+    // First, resolve the DID document to find PDS endpoint
+    let xrpc_client = std::sync::Arc::new(atrium_xrpc_client::reqwest::ReqwestClient::new(
+        "https://bsky.social",
+    ));
+    
+    // Convert string DID to DID object
+    let did = match atrium_api::types::string::Did::new(token.did.clone()) {
+        Ok(did) => did,
+        Err(err) => {
+            error!("Invalid DID format: {:?}", err);
+            return Err(eyre!("Invalid DID format: {}", err));
+        }
+    };
+    
+    // Resolve DID to document
+    let did_document = match crate::did::resolve_did_to_document(&did, xrpc_client).await {
+        Ok(doc) => doc,
+        Err(err) => {
+            error!("Failed to resolve DID document: {:?}", err);
+            return Err(eyre!("Failed to resolve DID document: {}", err));
+        }
+    };
+    
+    // Find the PDS service endpoint
+    let services = match did_document.service.as_ref() {
+        Some(services) => services,
+        None => {
+            error!("No service endpoints found in DID document");
+            return Err(eyre!("No service endpoints found in DID document"));
+        }
+    };
+
+    let pds_service = match services.iter().find(|s| s.id == "#atproto_pds") {
+        Some(service) => service,
+        None => {
+            error!("No ATProto PDS service endpoint found in DID document");
+            return Err(eyre!("No ATProto PDS service endpoint found in DID document"));
+        }
+    };
+
+    let pds_endpoint = &pds_service.service_endpoint;
+    info!("Found PDS endpoint for profile update: {}", pds_endpoint);
+
+    // Construct the full URL to the PDS endpoint for getRecord
+    let getRecord_url = format!("{}/xrpc/com.atproto.repo.getRecord", pds_endpoint);
+
     // Create a DPoP proof for getting the profile
     let get_dpop_proof = crate::oauth::create_dpop_proof(
         &app_state.bsky_oauth,
         "GET",
-        "https://bsky.social/xrpc/com.atproto.repo.getRecord",
+        &getRecord_url,
         None,
     )?;
 
-    // Make the API request to get current profile
+    // Make the API request to get current profile directly from user's PDS
     let get_response = client
-        .get("https://bsky.social/xrpc/com.atproto.repo.getRecord")
+        .get(&getRecord_url)
         .query(&[
             ("repo", &token.did),
             ("collection", &String::from("app.bsky.actor.profile")),
@@ -601,11 +756,14 @@ async fn update_profile_with_image(
         return Err(eyre!("Profile value is not an object"));
     }
 
+    // Construct the full URL to the PDS endpoint for putRecord
+    let putRecord_url = format!("{}/xrpc/com.atproto.repo.putRecord", pds_endpoint);
+
     // Create a DPoP proof for updating the profile
     let put_dpop_proof = crate::oauth::create_dpop_proof(
         &app_state.bsky_oauth,
         "POST",
-        "https://bsky.social/xrpc/com.atproto.repo.putRecord",
+        &putRecord_url,
         None,
     )?;
 
@@ -617,9 +775,9 @@ async fn update_profile_with_image(
         "record": profile_value
     });
 
-    // Make the API request to update the profile
+    // Make the API request to update the profile directly on the user's PDS
     let put_response = client
-        .post("https://bsky.social/xrpc/com.atproto.repo.putRecord")
+        .post(&putRecord_url)
         .header("Authorization", format!("DPoP {}", token.access_token))
         .header("DPoP", put_dpop_proof)
         .json(&put_body)
