@@ -1,6 +1,9 @@
-use cja::cron::{CronRegistry, Worker};
-use tracing::{error, info};
+use cja::{
+    cron::{CronRegistry, Worker},
+    jobs::Job as _,
+};
 use sqlx::Row;
+use tracing::{error, info};
 
 use crate::{
     jobs::UpdateProfilePictureProgressJob, oauth, profile_progress::ProfilePictureProgress,
@@ -86,7 +89,10 @@ async fn update_profile_pictures(state: AppState) -> cja::Result<()> {
 
         // Create and enqueue the job
         let job = UpdateProfilePictureProgressJob::new(token_id);
-        if let Err(err) = job.enqueue(&state).await {
+        if let Err(err) = job
+            .enqueue(state.clone(), "update_profile_pictures_cron".to_string())
+            .await
+        {
             error!(
                 "Failed to enqueue profile picture update job for token {}: {:?}",
                 token_id, err

@@ -4,6 +4,7 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
+use cja::jobs::Job as _;
 use serde::Deserialize;
 use tower_cookies::{Cookie, Cookies};
 
@@ -339,7 +340,10 @@ async fn set_original_profile_picture(
 
                 // Also enqueue a job to update the profile picture
                 let job = crate::jobs::UpdateProfilePictureProgressJob::new(token_id);
-                if let Err(e) = job.enqueue(&state).await {
+                if let Err(e) = job
+                    .enqueue(state.clone(), "enabled_profile_progress".to_string())
+                    .await
+                {
                     error!("Failed to enqueue profile picture update job: {:?}", e);
                 }
             }
