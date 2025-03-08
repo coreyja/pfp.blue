@@ -582,6 +582,20 @@ async fn generate_progress_image(
     use std::io::Cursor;
 
     debug!("Generating progress image");
+    
+    // Detect image format from magic bytes
+    let format = match infer::get(original_image_data) {
+        Some(kind) => {
+            debug!("Detected image format: {}", kind.mime_type());
+            kind.mime_type().to_string()
+        },
+        None => {
+            // Default to PNG if we can't detect
+            debug!("Could not detect image format, defaulting to PNG");
+            "image/png".to_string()
+        }
+    };
+    
     // Load the original image
     let img = match image::load_from_memory(original_image_data) {
         Ok(img) => img,
@@ -665,6 +679,7 @@ async fn generate_progress_image(
     debug!("Drew progress bar");
 
     // Convert the image back to bytes
+    // Always save as PNG for consistency
     let mut buffer = Vec::new();
     let mut cursor = Cursor::new(&mut buffer);
     match img.write_to(&mut cursor, ImageFormat::Png) {
@@ -684,6 +699,27 @@ async fn upload_image_to_bluesky(
 
     // Create a reqwest client
     let client = reqwest::Client::new();
+
+    // Detect image format from magic bytes
+    let image_mime_type = match infer::get(image_data) {
+        Some(kind) => {
+            // Check if it's a supported image type
+            let mime = kind.mime_type();
+            if mime == "image/png" || mime == "image/jpeg" {
+                info!("Detected image format: {}", mime);
+                mime
+            } else {
+                // Default to PNG for unsupported types
+                info!("Unsupported image format: {}, defaulting to PNG", mime);
+                "image/png"
+            }
+        },
+        None => {
+            // Default to PNG if we can't detect
+            info!("Could not detect image format, defaulting to PNG");
+            "image/png"
+        }
+    };
 
     // First, resolve the DID document to find PDS endpoint
     let xrpc_client = std::sync::Arc::new(atrium_xrpc_client::reqwest::ReqwestClient::new(
@@ -728,10 +764,6 @@ async fn upload_image_to_bluesky(
     let pds_endpoint = &pds_service.service_endpoint;
     info!("Found PDS endpoint for upload: {}", pds_endpoint);
 
-    // Create a multipart form with the image data - simplified to work with current reqwest version
-    let part = reqwest::multipart::Part::bytes(image_data.to_vec()).file_name("profile.png");
-    let form = reqwest::multipart::Form::new().part("file", part);
-
     // Construct the full URL to the PDS endpoint
     let upload_url = format!("{}/xrpc/com.atproto.repo.uploadBlob", pds_endpoint);
     
@@ -747,12 +779,16 @@ async fn upload_image_to_bluesky(
         &token.access_token,
     )?;
 
+    info!("Uploading image with MIME type: {}", image_mime_type);
+
     // Make the API request to upload the blob directly to the user's PDS
+    // Send the raw image data with the correct content type
     let mut response_result = client
         .post(&upload_url)
         .header("Authorization", format!("DPoP {}", token.access_token))
         .header("DPoP", dpop_proof)
-        .multipart(form)
+        .header("Content-Type", image_mime_type)
+        .body(image_data.to_vec())
         .send()
         .await;
     
@@ -777,16 +813,13 @@ async fn upload_image_to_bluesky(
                 )?;
                 
                 // Retry the request with the new nonce
-                // Need to recreate the form since we can't clone it
-                let new_part = reqwest::multipart::Part::bytes(image_data.to_vec()).file_name("profile.png");
-                let new_form = reqwest::multipart::Form::new().part("file", new_part);
-                
                 info!("Retrying upload with new DPoP-Nonce");
                 response_result = client
                     .post(&upload_url)
                     .header("Authorization", format!("DPoP {}", token.access_token))
                     .header("DPoP", new_dpop_proof)
-                    .multipart(new_form)
+                    .header("Content-Type", image_mime_type)
+                    .body(image_data.to_vec())
                     .send()
                     .await;
             }

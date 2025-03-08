@@ -73,6 +73,7 @@ atrium-xrpc-client = { version = "0.5", git = "https://github.com/sugyan/atrium"
 image = "0.24"
 imageproc = "0.23"
 regex = "1.10"
+infer = "0.15"
 
 [build-dependencies]
 vergen = { version = "8.3.1", features = [
