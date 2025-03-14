@@ -1,10 +1,19 @@
 {
   "name": "pfp.blue",
   "version": "1.0.0",
-  "description": "",
+  "description": "Bluesky Profile Picture Management",
   "main": "index.js",
-  "scripts": {},
-  "keywords": [],
+  "scripts": {
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "test:debug": "playwright test --debug",
+    "test:headed": "playwright test --headed",
+    "test:chrome": "playwright test --project=chromium",
+    "test:firefox": "playwright test --project=firefox",
+    "test:safari": "playwright test --project=webkit",
+    "report": "playwright show-report"
+  },
+  "keywords": ["bluesky", "profile", "oauth"],
   "author": "",
   "license": "ISC",
   "devDependencies": {

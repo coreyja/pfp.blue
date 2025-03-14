@@ -153,3 +153,42 @@ This script runs the following checks:
 7. If installed, runs cargo-deny to check for prohibited dependencies (`cargo-deny check bans`)
 
 If any of these checks fail, the script will stop and show the error. Fix the issues before committing your changes.
+
+## End-to-End Testing
+
+**ALL user-facing features must have end-to-end test coverage.** We use Playwright for our end-to-end tests.
+
+To run the end-to-end tests:
+
+```bash
+# Install dependencies
+pnpm install
+
+# Run all tests
+pnpm test
+
+# Run tests with UI mode (useful for debugging)
+pnpm test:ui
+
+# Run tests in headed mode (shows browser)
+pnpm test:headed
+
+# Run tests in a specific browser
+pnpm test:chrome
+pnpm test:firefox
+pnpm test:safari
+
+# Show the last test report
+pnpm report
+```
+
+When adding a new user-facing feature:
+1. Create corresponding end-to-end tests in the `end2end/` directory
+2. Test both happy paths and error cases
+3. For features requiring authentication, use the authentication fixtures
+
+Current test structure:
+- `end2end/homepage.spec.ts` - Tests for homepage and navigation
+- `end2end/auth.spec.ts` - Tests for authentication flows
+- `end2end/profile.spec.ts` - Tests for profile management features
+- `end2end/fixtures.ts` - Shared test fixtures and utilities
