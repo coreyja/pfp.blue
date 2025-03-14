@@ -7,4 +7,4 @@ plc-directory: PDS_URL=http://localhost:3001 cargo run --bin plc-directory -- --
 appview: AVATAR_CDN_URL=http://localhost:3003 cargo run --bin appview -- --port 3003
 
 # Run the main app using the fixtures
-server: PLC_DIRECTORY_URL=http://localhost:3002 APPVIEW_URL=http://localhost:3003 AVATAR_CDN_URL=http://localhost:3003 cargo run
+server: PLC_DIRECTORY_URL=http://localhost:3002 APPVIEW_URL=http://localhost:3003 AVATAR_CDN_URL=http://localhost:3003 cargo run --bin pfp-blue
