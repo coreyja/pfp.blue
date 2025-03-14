@@ -362,7 +362,7 @@ pub async fn fetch_blob_by_cid(did_or_handle: &str, cid: &str) -> cja::Result<Ve
         info!("Trying fallback to CDN...");
         let cdn_url = format!(
             "{}/img/avatar/plain/{}/{}@jpeg",
-            state.avatar_cdn_url(),
+            app_state.avatar_cdn_url(),
             did_obj.as_str(),
             cid
         );
