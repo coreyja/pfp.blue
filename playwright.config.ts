@@ -34,8 +34,7 @@ export default defineConfig({
     /* Collect trace for all tests for better debugging */
     trace: 'retain-on-failure',
     
-    /* Take screenshots on test failures */
-    screenshot: 'only-on-failure',
+    screenshot: 'on',
   },
 
   /* Configure projects for major browsers */
