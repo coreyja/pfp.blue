@@ -6,7 +6,7 @@ use axum::{
 };
 use clap::Parser;
 use fixtures::{run_server, FixtureArgs, require_env_var};
-use serde::{Deserialize, Serialize};
+// Unused imports removed
 use serde_json::{json, Value};
 use std::sync::{Arc, Mutex};
 use tracing::info;
@@ -68,7 +68,7 @@ async fn main() -> anyhow::Result<()> {
 
 async fn resolve_did(
     State(state): State<AppState>,
-    axum::extract::Path(did): axum::extract::Path<String>
+    axum::extract::Path(_did): axum::extract::Path<String>
 ) -> impl IntoResponse {
     // Just respond with our fixture DID doc regardless of the requested DID
     // In a more sophisticated version, we could handle multiple DIDs

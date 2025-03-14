@@ -5,8 +5,7 @@ use axum::{
     Json, Router,
 };
 use clap::Parser;
-use fixtures::{run_server, FixtureArgs, require_env_var};
-use serde::{Deserialize, Serialize};
+use fixtures::{run_server, FixtureArgs};
 use serde_json::{json, Value};
 use std::sync::{Arc, Mutex};
 use tracing::info;
