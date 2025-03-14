@@ -9,7 +9,7 @@ This crate provides mock servers for the external web services that the pfp.blue
 Mock server for Bluesky's Personal Data Server, handling requests for profiles, blobs, and authentication.
 
 ```bash
-cargo run --bin pds -- --port 3000
+cargo run --bin pds -- --port 3001
 ```
 
 ### 2. AppView
@@ -17,7 +17,7 @@ cargo run --bin pds -- --port 3000
 Mock server for Bluesky's AppView service, handling actor resolution, profiles, and searches.
 
 ```bash
-cargo run --bin appview -- --port 3001
+cargo run --bin appview -- --port 3003
 ```
 
 ### 3. PLC Directory
@@ -35,29 +35,67 @@ All fixtures support the following command line options:
 - `-p, --port <PORT>`: The port to listen on (default: random available port)
 - `-H, --host <HOST>`: The host to bind to (default: 127.0.0.1)
 - `-d, --data <DATA>`: Path to JSON file with custom fixture data
+- `--force`: Run even if required environment variables are missing
+
+## Environment Variables
+
+The fixtures communicate with each other using environment variables:
+
+- `PDS_URL`: URL of the PDS fixture (used by PLC Directory fixture)
+- `AVATAR_CDN_URL`: URL of the Avatar CDN, which is served by the AppView fixture
+
+## Using with End-to-End Tests
+
+The recommended way to use these fixtures is through the test scripts:
+
+```bash
+# Run end-to-end tests with fixtures in headed mode
+./scripts/run-e2e-tests.sh
+```
+
+Or using npm/pnpm directly:
+
+```bash
+# Run with fixtures
+pnpm test:fixtures:headed
+
+# Debug a specific test with fixtures
+pnpm test:fixtures:headed --debug test=auth
+```
+
+## Procfile for Testing
+
+A `Procfile.e2e` is provided in the root directory that sets up all the fixtures with the correct environment variables:
+
+```
+# Fixture servers
+pds: cargo run --bin pds -- --port 3001
+plc-directory: PDS_URL=http://localhost:3001 cargo run --bin plc-directory -- --port 3002
+appview: AVATAR_CDN_URL=http://localhost:3003 cargo run --bin appview -- --port 3003
+
+# Run the main app using the fixtures
+server: PLC_DIRECTORY_URL=http://localhost:3002 APPVIEW_URL=http://localhost:3003 AVATAR_CDN_URL=http://localhost:3003 cargo run --bin pfp-blue
+```
+
+You can run this with `overmind`:
+
+```bash
+overmind start -f Procfile.e2e
+```
 
 ## Custom Fixture Data
 
 You can provide a JSON file with custom responses for the fixtures:
 
 ```bash
-cargo run --bin pds -- --port 3000 --data fixtures/custom-data.json
+cargo run --bin pds -- --port 3001 --data fixtures/custom-data.json
 ```
 
-## Using in End-to-End Tests
+## Authentication
 
-To use these fixtures in end-to-end tests, start each fixture on a specific port and configure your application to point to these fixtures instead of the real services.
+The fixtures provide a mock user with the following credentials:
 
-For example, you might run them in parallel:
+- Handle: `fixture-user.test`
+- DID: `did:plc:abcdefg`
 
-```bash
-cargo run --bin pds -- --port 3000 &
-cargo run --bin appview -- --port 3001 &
-cargo run --bin plc-directory -- --port 3002 &
-
-# Run your tests against the fixtures
-# ...
-
-# Clean up the background processes when done
-kill %1 %2 %3
-```
+When testing authentication flows, enter `fixture-user.test` as the handle to log in with the fixture user.

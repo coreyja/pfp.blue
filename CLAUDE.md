@@ -164,14 +164,22 @@ To run the end-to-end tests:
 # Install dependencies
 pnpm install
 
-# Run all tests
-pnpm test
+# Recommended way: use the test script (supports fixtures)
+pnpm e2e
 
-# Run tests with UI mode (useful for debugging)
-pnpm test:ui
+# Run with specific options
+./scripts/run-e2e-tests.sh --browser firefox --test auth
+./scripts/run-e2e-tests.sh --debug --test "profile picture"
 
-# Run tests in headed mode (shows browser)
-pnpm test:headed
+# Traditional commands
+pnpm test              # Run all tests
+pnpm test:ui           # Run tests with UI mode (useful for debugging)
+pnpm test:headed       # Run tests in headed mode (shows browser)
+
+# Run against fixtures (mock services)
+pnpm test:fixtures          # Run all tests with fixtures
+pnpm test:fixtures:ui       # Run tests with UI mode using fixtures
+pnpm test:fixtures:headed   # Run tests in headed mode using fixtures
 
 # Run tests in a specific browser
 pnpm test:chrome
@@ -182,10 +190,36 @@ pnpm test:safari
 pnpm report
 ```
 
+### Test Script Options
+
+The `run-e2e-tests.sh` script provides a convenient way to run tests:
+
+```
+Usage: ./scripts/run-e2e-tests.sh [options]
+
+Options:
+  --browser, -b <browser>   Specify browser (chromium, firefox, webkit)
+  --headless                Run in headless mode
+  --no-fixtures             Don't use fixture servers (uses real services)
+  --real-services           Same as --no-fixtures
+  --test, -t <pattern>      Run tests matching pattern
+  --debug, -d               Run tests in debug mode
+  --help, -h                Show this help message
+```
+
+### Adding New Tests
+
 When adding a new user-facing feature:
 1. Create corresponding end-to-end tests in the `end2end/` directory
 2. Test both happy paths and error cases
 3. For features requiring authentication, use the authentication fixtures
+4. Make tests work with both real services and fixtures where possible
+
+The fixtures provide a test user with:
+- Handle: `fixture-user.test`
+- DID: `did:plc:abcdefg`
+
+### Test Structure
 
 Current test structure:
 - `end2end/homepage.spec.ts` - Tests for homepage and navigation
