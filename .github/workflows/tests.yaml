@@ -33,6 +33,11 @@ jobs:
         run: cargo install sqlx-cli --no-default-features --features rustls,postgres
       - name: Build Server
         run: cargo build
+      - name: Install Hivemind
+        run: |
+          curl -L https://github.com/DarthSim/hivemind/releases/download/v1.1.0/hivemind-v1.1.0-linux-amd64.gz | gunzip > hivemind
+          chmod +x hivemind
+          sudo mv hivemind /usr/local/bin/
       - name: Prepare DB
         run: ../scripts/prepare_test_db.sh
       - uses: actions/setup-node@v4
