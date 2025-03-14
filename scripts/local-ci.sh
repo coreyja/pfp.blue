@@ -68,6 +68,31 @@ else
   echo ""
 fi
 
+# Check if end2end tests would pass if we have the directory
+if [ -d "$REPO_ROOT/end2end" ] && command -v pnpm &> /dev/null; then
+  print_header "CHECKING END2END TESTS"
+  pushd "$REPO_ROOT/end2end" > /dev/null
+  
+  if pnpm install --frozen-lockfile; then
+    echo "✅ PNPM INSTALL PASSED"
+    
+    # We don't actually run the tests locally as they require a running server
+    # Just check that the dependencies can be installed
+    echo "ℹ️ Skipping actual Playwright tests (requires running server)"
+    echo "✅ END2END CHECK PASSED"
+  else
+    echo "❌ PNPM INSTALL FAILED"
+    popd > /dev/null
+    exit 1
+  fi
+  
+  popd > /dev/null
+  echo ""
+else
+  echo "⚠️ Skipping end2end tests (directory not found or pnpm not installed)."
+  echo ""
+fi
+
 print_header "LOCAL CI COMPLETED SUCCESSFULLY"
 echo "All checks have passed! Your code is ready to be committed/pushed."
 echo ""
