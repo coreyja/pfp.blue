@@ -33,7 +33,7 @@ pub fn require_env_var(name: &str, force: bool) -> anyhow::Result<String> {
         Err(_) => {
             if force {
                 error!("WARNING: Required environment variable {} not set. Using placeholder value because --force was specified.", name);
-                Ok(format!("http://localhost:3000"))
+                Ok("http://localhost:3000".to_string())
             } else {
                 anyhow::bail!(
                     "Required environment variable {} not set. Use --force to bypass this check.",

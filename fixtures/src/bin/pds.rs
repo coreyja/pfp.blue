@@ -175,7 +175,6 @@ async fn oauth_authorization_server(State(state): State<AppState>) -> impl IntoR
 // OAuth authorization endpoint - usually this would show a login UI
 // For testing, we'll auto-authorize and redirect to the callback
 use axum::extract::Query;
-use std::collections::HashMap;
 
 #[derive(Debug, serde::Deserialize)]
 struct AuthorizeQuery {
