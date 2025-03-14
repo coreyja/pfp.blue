@@ -138,5 +138,12 @@ eval "$COMMAND"
 exit_code=$?
 echo -e "\n⏱️  Tests completed with exit code: $exit_code"
 
+# Show helpful message when tests fail
+if [ $exit_code -ne 0 ]; then
+  echo -e "\n❌ Some tests failed! You can view the detailed report with screenshots and traces using:"
+  echo "   pnpm report        # Show report in terminal"
+  echo "   pnpm report:open   # Open report in browser"
+fi
+
 # The cleanup function will be called automatically due to the trap
 exit $exit_code

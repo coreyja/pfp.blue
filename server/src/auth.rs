@@ -107,7 +107,7 @@ pub async fn create_session_and_set_cookie(
     let mut cookie = Cookie::new(SESSION_COOKIE_NAME, session.session_id.to_string());
     cookie.set_path("/");
     cookie.set_http_only(true);
-    cookie.set_secure(true);
+    cookie.set_secure(std::env::var("PROTO").ok() == Some("https".to_owned()));
     cookie.set_max_age(time::Duration::days(30));
 
     cookies.add(cookie);
@@ -128,7 +128,7 @@ pub async fn end_session(pool: &sqlx::PgPool, cookies: &Cookies) -> cja::Result<
     cookie.set_path("/");
     cookie.set_max_age(time::Duration::seconds(-1));
     cookie.set_http_only(true);
-    cookie.set_secure(true);
+    cookie.set_secure(std::env::var("PROTO").ok() == Some("https".to_owned()));
 
     cookies.add(cookie);
 

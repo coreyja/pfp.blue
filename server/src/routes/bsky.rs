@@ -210,16 +210,15 @@ pub struct CallbackParams {
 }
 
 /// Function to fetch profile data for display only (no authentication/DPoP needed)
-async fn fetch_profile_for_display(did: &str) -> cja::Result<serde_json::Value> {
+async fn fetch_profile_for_display(did: &str, app_state: &crate::state::AppState) -> cja::Result<serde_json::Value> {
     use color_eyre::eyre::eyre;
     use tracing::info;
 
     let client = reqwest::Client::new();
 
     // First, resolve the DID document to find the PDS endpoint
-    let xrpc_client = std::sync::Arc::new(atrium_xrpc_client::reqwest::ReqwestClient::new(
-        "https://bsky.social",
-    ));
+    // Use the app_state's configured client to respect environment variables
+    let xrpc_client = app_state.bsky_client.clone();
 
     // Convert string DID to DID object
     let did_obj = match atrium_api::types::string::Did::new(did.to_string()) {
@@ -303,9 +302,8 @@ pub async fn fetch_blob_by_cid(
 
     // First, resolve the user's DID document to find their PDS endpoint
     let client = reqwest::Client::new();
-    let xrpc_client = std::sync::Arc::new(atrium_xrpc_client::reqwest::ReqwestClient::new(
-        "https://bsky.social",
-    ));
+    // Use the app_state's configured client to respect environment variables
+    let xrpc_client = app_state.bsky_client.clone();
 
     // Check if the input is a handle or a DID
     let did_obj = if did_or_handle.starts_with("did:") {
@@ -1392,7 +1390,7 @@ async fn display_profile_multi(
     }
 
     // Fetch profile data directly (we don't have to make this async since we're also updating in background)
-    let profile_data = match fetch_profile_for_display(&primary_token.did).await {
+    let profile_data = match fetch_profile_for_display(&primary_token.did, state).await {
         Ok(data) => Some(data),
         Err(e) => {
             error!("Failed to fetch user profile for display: {:?}", e);

@@ -131,6 +131,9 @@ impl AppState {
         let cookie_key = cja::server::cookies::CookieKey::from_env_or_generate()?;
 
         let appview_url = env::var("APPVIEW_URL").unwrap_or_else(|_| "https://bsky.social".to_string());
+        println!("APPVIEW_URL: {}", appview_url);
+        println!("PLC_DIRECTORY_URL: {}", crate::did::get_plc_directory_url());
+        
         let client = ReqwestClientBuilder::new(&appview_url)
             .client(
                 reqwest::ClientBuilder::new()

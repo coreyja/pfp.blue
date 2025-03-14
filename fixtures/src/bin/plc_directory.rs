@@ -56,9 +56,20 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let app = Router::new()
-        // PLC Directory endpoints
+        // PLC Directory endpoints - support multiple patterns for DID resolution
         .route("/did/:did", get(resolve_did))
-        
+        // Support exact format that the CommonDidResolver uses
+        .route("/:did", get(resolve_did))
+        // Make sure we respond to requests without trailing slash too
+        .route("/", get(|| async { "PLC Directory Fixture Server" }))
+        // Add catch-all route for all paths to aid debugging
+        .fallback(|req: axum::http::Request<axum::body::Body>| async move {
+            eprintln!("WARNING: Unhandled request: {} {}", req.method(), req.uri());
+            (
+                axum::http::StatusCode::NOT_FOUND,
+                format!("No route found for {} {}", req.method(), req.uri())
+            )
+        })
         .with_state(state);
 
     run_server(args.common, app).await
@@ -68,8 +79,9 @@ async fn main() -> anyhow::Result<()> {
 
 async fn resolve_did(
     State(state): State<AppState>,
-    axum::extract::Path(_did): axum::extract::Path<String>
+    axum::extract::Path(did): axum::extract::Path<String>
 ) -> impl IntoResponse {
+    println!("PLC DIRECTORY: Resolving DID: {}", did);
     // Just respond with our fixture DID doc regardless of the requested DID
     // In a more sophisticated version, we could handle multiple DIDs
     Json(json!({

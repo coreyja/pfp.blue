@@ -383,7 +383,7 @@ async fn logout(State(state): State<AppState>, cookies: Cookies) -> impl IntoRes
         remove_cookie.set_path("/");
         remove_cookie.set_max_age(time::Duration::seconds(-1));
         remove_cookie.set_http_only(true);
-        remove_cookie.set_secure(true);
+        remove_cookie.set_secure(std::env::var("PROTO").ok() == Some("https".to_owned()));
 
         cookies.add(remove_cookie);
     }

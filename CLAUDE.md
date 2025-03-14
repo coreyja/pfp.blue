@@ -187,7 +187,8 @@ pnpm test:firefox
 pnpm test:safari
 
 # Show the last test report
-pnpm report
+pnpm report        # View report in terminal
+pnpm report:open   # Open report in browser with screenshots
 ```
 
 ### Test Script Options

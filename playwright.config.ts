@@ -22,14 +22,20 @@ export default defineConfig({
   /* Opt out of parallel tests on CI. */
   workers: process.env.CI ? 1 : undefined,
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
-  reporter: 'html',
+  reporter: [
+    ['html', { open: 'never' }],
+    ['list']
+  ],
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     /* Base URL to use in actions like `await page.goto('/')`. */
     baseURL: 'http://localhost:3000',
 
-    /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
-    trace: 'on-first-retry',
+    /* Collect trace for all tests for better debugging */
+    trace: 'retain-on-failure',
+    
+    /* Take screenshots on test failures */
+    screenshot: 'only-on-failure',
   },
 
   /* Configure projects for major browsers */
@@ -71,19 +77,12 @@ export default defineConfig({
   ],
 
   /* Run your local dev server before starting the tests */
-  webServer: process.env.USE_FIXTURES ? {
-    command: `overmind start -f ${path.resolve(__dirname, 'Procfile.e2e')}`,
+  webServer: {
+    command: `hivemind ${path.resolve(__dirname, 'Procfile.e2e')}`,
     url: 'http://localhost:3000',
     reuseExistingServer: !process.env.CI,
     stdout: 'pipe',
     stderr: 'pipe',
-    ignoreProcess: () => {
-      // This ensures we try to kill the processes after the tests complete
-      return false;
-    },
-  } : {
-    command: 'cargo run',
-    url: 'http://localhost:3000',
-    reuseExistingServer: !process.env.CI,
+    timeout: 120000, // Increase timeout to 2 minutes
   },
 });

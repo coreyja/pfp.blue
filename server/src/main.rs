@@ -47,21 +47,23 @@ async fn _main() -> cja::Result<()> {
 
     info!("Spawning Tasks");
     let app_router = routes::routes(app_state.clone());
-    let mut futures = vec![tokio::spawn(run_server(app_router))];
-    if std::env::var("JOBS_DISABLED").unwrap_or_else(|_| "false".to_string()) != "true" {
-        info!("Jobs Enabled");
-        futures.push(tokio::spawn(cja::jobs::worker::job_worker(
-            app_state.clone(),
-            jobs::Jobs,
-        )));
-    }
-    if std::env::var("CRON_DISABLED").unwrap_or_else(|_| "false".to_string()) != "true" {
-        info!("Cron Enabled");
-        futures.push(tokio::spawn(cron::run_cron(app_state.clone())));
-    }
-    info!("Tasks Spawned");
+    // let mut futures = vec![tokio::spawn(run_server(app_router))];
+    // if std::env::var("JOBS_DISABLED").unwrap_or_else(|_| "false".to_string()) != "true" {
+    //     info!("Jobs Enabled");
+    //     futures.push(tokio::spawn(cja::jobs::worker::job_worker(
+    //         app_state.clone(),
+    //         jobs::Jobs,
+    //     )));
+    // }
+    // if std::env::var("CRON_DISABLED").unwrap_or_else(|_| "false".to_string()) != "true" {
+    //     info!("Cron Enabled");
+    //     futures.push(tokio::spawn(cron::run_cron(app_state.clone())));
+    // }
+    // info!("Tasks Spawned");
 
-    futures::future::try_join_all(futures).await?;
+    // futures::future::try_join_all(futures).await?;
+
+    run_server(app_router).await?;
 
     Ok(())
 }
