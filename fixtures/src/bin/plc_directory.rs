@@ -57,7 +57,7 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         // PLC Directory endpoints
-        .route("/did/did:plc:abcdefg", get(resolve_did))
+        .route("/did/:did", get(resolve_did))
         
         .with_state(state);
 
@@ -67,8 +67,11 @@ async fn main() -> anyhow::Result<()> {
 // Handler implementations
 
 async fn resolve_did(
-    State(state): State<AppState>
+    State(state): State<AppState>,
+    axum::extract::Path(did): axum::extract::Path<String>
 ) -> impl IntoResponse {
+    // Just respond with our fixture DID doc regardless of the requested DID
+    // In a more sophisticated version, we could handle multiple DIDs
     Json(json!({
         "@context": ["https://w3id.org/did/v1"],
         "id": "did:plc:abcdefg",
