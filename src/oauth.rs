@@ -464,24 +464,7 @@ impl OAuthTokenSet {
         self
     }
 
-    /// Set the handle directly
-    pub fn with_handle(mut self, handle: String) -> Self {
-        self.handle = Some(handle);
-        self
-    }
-
-    /// Update the handle in the database
-    pub async fn update_handle_in_db(
-        &mut self,
-        pool: &sqlx::PgPool,
-        handle: &str,
-    ) -> cja::Result<()> {
-        // Update in the database
-        db::update_token_handle(pool, &self.did, handle).await?;
-        // Update in memory as well
-        self.handle = Some(handle.to_string());
-        Ok(())
-    }
+    // Removed unused methods
 
     /// Create a new OAuthTokenSet from a TokenResponse with a calculated JWK thumbprint
     pub fn from_token_response_with_jwk(

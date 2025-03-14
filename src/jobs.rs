@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use tracing::debug;
 
 use crate::{
-    oauth::{self, create_dpop_proof_with_ath, OAuthTokenSet},
+    oauth::{create_dpop_proof_with_ath, OAuthTokenSet},
     state::AppState,
 };
 
@@ -620,7 +620,7 @@ async fn generate_progress_image(
     debug!("Generating progress image");
 
     // Detect image format from magic bytes
-    let format = match infer::get(original_image_data) {
+    let _format = match infer::get(original_image_data) {
         Some(kind) => {
             debug!("Detected image format: {}", kind.mime_type());
             kind.mime_type().to_string()

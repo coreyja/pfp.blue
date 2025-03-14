@@ -4,6 +4,7 @@ use uuid::Uuid;
 
 /// Represents a user in the system
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // Fields needed for database operations
 pub struct User {
     /// Unique user ID (matches database column 'id')
     pub user_id: Uuid,
@@ -19,6 +20,7 @@ pub struct User {
 
 /// Represents a session for authenticated users
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // Fields needed for database operations
 pub struct Session {
     /// Unique session ID (used in cookies)
     pub session_id: Uuid,
@@ -222,21 +224,7 @@ impl Session {
         Ok(())
     }
 
-    /// Clear the primary token for this session
-    pub async fn clear_primary_token(&mut self, pool: &PgPool) -> cja::Result<()> {
-        sqlx::query!(
-            r#"
-            UPDATE sessions SET primary_token_id = NULL, updated_at_utc = NOW()
-            WHERE id = $1
-            "#,
-            self.session_id
-        )
-        .execute(pool)
-        .await?;
-
-        self.primary_token_id = None;
-        Ok(())
-    }
+    // Removed unused method
 
     /// Get the primary token for this session
     pub async fn get_primary_token(

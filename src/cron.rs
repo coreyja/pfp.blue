@@ -6,8 +6,7 @@ use sqlx::Row;
 use tracing::{error, info};
 
 use crate::{
-    jobs::UpdateProfilePictureProgressJob, oauth, profile_progress::ProfilePictureProgress,
-    state::AppState,
+    jobs::UpdateProfilePictureProgressJob, oauth, state::AppState,
 };
 
 fn cron_registry() -> CronRegistry<AppState> {

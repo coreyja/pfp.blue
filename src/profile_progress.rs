@@ -4,6 +4,7 @@ use uuid::Uuid;
 
 /// Represents a profile picture progress setting in the database
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // Fields needed for database operations
 pub struct ProfilePictureProgress {
     /// Unique ID for this progress setting
     pub id: Uuid,
@@ -129,28 +130,5 @@ impl ProfilePictureProgress {
         Self::create(pool, token_id, default_enabled, default_original_blob_cid).await
     }
 
-    /// Get all enabled profile picture progress settings
-    pub async fn get_all_enabled(pool: &PgPool) -> cja::Result<Vec<Self>> {
-        let rows = sqlx::query!(
-            r#"
-            SELECT id, token_id, enabled, original_blob_cid, created_at_utc, updated_at_utc
-            FROM profile_picture_progress
-            WHERE enabled = TRUE
-            "#
-        )
-        .fetch_all(pool)
-        .await?;
-
-        Ok(rows
-            .into_iter()
-            .map(|r| Self {
-                id: r.id,
-                token_id: r.token_id,
-                enabled: r.enabled,
-                original_blob_cid: r.original_blob_cid,
-                created_at_utc: r.created_at_utc,
-                updated_at_utc: r.updated_at_utc,
-            })
-            .collect())
-    }
+    // Removed unused method
 }

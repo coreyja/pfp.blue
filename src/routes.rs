@@ -362,6 +362,7 @@ use std::fmt;
 use std::fmt::Write as _;
 
 /// Renders the given value using its `Debug` implementation.
+#[allow(dead_code)]
 struct Debug<T: fmt::Debug>(T);
 
 impl<T: fmt::Debug> Render for Debug<T> {
