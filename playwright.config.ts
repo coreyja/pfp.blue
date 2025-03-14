@@ -72,7 +72,7 @@ export default defineConfig({
 
   /* Run your local dev server before starting the tests */
   webServer: process.env.USE_FIXTURES ? {
-    command: 'cd "$(dirname "$0")" && honcho -f Procfile.e2e start',
+    command: 'cd "$(dirname "$0")" && overmind start -f Procfile.e2e',
     url: 'http://localhost:3000',
     reuseExistingServer: !process.env.CI,
     stdout: 'pipe',
