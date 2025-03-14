@@ -1419,7 +1419,7 @@ async fn display_profile_multi(
 
     // Try to fetch avatar blob
     let avatar_blob = if let Some(ref cid) = avatar_blob_cid {
-        match fetch_blob_by_cid(&primary_token.did, cid, &app_state).await {
+        match fetch_blob_by_cid(&primary_token.did, cid, &state).await {
             Ok(blob) => {
                 info!("Successfully fetched avatar blob: {} bytes", blob.len());
                 Some(blob)
