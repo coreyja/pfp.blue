@@ -77,6 +77,10 @@ export default defineConfig({
     reuseExistingServer: !process.env.CI,
     stdout: 'pipe',
     stderr: 'pipe',
+    ignoreProcess: () => {
+      // This ensures we try to kill the processes after the tests complete
+      return false;
+    },
   } : {
     command: 'cargo run',
     url: 'http://localhost:3000',
