@@ -522,7 +522,7 @@ impl Job<AppState> for UpdateProfilePictureProgressJob {
 
         // Fetch the original profile picture
         let original_image_data =
-            match crate::routes::bsky::fetch_blob_by_cid(&token.did, &original_blob_cid).await {
+            match crate::routes::bsky::fetch_blob_by_cid(&token.did, &original_blob_cid, &app_state).await {
                 Ok(data) => data,
                 Err(err) => {
                     error!("Failed to fetch original profile picture: {:?}", err);

@@ -291,7 +291,11 @@ async fn fetch_profile_for_display(did: &str) -> cja::Result<serde_json::Value> 
 }
 
 /// Fetch a blob by its CID directly from the user's PDS
-pub async fn fetch_blob_by_cid(did_or_handle: &str, cid: &str) -> cja::Result<Vec<u8>> {
+pub async fn fetch_blob_by_cid(
+    did_or_handle: &str, 
+    cid: &str, 
+    app_state: &crate::state::AppState
+) -> cja::Result<Vec<u8>> {
     info!(
         "Fetching blob with CID: {} for DID/handle: {}",
         cid, did_or_handle
@@ -1415,7 +1419,7 @@ async fn display_profile_multi(
 
     // Try to fetch avatar blob
     let avatar_blob = if let Some(ref cid) = avatar_blob_cid {
-        match fetch_blob_by_cid(&primary_token.did, cid).await {
+        match fetch_blob_by_cid(&primary_token.did, cid, &app_state).await {
             Ok(blob) => {
                 info!("Successfully fetched avatar blob: {} bytes", blob.len());
                 Some(blob)
