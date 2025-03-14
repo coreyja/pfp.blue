@@ -1,5 +1,4 @@
 use cja::{
-    app_state::AppState as _,
     server::run_server,
     setup::{setup_sentry, setup_tracing},
 };
@@ -45,8 +44,6 @@ async fn _main() -> cja::Result<()> {
             return Err(e);
         }
     };
-
-    cja::sqlx::migrate!().run(app_state.db()).await?;
 
     info!("Spawning Tasks");
     let app_router = routes::routes(app_state.clone());

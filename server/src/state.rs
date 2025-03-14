@@ -204,7 +204,7 @@ pub async fn setup_db_pool() -> cja::Result<PgPool> {
         .execute(&pool)
         .await?;
 
-    sqlx::migrate!().run(&pool).await?;
+    sqlx::migrate!("../migrations").run(&pool).await?;
 
     let unlock_result = sqlx::query!("SELECT pg_advisory_unlock($1)", MIGRATION_LOCK_ID)
         .fetch_one(&pool)
