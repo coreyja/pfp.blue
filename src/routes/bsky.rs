@@ -220,7 +220,7 @@ async fn fetch_profile_for_display(did: &str) -> cja::Result<serde_json::Value> 
     let xrpc_client = std::sync::Arc::new(atrium_xrpc_client::reqwest::ReqwestClient::new(
         "https://bsky.social",
     ));
-    
+
     // Convert string DID to DID object
     let did_obj = match atrium_api::types::string::Did::new(did.to_string()) {
         Ok(did) => did,
@@ -228,7 +228,7 @@ async fn fetch_profile_for_display(did: &str) -> cja::Result<serde_json::Value> 
             return Err(eyre!("Invalid DID format: {}", err));
         }
     };
-    
+
     // Resolve DID to document
     let did_document = match crate::did::resolve_did_to_document(&did_obj, xrpc_client).await {
         Ok(doc) => doc,
@@ -236,7 +236,7 @@ async fn fetch_profile_for_display(did: &str) -> cja::Result<serde_json::Value> 
             return Err(eyre!("Failed to resolve DID document: {}", err));
         }
     };
-    
+
     // Find the PDS service endpoint
     let services = match did_document.service.as_ref() {
         Some(services) => services,
@@ -248,7 +248,9 @@ async fn fetch_profile_for_display(did: &str) -> cja::Result<serde_json::Value> 
     let pds_service = match services.iter().find(|s| s.id == "#atproto_pds") {
         Some(service) => service,
         None => {
-            return Err(eyre!("No ATProto PDS service endpoint found in DID document"));
+            return Err(eyre!(
+                "No ATProto PDS service endpoint found in DID document"
+            ));
         }
     };
 
@@ -1203,50 +1205,64 @@ pub async fn profile(
             };
 
             // Lookup the token endpoint in the OAuthSession
-            let token_endpoint =
-                match get_token_endpoint_for_did(&state.db, &primary_token.did).await {
-                    Ok(Some(endpoint)) => endpoint,
-                    _ => {
-                        // We need to resolve the PDS to get the correct endpoint
-                        info!("No stored token endpoint found for DID: {}, resolving PDS", &primary_token.did);
-                        
-                        // Try to resolve the PDS endpoint
-                        let xrpc_client = std::sync::Arc::new(atrium_xrpc_client::reqwest::ReqwestClient::new(
-                            "https://bsky.social",
-                        ));
-                        
-                        match atrium_api::types::string::Did::new(primary_token.did.clone()) {
-                            Ok(did_obj) => {
-                                match crate::did::resolve_did_to_document(&did_obj, xrpc_client).await {
-                                    Ok(did_document) => {
-                                        if let Some(services) = did_document.service.as_ref() {
-                                            if let Some(pds_service) = services.iter().find(|s| s.id == "#atproto_pds") {
-                                                let pds_endpoint = &pds_service.service_endpoint;
-                                                let refresh_endpoint = format!("{}/xrpc/com.atproto.server.refreshSession", pds_endpoint);
-                                                info!("Resolved PDS endpoint for refresh: {}", refresh_endpoint);
+            let token_endpoint = match get_token_endpoint_for_did(&state.db, &primary_token.did)
+                .await
+            {
+                Ok(Some(endpoint)) => endpoint,
+                _ => {
+                    // We need to resolve the PDS to get the correct endpoint
+                    info!(
+                        "No stored token endpoint found for DID: {}, resolving PDS",
+                        &primary_token.did
+                    );
+
+                    // Try to resolve the PDS endpoint
+                    let xrpc_client = std::sync::Arc::new(
+                        atrium_xrpc_client::reqwest::ReqwestClient::new("https://bsky.social"),
+                    );
+
+                    match atrium_api::types::string::Did::new(primary_token.did.clone()) {
+                        Ok(did_obj) => {
+                            match crate::did::resolve_did_to_document(&did_obj, xrpc_client).await {
+                                Ok(did_document) => {
+                                    if let Some(services) = did_document.service.as_ref() {
+                                        if let Some(pds_service) =
+                                            services.iter().find(|s| s.id == "#atproto_pds")
+                                        {
+                                            let pds_endpoint = &pds_service.service_endpoint;
+                                            let refresh_endpoint = format!(
+                                                "{}/xrpc/com.atproto.server.refreshSession",
+                                                pds_endpoint
+                                            );
+                                            info!(
+                                                "Resolved PDS endpoint for refresh: {}",
                                                 refresh_endpoint
-                                            } else {
-                                                // Fallback to bsky.social if no PDS service found
-                                                "https://bsky.social/xrpc/com.atproto.server.refreshSession".to_string()
-                                            }
+                                            );
+                                            refresh_endpoint
                                         } else {
-                                            // Fallback to bsky.social if no services found
+                                            // Fallback to bsky.social if no PDS service found
                                             "https://bsky.social/xrpc/com.atproto.server.refreshSession".to_string()
                                         }
-                                    },
-                                    Err(_) => {
-                                        // Fallback to bsky.social on resolution error
-                                        "https://bsky.social/xrpc/com.atproto.server.refreshSession".to_string()
+                                    } else {
+                                        // Fallback to bsky.social if no services found
+                                        "https://bsky.social/xrpc/com.atproto.server.refreshSession"
+                                            .to_string()
                                     }
                                 }
-                            },
-                            Err(_) => {
-                                // Fallback to bsky.social on DID parse error
-                                "https://bsky.social/xrpc/com.atproto.server.refreshSession".to_string()
+                                Err(_) => {
+                                    // Fallback to bsky.social on resolution error
+                                    "https://bsky.social/xrpc/com.atproto.server.refreshSession"
+                                        .to_string()
+                                }
                             }
                         }
+                        Err(_) => {
+                            // Fallback to bsky.social on DID parse error
+                            "https://bsky.social/xrpc/com.atproto.server.refreshSession".to_string()
+                        }
                     }
-                };
+                }
+            };
 
             match oauth::refresh_token(
                 &state.bsky_oauth,
@@ -1337,7 +1353,10 @@ pub async fn profile(
 }
 
 /// Helper function to get the token endpoint for a DID from stored sessions
-pub async fn get_token_endpoint_for_did(pool: &sqlx::PgPool, did: &str) -> cja::Result<Option<String>> {
+pub async fn get_token_endpoint_for_did(
+    pool: &sqlx::PgPool,
+    did: &str,
+) -> cja::Result<Option<String>> {
     let row = sqlx::query(
         r#"
         SELECT token_endpoint FROM oauth_sessions

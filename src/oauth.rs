@@ -535,7 +535,13 @@ pub fn create_dpop_proof_with_ath(
     access_token: &str,
 ) -> cja::Result<String> {
     // Call the implementation with the access token
-    create_dpop_proof_impl(oauth_config, http_method, endpoint_url, server_nonce, Some(access_token))
+    create_dpop_proof_impl(
+        oauth_config,
+        http_method,
+        endpoint_url,
+        server_nonce,
+        Some(access_token),
+    )
 }
 
 /// Internal implementation for creating DPoP proofs with or without access token hash
@@ -546,12 +552,12 @@ fn create_dpop_proof_impl(
     server_nonce: Option<&str>,
     access_token: Option<&str>,
 ) -> cja::Result<String> {
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+    use sha2::{Digest, Sha256};
     use std::io::Write;
     use std::process::Command;
     use std::time::{SystemTime, UNIX_EPOCH};
     use tempfile::NamedTempFile;
-    use sha2::{Digest, Sha256};
-    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -595,13 +601,13 @@ fn create_dpop_proof_impl(
         let mut hasher = Sha256::new();
         hasher.update(token.as_bytes());
         let token_hash = hasher.finalize();
-        
+
         // Base64url encode the hash
         let ath = URL_SAFE_NO_PAD.encode(token_hash);
-        
+
         // Add the ath claim to the payload
         payload_json["ath"] = ath.into();
-        
+
         tracing::debug!("Added access token hash (ath) to DPoP proof");
     }
 

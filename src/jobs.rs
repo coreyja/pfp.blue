@@ -2,7 +2,10 @@ use cja::jobs::Job;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 
-use crate::{oauth::{self, OAuthTokenSet, create_dpop_proof_with_ath}, state::AppState};
+use crate::{
+    oauth::{self, create_dpop_proof_with_ath, OAuthTokenSet},
+    state::AppState,
+};
 
 // This implements the Jobs struct required by the cja job worker
 cja::impl_job_registry!(
@@ -68,7 +71,7 @@ impl Job<AppState> for UpdateProfileHandleJob {
         let xrpc_client = std::sync::Arc::new(atrium_xrpc_client::reqwest::ReqwestClient::new(
             "https://bsky.social",
         ));
-        
+
         // Convert string DID to DID object
         let did = match atrium_api::types::string::Did::new(self.did.clone()) {
             Ok(did) => did,
@@ -77,7 +80,7 @@ impl Job<AppState> for UpdateProfileHandleJob {
                 return Err(eyre!("Invalid DID format: {}", err));
             }
         };
-        
+
         // Resolve DID to document
         let did_document = match crate::did::resolve_did_to_document(&did, xrpc_client).await {
             Ok(doc) => doc,
@@ -86,7 +89,7 @@ impl Job<AppState> for UpdateProfileHandleJob {
                 return Err(eyre!("Failed to resolve DID document: {}", err));
             }
         };
-        
+
         // Find the PDS service endpoint
         let services = match did_document.service.as_ref() {
             Some(services) => services,
@@ -100,7 +103,9 @@ impl Job<AppState> for UpdateProfileHandleJob {
             Some(service) => service,
             None => {
                 error!("No ATProto PDS service endpoint found in DID document");
-                return Err(eyre!("No ATProto PDS service endpoint found in DID document"));
+                return Err(eyre!(
+                    "No ATProto PDS service endpoint found in DID document"
+                ));
             }
         };
 
@@ -109,9 +114,9 @@ impl Job<AppState> for UpdateProfileHandleJob {
 
         // Construct the full URL to the PDS endpoint
         let get_record_url = format!("{}/xrpc/com.atproto.repo.getRecord", pds_endpoint);
-        
+
         // Access token hash is required for requests to PDS
-        
+
         // Start with no nonce and handle any in the error response
         // Create a DPoP proof for this API call using the PDS endpoint (no nonce initially)
         // Include access token hash (ath)
@@ -141,7 +146,7 @@ impl Job<AppState> for UpdateProfileHandleJob {
             .header("DPoP", dpop_proof)
             .send()
             .await;
-            
+
         // Handle nonce errors by trying again if needed
         if let Ok(response) = &response_result {
             if response.status() == reqwest::StatusCode::UNAUTHORIZED {
@@ -152,7 +157,7 @@ impl Job<AppState> for UpdateProfileHandleJob {
                     .and_then(|h| h.to_str().ok())
                 {
                     info!("Received new DPoP-Nonce in error response: {}", new_nonce);
-                    
+
                     // Create a new DPoP proof with the provided nonce and access token hash
                     let new_dpop_proof = match create_dpop_proof_with_ath(
                         &app_state.bsky_oauth,
@@ -167,7 +172,7 @@ impl Job<AppState> for UpdateProfileHandleJob {
                             return Err(err);
                         }
                     };
-                    
+
                     // Retry the request with the new nonce
                     info!("Retrying profile retrieval with new DPoP-Nonce");
                     response_result = client
@@ -184,10 +189,9 @@ impl Job<AppState> for UpdateProfileHandleJob {
                 }
             }
         }
-        
+
         // Handle the final result
-        let response = match response_result
-        {
+        let response = match response_result {
             Ok(resp) => resp,
             Err(err) => {
                 error!("Failed to send profile request: {:?}", err);
@@ -320,34 +324,52 @@ impl Job<AppState> for UpdateProfilePictureProgressJob {
                 return Err(eyre!("No token found for ID"));
             }
         };
-        
+
         // Check if the token is expired and try to refresh it if needed
         if token.is_expired() {
-            info!("Token for DID {} is expired, attempting to refresh", token.did);
-            
+            info!(
+                "Token for DID {} is expired, attempting to refresh",
+                token.did
+            );
+
             // Only try to refresh if we have a refresh token
             if let Some(refresh_token) = &token.refresh_token {
                 // Get the client ID using the proper method from the app_state
                 let client_id = app_state.client_id();
-                
+
                 // Try to get the token endpoint
-                let token_endpoint = match crate::routes::bsky::get_token_endpoint_for_did(&app_state.db, &token.did).await {
+                let token_endpoint = match crate::routes::bsky::get_token_endpoint_for_did(
+                    &app_state.db,
+                    &token.did,
+                )
+                .await
+                {
                     Ok(Some(endpoint)) => endpoint,
                     _ => {
                         // Resolve the PDS endpoint for the token
-                        let xrpc_client = std::sync::Arc::new(atrium_xrpc_client::reqwest::ReqwestClient::new(
-                            "https://bsky.social",
-                        ));
-                        
+                        let xrpc_client = std::sync::Arc::new(
+                            atrium_xrpc_client::reqwest::ReqwestClient::new("https://bsky.social"),
+                        );
+
                         match atrium_api::types::string::Did::new(token.did.clone()) {
                             Ok(did_obj) => {
-                                match crate::did::resolve_did_to_document(&did_obj, xrpc_client).await {
+                                match crate::did::resolve_did_to_document(&did_obj, xrpc_client)
+                                    .await
+                                {
                                     Ok(did_document) => {
                                         if let Some(services) = did_document.service.as_ref() {
-                                            if let Some(pds_service) = services.iter().find(|s| s.id == "#atproto_pds") {
+                                            if let Some(pds_service) =
+                                                services.iter().find(|s| s.id == "#atproto_pds")
+                                            {
                                                 let pds_endpoint = &pds_service.service_endpoint;
-                                                let refresh_endpoint = format!("{}/xrpc/com.atproto.server.refreshSession", pds_endpoint);
-                                                info!("Resolved PDS endpoint for refresh: {}", refresh_endpoint);
+                                                let refresh_endpoint = format!(
+                                                    "{}/xrpc/com.atproto.server.refreshSession",
+                                                    pds_endpoint
+                                                );
+                                                info!(
+                                                    "Resolved PDS endpoint for refresh: {}",
+                                                    refresh_endpoint
+                                                );
                                                 refresh_endpoint
                                             } else {
                                                 // Fallback to bsky.social if no PDS service found
@@ -357,30 +379,33 @@ impl Job<AppState> for UpdateProfilePictureProgressJob {
                                             // Fallback to bsky.social if no services found
                                             "https://bsky.social/xrpc/com.atproto.server.refreshSession".to_string()
                                         }
-                                    },
+                                    }
                                     Err(_) => {
                                         // Fallback to bsky.social on resolution error
-                                        "https://bsky.social/xrpc/com.atproto.server.refreshSession".to_string()
+                                        "https://bsky.social/xrpc/com.atproto.server.refreshSession"
+                                            .to_string()
                                     }
                                 }
-                            },
+                            }
                             Err(_) => {
                                 // Fallback to bsky.social on DID parse error
-                                "https://bsky.social/xrpc/com.atproto.server.refreshSession".to_string()
+                                "https://bsky.social/xrpc/com.atproto.server.refreshSession"
+                                    .to_string()
                             }
                         }
                     }
                 };
-                
+
                 // Get the latest DPoP nonce from the database
-                let dpop_nonce = match crate::oauth::db::get_latest_nonce(&app_state.db, &token.did).await {
-                    Ok(nonce) => nonce,
-                    Err(err) => {
-                        error!("Failed to get DPoP nonce: {:?}", err);
-                        None
-                    }
-                };
-                
+                let dpop_nonce =
+                    match crate::oauth::db::get_latest_nonce(&app_state.db, &token.did).await {
+                        Ok(nonce) => nonce,
+                        Err(err) => {
+                            error!("Failed to get DPoP nonce: {:?}", err);
+                            None
+                        }
+                    };
+
                 // Try to refresh the token
                 match crate::oauth::refresh_token(
                     &app_state.bsky_oauth,
@@ -388,41 +413,52 @@ impl Job<AppState> for UpdateProfilePictureProgressJob {
                     &client_id,
                     refresh_token,
                     dpop_nonce.as_deref(),
-                ).await {
+                )
+                .await
+                {
                     Ok(token_response) => {
                         info!("Successfully refreshed token for DID {}", token.did);
-                        
+
                         // Create a new token set from the response
-                        let new_token = match crate::oauth::OAuthTokenSet::from_token_response_with_jwk(
-                            &token_response,
-                            token.did.clone(),
-                            &app_state.bsky_oauth.public_key,
-                        ) {
-                            Ok(new_token) => new_token.with_handle_from(&token),
-                            Err(err) => {
-                                error!("Failed to create token set with JWK: {:?}", err);
-                                // Fallback to standard token creation
-                                crate::oauth::OAuthTokenSet::from_token_response(token_response, token.did.clone())
+                        let new_token =
+                            match crate::oauth::OAuthTokenSet::from_token_response_with_jwk(
+                                &token_response,
+                                token.did.clone(),
+                                &app_state.bsky_oauth.public_key,
+                            ) {
+                                Ok(new_token) => new_token.with_handle_from(&token),
+                                Err(err) => {
+                                    error!("Failed to create token set with JWK: {:?}", err);
+                                    // Fallback to standard token creation
+                                    crate::oauth::OAuthTokenSet::from_token_response(
+                                        token_response,
+                                        token.did.clone(),
+                                    )
                                     .with_handle_from(&token)
-                            }
-                        };
-                        
+                                }
+                            };
+
                         // Store the refreshed token
-                        if let Err(err) = crate::oauth::db::store_token(&app_state.db, &new_token).await {
+                        if let Err(err) =
+                            crate::oauth::db::store_token(&app_state.db, &new_token).await
+                        {
                             error!("Failed to store refreshed token: {:?}", err);
                             return Err(eyre!("Failed to store refreshed token"));
                         }
-                        
+
                         // Use the refreshed token for the rest of the job
                         token = new_token;
-                    },
+                    }
                     Err(err) => {
                         error!("Failed to refresh token: {:?}", err);
                         return Err(eyre!("Failed to refresh expired token: {}", err));
                     }
                 }
             } else {
-                error!("Token is expired but no refresh token is available for DID {}", token.did);
+                error!(
+                    "Token is expired but no refresh token is available for DID {}",
+                    token.did
+                );
                 return Err(eyre!("Token is expired and no refresh token is available"));
             }
         }
@@ -582,20 +618,20 @@ async fn generate_progress_image(
     use std::io::Cursor;
 
     debug!("Generating progress image");
-    
+
     // Detect image format from magic bytes
     let format = match infer::get(original_image_data) {
         Some(kind) => {
             debug!("Detected image format: {}", kind.mime_type());
             kind.mime_type().to_string()
-        },
+        }
         None => {
             // Default to PNG if we can't detect
             debug!("Could not detect image format, defaulting to PNG");
             "image/png".to_string()
         }
     };
-    
+
     // Load the original image
     let img = match image::load_from_memory(original_image_data) {
         Ok(img) => img,
@@ -713,7 +749,7 @@ async fn upload_image_to_bluesky(
                 info!("Unsupported image format: {}, defaulting to PNG", mime);
                 "image/png"
             }
-        },
+        }
         None => {
             // Default to PNG if we can't detect
             info!("Could not detect image format, defaulting to PNG");
@@ -725,7 +761,7 @@ async fn upload_image_to_bluesky(
     let xrpc_client = std::sync::Arc::new(atrium_xrpc_client::reqwest::ReqwestClient::new(
         "https://bsky.social",
     ));
-    
+
     // Convert string DID to DID object
     let did = match atrium_api::types::string::Did::new(token.did.clone()) {
         Ok(did) => did,
@@ -734,7 +770,7 @@ async fn upload_image_to_bluesky(
             return Err(eyre!("Invalid DID format: {}", err));
         }
     };
-    
+
     // Resolve DID to document
     let did_document = match crate::did::resolve_did_to_document(&did, xrpc_client).await {
         Ok(doc) => doc,
@@ -743,7 +779,7 @@ async fn upload_image_to_bluesky(
             return Err(eyre!("Failed to resolve DID document: {}", err));
         }
     };
-    
+
     // Find the PDS service endpoint
     let services = match did_document.service.as_ref() {
         Some(services) => services,
@@ -757,7 +793,9 @@ async fn upload_image_to_bluesky(
         Some(service) => service,
         None => {
             error!("No ATProto PDS service endpoint found in DID document");
-            return Err(eyre!("No ATProto PDS service endpoint found in DID document"));
+            return Err(eyre!(
+                "No ATProto PDS service endpoint found in DID document"
+            ));
         }
     };
 
@@ -766,10 +804,10 @@ async fn upload_image_to_bluesky(
 
     // Construct the full URL to the PDS endpoint
     let upload_url = format!("{}/xrpc/com.atproto.repo.uploadBlob", pds_endpoint);
-    
+
     // For uploadBlob, we'll try directly with no nonce first
     // and then handle any nonce in the error response
-    
+
     // We need to pass the access token to create_dpop_proof to calculate ath (access token hash)
     let dpop_proof = create_dpop_proof_with_ath(
         &app_state.bsky_oauth,
@@ -791,7 +829,7 @@ async fn upload_image_to_bluesky(
         .body(image_data.to_vec())
         .send()
         .await;
-    
+
     // Handle nonce errors by trying again if needed
     if let Ok(response) = &response_result {
         if response.status() == reqwest::StatusCode::UNAUTHORIZED {
@@ -802,7 +840,7 @@ async fn upload_image_to_bluesky(
                 .and_then(|h| h.to_str().ok())
             {
                 info!("Received new DPoP-Nonce in error response: {}", new_nonce);
-                
+
                 // Create a new DPoP proof with the provided nonce and access token hash
                 let new_dpop_proof = create_dpop_proof_with_ath(
                     &app_state.bsky_oauth,
@@ -811,7 +849,7 @@ async fn upload_image_to_bluesky(
                     Some(new_nonce),
                     &token.access_token,
                 )?;
-                
+
                 // Retry the request with the new nonce
                 info!("Retrying upload with new DPoP-Nonce");
                 response_result = client
@@ -825,7 +863,7 @@ async fn upload_image_to_bluesky(
             }
         }
     }
-    
+
     // Unwrap the final result
     let response = response_result?;
 
@@ -853,7 +891,10 @@ async fn upload_image_to_bluesky(
         }
         Ok(blob)
     } else {
-        error!("Failed to extract blob object from response: {:?}", response_data);
+        error!(
+            "Failed to extract blob object from response: {:?}",
+            response_data
+        );
         Err(eyre!("Failed to extract blob object from response"))
     }
 }
@@ -874,7 +915,7 @@ async fn update_profile_with_image(
     let xrpc_client = std::sync::Arc::new(atrium_xrpc_client::reqwest::ReqwestClient::new(
         "https://bsky.social",
     ));
-    
+
     // Convert string DID to DID object
     let did = match atrium_api::types::string::Did::new(token.did.clone()) {
         Ok(did) => did,
@@ -883,7 +924,7 @@ async fn update_profile_with_image(
             return Err(eyre!("Invalid DID format: {}", err));
         }
     };
-    
+
     // Resolve DID to document
     let did_document = match crate::did::resolve_did_to_document(&did, xrpc_client).await {
         Ok(doc) => doc,
@@ -892,7 +933,7 @@ async fn update_profile_with_image(
             return Err(eyre!("Failed to resolve DID document: {}", err));
         }
     };
-    
+
     // Find the PDS service endpoint
     let services = match did_document.service.as_ref() {
         Some(services) => services,
@@ -906,7 +947,9 @@ async fn update_profile_with_image(
         Some(service) => service,
         None => {
             error!("No ATProto PDS service endpoint found in DID document");
-            return Err(eyre!("No ATProto PDS service endpoint found in DID document"));
+            return Err(eyre!(
+                "No ATProto PDS service endpoint found in DID document"
+            ));
         }
     };
 
@@ -938,7 +981,7 @@ async fn update_profile_with_image(
         .header("DPoP", get_dpop_proof)
         .send()
         .await;
-    
+
     // Handle nonce errors by trying again if needed
     if let Ok(response) = &get_response_result {
         if response.status() == reqwest::StatusCode::UNAUTHORIZED {
@@ -949,7 +992,7 @@ async fn update_profile_with_image(
                 .and_then(|h| h.to_str().ok())
             {
                 info!("Received new DPoP-Nonce in error response: {}", new_nonce);
-                
+
                 // Create a new DPoP proof with the provided nonce and access token hash
                 let new_dpop_proof = create_dpop_proof_with_ath(
                     &app_state.bsky_oauth,
@@ -958,7 +1001,7 @@ async fn update_profile_with_image(
                     Some(new_nonce),
                     &token.access_token,
                 )?;
-                
+
                 // Retry the request with the new nonce
                 info!("Retrying profile retrieval with new DPoP-Nonce");
                 get_response_result = client
@@ -975,7 +1018,7 @@ async fn update_profile_with_image(
             }
         }
     }
-    
+
     // Unwrap the final result
     let get_response = get_response_result?;
 
@@ -1038,7 +1081,7 @@ async fn update_profile_with_image(
         .json(&put_body)
         .send()
         .await;
-    
+
     // Handle nonce errors by trying again if needed
     if let Ok(response) = &put_response_result {
         if response.status() == reqwest::StatusCode::UNAUTHORIZED {
@@ -1049,7 +1092,7 @@ async fn update_profile_with_image(
                 .and_then(|h| h.to_str().ok())
             {
                 info!("Received new DPoP-Nonce in error response: {}", new_nonce);
-                
+
                 // Create a new DPoP proof with the provided nonce and access token hash
                 let new_dpop_proof = create_dpop_proof_with_ath(
                     &app_state.bsky_oauth,
@@ -1058,7 +1101,7 @@ async fn update_profile_with_image(
                     Some(new_nonce),
                     &token.access_token,
                 )?;
-                
+
                 // Retry the request with the new nonce
                 info!("Retrying profile update with new DPoP-Nonce");
                 put_response_result = client
@@ -1071,7 +1114,7 @@ async fn update_profile_with_image(
             }
         }
     }
-    
+
     // Unwrap the final result
     let put_response = put_response_result?;
 
