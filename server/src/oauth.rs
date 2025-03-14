@@ -194,8 +194,8 @@ pub fn create_client_assertion(
     let payload = TokenRequestPayload {
         iss: client_id.to_string(),
         sub: client_id.to_string(),
-        // Use the fixed audience expected by Bluesky
-        aud: "https://bsky.social".to_string(),
+        // Use the configured Bluesky audience or default
+        aud: std::env::var("APPVIEW_URL").unwrap_or_else(|_| "https://bsky.social".to_string()),
         jti: uuid::Uuid::new_v4().to_string(),
         exp: now + 300, // 5 minutes in the future
         iat: now,

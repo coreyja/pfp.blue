@@ -6,7 +6,7 @@ use axum::{
     Json, Router,
 };
 use clap::Parser;
-use fixtures::{run_server, FixtureArgs};
+use fixtures::{run_server, FixtureArgs, require_env_var};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::{Arc, Mutex};
@@ -21,16 +21,29 @@ struct Cli {
 }
 
 // Server state to hold configured responses
-#[derive(Clone, Default)]
+#[derive(Clone)]
 struct AppState {
     data: Arc<Mutex<Value>>,
+    port: u16,
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self {
+            data: Arc::new(Mutex::new(Value::Null)),
+            port: 0,
+        }
+    }
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Cli::parse();
     
-    let state = AppState::default();
+    // We don't have any specific env vars to check for the PDS fixture
+    
+    let mut state = AppState::default();
+    state.port = args.common.port;
 
     // Load fixture data if provided
     if let Some(data_path) = &args.common.data {
@@ -60,10 +73,13 @@ async fn main() -> anyhow::Result<()> {
 
 // Handler implementations
 
-async fn oauth_protected_resource() -> impl IntoResponse {
+async fn oauth_protected_resource(
+    State(state): State<AppState>
+) -> impl IntoResponse {
+    let base_url = format!("http://localhost:{}", state.port);
     Json(json!({
-        "issuer": "https://pds-fixture:3000",
-        "authorization_server": "https://pds-fixture:3000"
+        "issuer": base_url,
+        "authorization_server": base_url
     }))
 }
 

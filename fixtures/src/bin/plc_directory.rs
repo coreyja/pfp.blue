@@ -5,7 +5,7 @@ use axum::{
     Json, Router,
 };
 use clap::Parser;
-use fixtures::{run_server, FixtureArgs};
+use fixtures::{run_server, FixtureArgs, require_env_var};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::{Arc, Mutex};
@@ -20,16 +20,30 @@ struct Cli {
 }
 
 // Server state to hold configured responses
-#[derive(Clone, Default)]
+#[derive(Clone)]
 struct AppState {
     data: Arc<Mutex<Value>>,
+    pds_url: String,
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self {
+            data: Arc::new(Mutex::new(Value::Null)),
+            pds_url: String::new(),
+        }
+    }
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Cli::parse();
     
-    let state = AppState::default();
+    // Get URL of the PDS fixture
+    let pds_url = require_env_var("PDS_URL", args.common.force)?;
+    
+    let mut state = AppState::default();
+    state.pds_url = pds_url;
 
     // Load fixture data if provided
     if let Some(data_path) = &args.common.data {
@@ -52,7 +66,9 @@ async fn main() -> anyhow::Result<()> {
 
 // Handler implementations
 
-async fn resolve_did() -> impl IntoResponse {
+async fn resolve_did(
+    State(state): State<AppState>
+) -> impl IntoResponse {
     Json(json!({
         "@context": ["https://w3id.org/did/v1"],
         "id": "did:plc:abcdefg",
@@ -71,7 +87,7 @@ async fn resolve_did() -> impl IntoResponse {
             {
                 "id": "#atproto_pds",
                 "type": "AtprotoPersonalDataServer",
-                "serviceEndpoint": "https://pds-fixture:3000"
+                "serviceEndpoint": state.pds_url
             }
         ]
     }))

@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::env;
 
 use atrium_api::{
     did_doc::DidDocument,
@@ -16,8 +17,9 @@ pub async fn resolve_handle_to_did(
     handle: &Handle,
     client: Arc<ReqwestClient>,
 ) -> cja::Result<Did> {
+    let appview_url = env::var("APPVIEW_URL").unwrap_or_else(|_| "https://bsky.social".to_string());
     let config = AppViewHandleResolverConfig {
-        service_url: "https://bsky.social".to_string(),
+        service_url: appview_url,
         http_client: client.clone(),
     };
     let resolver = AppViewHandleResolver::new(config);
@@ -25,15 +27,18 @@ pub async fn resolve_handle_to_did(
     Ok(identity)
 }
 
-pub const DEFAULT_PLC_DIRECTORY_URL: &str = "https://plc.directory/";
+pub fn get_plc_directory_url() -> String {
+    env::var("PLC_DIRECTORY_URL").unwrap_or_else(|_| "https://plc.directory/".to_string())
+}
 
 pub async fn resolve_did_to_document(
     did: &Did,
     client: Arc<ReqwestClient>,
 ) -> cja::Result<DidDocument> {
+    let plc_directory_url = get_plc_directory_url();
     let config = CommonDidResolverConfig {
         http_client: client.clone(),
-        plc_directory_url: DEFAULT_PLC_DIRECTORY_URL.to_string(),
+        plc_directory_url,
     };
     let resolver = CommonDidResolver::new(config);
     let document = resolver.resolve(did).await?;

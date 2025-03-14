@@ -1,9 +1,10 @@
 use axum::Router;
 use clap::Parser;
+use std::env;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use tower_http::trace::TraceLayer;
-use tracing::info;
+use tracing::{info, error};
 
 /// Common CLI arguments for all fixture servers
 #[derive(Parser, Debug, Clone)]
@@ -19,6 +20,25 @@ pub struct FixtureArgs {
     /// Path to JSON file with fixture data
     #[arg(short, long)]
     pub data: Option<PathBuf>,
+    
+    /// Force allow running without required environment variables (for development)
+    #[arg(long)]
+    pub force: bool,
+}
+
+/// Helper to get a required environment variable or return an error
+pub fn require_env_var(name: &str, force: bool) -> anyhow::Result<String> {
+    match env::var(name) {
+        Ok(value) => Ok(value),
+        Err(_) => {
+            if force {
+                error!("WARNING: Required environment variable {} not set. Using placeholder value because --force was specified.", name);
+                Ok(format!("http://localhost:3000"))
+            } else {
+                anyhow::bail!("Required environment variable {} not set. Use --force to bypass this check.", name)
+            }
+        }
+    }
 }
 
 /// Common function to run a fixture server
