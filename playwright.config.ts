@@ -1,11 +1,11 @@
 import { defineConfig, devices } from '@playwright/test';
+import path from 'path';
 
 /**
  * Read environment variables from file.
  * https://github.com/motdotla/dotenv
  */
 // import dotenv from 'dotenv';
-// import path from 'path';
 // dotenv.config({ path: path.resolve(__dirname, '.env') });
 
 /**
@@ -72,7 +72,7 @@ export default defineConfig({
 
   /* Run your local dev server before starting the tests */
   webServer: process.env.USE_FIXTURES ? {
-    command: 'cd "$(dirname "$0")" && overmind start -f Procfile.e2e',
+    command: `overmind start -f ${path.resolve(__dirname, 'Procfile.e2e')}`,
     url: 'http://localhost:3000',
     reuseExistingServer: !process.env.CI,
     stdout: 'pipe',
