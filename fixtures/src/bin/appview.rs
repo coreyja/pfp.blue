@@ -47,8 +47,10 @@ async fn main() -> anyhow::Result<()> {
     // Get URL of the Avatar CDN
     let avatar_cdn_url = require_env_var("AVATAR_CDN_URL", args.common.force)?;
 
-    let mut state = AppState::default();
-    state.avatar_cdn_url = avatar_cdn_url;
+    let state = AppState {
+        avatar_cdn_url,
+        ..Default::default()
+    };
 
     // Load fixture data if provided
     if let Some(data_path) = &args.common.data {

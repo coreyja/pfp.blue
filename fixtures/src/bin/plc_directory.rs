@@ -37,8 +37,10 @@ async fn main() -> anyhow::Result<()> {
     // Get URL of the PDS fixture
     let pds_url = require_env_var("PDS_URL", args.common.force)?;
 
-    let mut state = AppState::default();
-    state.pds_url = pds_url;
+    let state = AppState {
+        pds_url,
+        ..Default::default()
+    };
 
     // Load fixture data if provided
     if let Some(data_path) = &args.common.data {

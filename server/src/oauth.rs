@@ -1400,7 +1400,7 @@ pub mod db {
         Ok(())
     }
 
-    /// Cleans up expired sessions
+    #[allow(dead_code)]
     pub async fn cleanup_expired_sessions(pool: &PgPool) -> cja::Result<u64> {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)

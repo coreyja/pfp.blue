@@ -182,6 +182,7 @@ impl AppState {
     }
 
     /// Returns the configured AppView URL
+    #[allow(dead_code)]
     pub fn appview_url(&self) -> String {
         env::var("APPVIEW_URL").unwrap_or_else(|_| "https://bsky.social".to_string())
     }
