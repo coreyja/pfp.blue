@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use std::env;
+use std::sync::Arc;
 
 use atrium_xrpc_client::reqwest::{ReqwestClient, ReqwestClientBuilder};
 use sqlx::{postgres::PgPoolOptions, PgPool};
@@ -130,10 +130,11 @@ impl AppState {
 
         let cookie_key = cja::server::cookies::CookieKey::from_env_or_generate()?;
 
-        let appview_url = env::var("APPVIEW_URL").unwrap_or_else(|_| "https://bsky.social".to_string());
+        let appview_url =
+            env::var("APPVIEW_URL").unwrap_or_else(|_| "https://bsky.social".to_string());
         println!("APPVIEW_URL: {}", appview_url);
         println!("PLC_DIRECTORY_URL: {}", crate::did::get_plc_directory_url());
-        
+
         let client = ReqwestClientBuilder::new(&appview_url)
             .client(
                 reqwest::ClientBuilder::new()
@@ -179,12 +180,12 @@ impl AppState {
     pub fn redirect_uri(&self) -> String {
         format!("{}://{}/oauth/bsky/callback", self.protocol, self.domain)
     }
-    
+
     /// Returns the configured AppView URL
     pub fn appview_url(&self) -> String {
         env::var("APPVIEW_URL").unwrap_or_else(|_| "https://bsky.social".to_string())
     }
-    
+
     /// Returns the configured Avatar CDN URL
     pub fn avatar_cdn_url(&self) -> String {
         env::var("AVATAR_CDN_URL").unwrap_or_else(|_| "https://avatar.bsky.social".to_string())

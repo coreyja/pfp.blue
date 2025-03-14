@@ -1,11 +1,6 @@
-use axum::{
-    extract::State,
-    response::IntoResponse,
-    routing::get,
-    Json, Router,
-};
+use axum::{extract::State, response::IntoResponse, routing::get, Json, Router};
 use clap::Parser;
-use fixtures::{run_server, FixtureArgs, require_env_var};
+use fixtures::{require_env_var, run_server, FixtureArgs};
 // Unused imports removed
 use serde_json::{json, Value};
 use std::sync::{Arc, Mutex};
@@ -38,10 +33,10 @@ impl Default for AppState {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Cli::parse();
-    
+
     // Get URL of the PDS fixture
     let pds_url = require_env_var("PDS_URL", args.common.force)?;
-    
+
     let mut state = AppState::default();
     state.pds_url = pds_url;
 
@@ -67,7 +62,7 @@ async fn main() -> anyhow::Result<()> {
             eprintln!("WARNING: Unhandled request: {} {}", req.method(), req.uri());
             (
                 axum::http::StatusCode::NOT_FOUND,
-                format!("No route found for {} {}", req.method(), req.uri())
+                format!("No route found for {} {}", req.method(), req.uri()),
             )
         })
         .with_state(state);
@@ -79,7 +74,7 @@ async fn main() -> anyhow::Result<()> {
 
 async fn resolve_did(
     State(state): State<AppState>,
-    axum::extract::Path(did): axum::extract::Path<String>
+    axum::extract::Path(did): axum::extract::Path<String>,
 ) -> impl IntoResponse {
     println!("PLC DIRECTORY: Resolving DID: {}", did);
     // Just respond with our fixture DID doc regardless of the requested DID

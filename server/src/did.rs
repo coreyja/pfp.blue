@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use std::env;
+use std::sync::Arc;
 
 use atrium_api::{
     did_doc::DidDocument,
@@ -38,45 +38,53 @@ pub async fn resolve_did_to_document(
     client: Arc<ReqwestClient>,
 ) -> cja::Result<DidDocument> {
     use color_eyre::eyre::eyre;
-    use tracing::{info, error};
-    
+    use tracing::{error, info};
+
     let plc_directory_url = get_plc_directory_url();
-    info!("Attempting to resolve DID document for {} via PLC directory at {}", did.as_str(), plc_directory_url);
-    
+    info!(
+        "Attempting to resolve DID document for {} via PLC directory at {}",
+        did.as_str(),
+        plc_directory_url
+    );
+
     let config = CommonDidResolverConfig {
         http_client: client.clone(),
         plc_directory_url,
     };
     let resolver = CommonDidResolver::new(config);
-    
+
     match resolver.resolve(did).await {
         Ok(document) => {
             info!("Successfully resolved DID document for {}", did.as_str());
             Ok(document)
-        },
+        }
         Err(e) => {
             // In e2e tests, let's create a fake document when using fixture-user.test
-            if did.as_str() == "did:plc:abcdefg" && std::env::var("USE_FIXTURES").unwrap_or_default() == "1" {
-                error!("PLC resolution failed, but using fixture user, creating fake document: {}", e);
-                let pds_url = std::env::var("PDS_URL").unwrap_or_else(|_| "http://localhost:3001".to_string());
-                
+            if did.as_str() == "did:plc:abcdefg"
+                && std::env::var("USE_FIXTURES").unwrap_or_default() == "1"
+            {
+                error!(
+                    "PLC resolution failed, but using fixture user, creating fake document: {}",
+                    e
+                );
+                let pds_url = std::env::var("PDS_URL")
+                    .unwrap_or_else(|_| "http://localhost:3001".to_string());
+
                 // Create a minimal valid document for fixtures
                 // Check the structure of DidDocument to ensure we create a valid one
                 let doc = DidDocument {
                     context: Some(vec!["https://w3id.org/did/v1".to_string()]),
                     id: did.as_str().to_string(),
                     also_known_as: Some(vec!["at://fixture-user.test".to_string()]),
-                    service: Some(vec![
-                        atrium_api::did_doc::Service {
-                            id: "#atproto_pds".to_string(),
-                            service_endpoint: pds_url,
-                            // The field is "type" not "type_"
-                            r#type: "AtprotoPersonalDataServer".to_string(),
-                        }
-                    ]),
+                    service: Some(vec![atrium_api::did_doc::Service {
+                        id: "#atproto_pds".to_string(),
+                        service_endpoint: pds_url,
+                        // The field is "type" not "type_"
+                        r#type: "AtprotoPersonalDataServer".to_string(),
+                    }]),
                     verification_method: Some(vec![]),
                 };
-                
+
                 Ok(doc)
             } else {
                 error!("Failed to resolve DID document for {}: {}", did.as_str(), e);
@@ -106,23 +114,35 @@ pub async fn document_to_auth_server_metadata(
     _client: Arc<ReqwestClient>,
 ) -> cja::Result<AuthServerMetadata> {
     use color_eyre::eyre::eyre;
-    use tracing::{info, error};
-    
+    use tracing::{error, info};
+
     // If we're in fixture mode, shortcut with fixture data
     if std::env::var("USE_FIXTURES").unwrap_or_default() == "1" {
-        let pds_url = std::env::var("PDS_URL").unwrap_or_else(|_| "http://localhost:3001".to_string());
-        info!("Using fixture auth server metadata with PDS URL: {}", pds_url);
-        
+        let pds_url =
+            std::env::var("PDS_URL").unwrap_or_else(|_| "http://localhost:3001".to_string());
+        info!(
+            "Using fixture auth server metadata with PDS URL: {}",
+            pds_url
+        );
+
         // Return mock auth server metadata for fixture testing
         return Ok(AuthServerMetadata {
             issuer: pds_url.clone(),
-            pushed_authorization_request_endpoint: format!("{}/xrpc/com.atproto.server.pushAuthorization", pds_url),
+            pushed_authorization_request_endpoint: format!(
+                "{}/xrpc/com.atproto.server.pushAuthorization",
+                pds_url
+            ),
             authorization_endpoint: format!("{}/xrpc/com.atproto.server.authorize", pds_url),
             token_endpoint: format!("{}/xrpc/com.atproto.server.getToken", pds_url),
-            scopes_supported: vec!["read".to_string(), "write".to_string(), "profile".to_string(), "email".to_string()],
+            scopes_supported: vec![
+                "read".to_string(),
+                "write".to_string(),
+                "profile".to_string(),
+                "email".to_string(),
+            ],
         });
     }
-    
+
     // Regular flow for production use
     let services = document
         .service
@@ -139,20 +159,26 @@ pub async fn document_to_auth_server_metadata(
         pds_service.service_endpoint
     );
     info!("Fetching PDS metadata from URL: {}", pds_metadata_url);
-    
+
     // Get the metadata response
     let response = reqwest::get(&pds_metadata_url).await?;
     if !response.status().is_success() {
         error!("Failed to get PDS metadata: HTTP {}", response.status());
-        return Err(eyre!("Failed to get PDS metadata: HTTP {}", response.status()));
+        return Err(eyre!(
+            "Failed to get PDS metadata: HTTP {}",
+            response.status()
+        ));
     }
-    
+
     // Try to decode as JSON
     let response_text = response.text().await?;
     let pds_metadata = match serde_json::from_str::<PDSMetadata>(&response_text) {
         Ok(metadata) => metadata,
         Err(e) => {
-            error!("Failed to decode PDS metadata: {} from body: {}", e, response_text);
+            error!(
+                "Failed to decode PDS metadata: {} from body: {}",
+                e, response_text
+            );
             return Err(eyre!("Failed to decode PDS metadata: {}", e));
         }
     };
@@ -164,24 +190,33 @@ pub async fn document_to_auth_server_metadata(
     let auth_server_metadata_url =
         format!("{}/.well-known/oauth-authorization-server", auth_server_url);
 
-    info!("Fetching auth server metadata from URL: {}", auth_server_metadata_url);
+    info!(
+        "Fetching auth server metadata from URL: {}",
+        auth_server_metadata_url
+    );
     let auth_server_metadata = match reqwest::get(&auth_server_metadata_url).await {
         Ok(resp) => {
             if !resp.status().is_success() {
                 error!("Failed to get auth server metadata: HTTP {}", resp.status());
-                return Err(eyre!("Failed to get auth server metadata: HTTP {}", resp.status()));
+                return Err(eyre!(
+                    "Failed to get auth server metadata: HTTP {}",
+                    resp.status()
+                ));
             }
-            
+
             // Try to decode as JSON
             let resp_text = resp.text().await?;
             match serde_json::from_str::<AuthServerMetadata>(&resp_text) {
                 Ok(metadata) => metadata,
                 Err(e) => {
-                    error!("Failed to decode auth server metadata: {} from body: {}", e, resp_text);
+                    error!(
+                        "Failed to decode auth server metadata: {} from body: {}",
+                        e, resp_text
+                    );
                     return Err(eyre!("Failed to get auth server metadata: error decoding response body\n\nCaused by:\n    {}", e));
                 }
             }
-        },
+        }
         Err(e) => {
             error!("Failed to request auth server metadata: {}", e);
             return Err(eyre!("Failed to request auth server metadata: {}", e));

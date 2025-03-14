@@ -210,7 +210,10 @@ pub struct CallbackParams {
 }
 
 /// Function to fetch profile data for display only (no authentication/DPoP needed)
-async fn fetch_profile_for_display(did: &str, app_state: &crate::state::AppState) -> cja::Result<serde_json::Value> {
+async fn fetch_profile_for_display(
+    did: &str,
+    app_state: &crate::state::AppState,
+) -> cja::Result<serde_json::Value> {
     use color_eyre::eyre::eyre;
     use tracing::info;
 
@@ -291,9 +294,9 @@ async fn fetch_profile_for_display(did: &str, app_state: &crate::state::AppState
 
 /// Fetch a blob by its CID directly from the user's PDS
 pub async fn fetch_blob_by_cid(
-    did_or_handle: &str, 
-    cid: &str, 
-    app_state: &crate::state::AppState
+    did_or_handle: &str,
+    cid: &str,
+    app_state: &crate::state::AppState,
 ) -> cja::Result<Vec<u8>> {
     info!(
         "Fetching blob with CID: {} for DID/handle: {}",

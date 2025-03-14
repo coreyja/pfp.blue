@@ -37,9 +37,9 @@ impl Default for AppState {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Cli::parse();
-    
+
     // We don't have any specific env vars to check for the PDS fixture
-    
+
     let mut state = AppState::default();
     state.port = args.common.port;
 
@@ -55,21 +55,30 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         // OAuth endpoints
-        .route("/.well-known/oauth-protected-resource", get(oauth_protected_resource))
-        .route("/.well-known/oauth-authorization-server", get(oauth_authorization_server))
-        
+        .route(
+            "/.well-known/oauth-protected-resource",
+            get(oauth_protected_resource),
+        )
+        .route(
+            "/.well-known/oauth-authorization-server",
+            get(oauth_authorization_server),
+        )
         // OAuth protocol endpoints
         .route("/xrpc/com.atproto.server.authorize", get(authorize))
-        .route("/xrpc/com.atproto.server.pushAuthorization", post(push_authorization))
+        .route(
+            "/xrpc/com.atproto.server.pushAuthorization",
+            post(push_authorization),
+        )
         .route("/xrpc/com.atproto.server.getToken", post(get_token))
-        
         // PDS XRPC endpoints
         .route("/xrpc/com.atproto.repo.getRecord", get(get_record))
         .route("/xrpc/com.atproto.sync.getBlob", get(get_blob))
-        .route("/xrpc/com.atproto.server.refreshSession", post(refresh_session))
+        .route(
+            "/xrpc/com.atproto.server.refreshSession",
+            post(refresh_session),
+        )
         .route("/xrpc/com.atproto.repo.uploadBlob", post(upload_blob))
         .route("/xrpc/com.atproto.repo.putRecord", post(put_record))
-        
         .with_state(state);
 
     run_server(args.common, app).await
@@ -77,11 +86,12 @@ async fn main() -> anyhow::Result<()> {
 
 // Handler implementations
 
-async fn oauth_protected_resource(
-    State(state): State<AppState>
-) -> impl IntoResponse {
+async fn oauth_protected_resource(State(state): State<AppState>) -> impl IntoResponse {
     let base_url = format!("http://localhost:{}", state.port);
-    println!("PDS: Returning oauth-protected-resource with auth server: {}", base_url);
+    println!(
+        "PDS: Returning oauth-protected-resource with auth server: {}",
+        base_url
+    );
     Json(json!({
         // This matches what the real API returns - has to contain an array
         "authorization_servers": [base_url]
@@ -111,7 +121,10 @@ async fn get_record() -> impl IntoResponse {
 async fn get_blob() -> impl IntoResponse {
     // Return a small test image
     let image_data = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46];
-    ([(axum::http::header::CONTENT_TYPE, "image/jpeg")], image_data)
+    (
+        [(axum::http::header::CONTENT_TYPE, "image/jpeg")],
+        image_data,
+    )
 }
 
 async fn refresh_session() -> impl IntoResponse {
@@ -144,12 +157,10 @@ async fn put_record() -> impl IntoResponse {
 }
 
 // OAuth authorization server metadata endpoint
-async fn oauth_authorization_server(
-    State(state): State<AppState>
-) -> impl IntoResponse {
+async fn oauth_authorization_server(State(state): State<AppState>) -> impl IntoResponse {
     let base_url = format!("http://localhost:{}", state.port);
     println!("PDS: Returning oauth-authorization-server metadata");
-    
+
     Json(json!({
         "issuer": base_url,
         "pushed_authorization_request_endpoint": format!("{}/xrpc/com.atproto.server.pushAuthorization", base_url),
@@ -177,31 +188,34 @@ struct AuthorizeQuery {
 }
 
 // The authorization endpoint is what the browser gets redirected to
-async fn authorize(
-    Query(params): Query<AuthorizeQuery>,
-) -> impl IntoResponse {
-    println!("PDS: Handling OAuth authorization request with redirect_uri: {}", params.redirect_uri);
-    
+async fn authorize(Query(params): Query<AuthorizeQuery>) -> impl IntoResponse {
+    println!(
+        "PDS: Handling OAuth authorization request with redirect_uri: {}",
+        params.redirect_uri
+    );
+
     // For fixtures, we'll auto-authorize and redirect back with a code
     let redirect_url = if let Some(state) = params.state {
         // Include state if provided
-        format!("{}?code=fixture_auth_code_12345&state={}", params.redirect_uri, state)
+        format!(
+            "{}?code=fixture_auth_code_12345&state={}",
+            params.redirect_uri, state
+        )
     } else {
         // Just code if no state
         format!("{}?code=fixture_auth_code_12345", params.redirect_uri)
     };
-    
+
     println!("PDS: Redirecting to: {}", redirect_url);
-    
+
     // Redirect to callback URL with auth code
     axum::response::Redirect::to(&redirect_url)
 }
 
 // The pushed authorization request endpoint
-async fn push_authorization(
-) -> impl IntoResponse {
+async fn push_authorization() -> impl IntoResponse {
     println!("PDS: Handling pushed authorization request");
-    
+
     // Return a request URI that the client will redirect to
     Json(json!({
         "request_uri": "urn:fixture:auth:12345",
@@ -210,10 +224,9 @@ async fn push_authorization(
 }
 
 // The token endpoint
-async fn get_token(
-) -> impl IntoResponse {
+async fn get_token() -> impl IntoResponse {
     println!("PDS: Handling token request");
-    
+
     // Return tokens
     Json(json!({
         "access_token": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJkaWQ6cGxjOmFiY2RlZmciLCJleHAiOjE3MDkxMjM0NTZ9.fixture",

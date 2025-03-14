@@ -4,7 +4,7 @@ use std::env;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use tower_http::trace::TraceLayer;
-use tracing::{info, error};
+use tracing::{error, info};
 
 /// Common CLI arguments for all fixture servers
 #[derive(Parser, Debug, Clone)]
@@ -20,7 +20,7 @@ pub struct FixtureArgs {
     /// Path to JSON file with fixture data
     #[arg(short, long)]
     pub data: Option<PathBuf>,
-    
+
     /// Force allow running without required environment variables (for development)
     #[arg(long)]
     pub force: bool,
@@ -35,7 +35,10 @@ pub fn require_env_var(name: &str, force: bool) -> anyhow::Result<String> {
                 error!("WARNING: Required environment variable {} not set. Using placeholder value because --force was specified.", name);
                 Ok(format!("http://localhost:3000"))
             } else {
-                anyhow::bail!("Required environment variable {} not set. Use --force to bypass this check.", name)
+                anyhow::bail!(
+                    "Required environment variable {} not set. Use --force to bypass this check.",
+                    name
+                )
             }
         }
     }
