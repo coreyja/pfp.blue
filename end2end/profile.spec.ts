@@ -1,28 +1,31 @@
 import { test, expect } from './fixtures';
 
-// These tests would require actual authentication or mocking
-// Mark them as "todo" to indicate what we plan to test eventually
 test.describe('Profile page', () => {
   // Test for authenticated profile page access
-  test.skip('shows user profile when authenticated', async ({ page, mockAuthenticatedUser }) => {
-    // This is a sketch of the test - it will need to be implemented
-    // once the auth fixture is complete
+  test('shows user profile when authenticated', async ({ page, mockAuthenticatedUser }) => {
+    test.skip(!process.env.USE_FIXTURES, 'This test only runs when fixtures are enabled');
     
     // Mock authentication
     await mockAuthenticatedUser(page);
     
-    // Go to profile page
+    // Profile page should already be loaded after authentication,
+    // but let's explicitly navigate to it to be sure
     await page.goto('/me');
     
     // Check for profile elements
-    await expect(page.locator('h1:has-text("Your Profile")')).toBeVisible();
+    await expect(page.locator('h1, h2').filter({ hasText: /Your Profile|Profile/i })).toBeVisible();
     
     // Should see the user's Bluesky account info
     await expect(page.locator('text=Bluesky Account')).toBeVisible();
+    
+    // Should see the fixture user's handle
+    await expect(page.locator('text=fixture-user.test')).toBeVisible();
   });
   
   // Test for profile picture progress toggle
-  test.skip('can toggle profile picture progress', async ({ page, mockAuthenticatedUser }) => {
+  test('can toggle profile picture progress', async ({ page, mockAuthenticatedUser }) => {
+    test.skip(!process.env.USE_FIXTURES, 'This test only runs when fixtures are enabled');
+    
     // Mock authentication
     await mockAuthenticatedUser(page);
     
@@ -31,6 +34,7 @@ test.describe('Profile page', () => {
     
     // Find the toggle button/checkbox for profile picture progress
     const toggleCheckbox = page.locator('input[name="enabled"]').first();
+    await expect(toggleCheckbox).toBeVisible();
     
     // Check initial state
     const initialState = await toggleCheckbox.isChecked();
@@ -49,39 +53,68 @@ test.describe('Profile page', () => {
     expect(newState).not.toBe(initialState);
   });
   
-  // Test for multiple accounts
+  // We can add back the multiple accounts test later when we have fixture support for it
   test.skip('shows all linked accounts when multiple accounts are connected', async ({ page, mockAuthenticatedUser }) => {
-    // This test would require a more complex fixture setup to create multiple tokens
-    // for one user, but here's the skeleton
+    test.skip(!process.env.USE_FIXTURES, 'This test only runs when fixtures are enabled');
     
     await mockAuthenticatedUser(page);
     await page.goto('/me');
     
-    // Check for multiple account sections
-    // This will depend on the actual UI, but could be something like:
-    const accountSections = page.locator('.account-section');
+    // Check for account section
+    const accountSection = page.locator('text=Bluesky Account');
+    await expect(accountSection).toBeVisible();
     
-    // In a real test with multiple accounts, we'd expect more than one
-    await expect(accountSections).toHaveCount(1); // Would be changed to >1 when implemented
+    // In a future enhancement, we could update the fixtures to support multiple accounts
   });
 });
 
-// Sketching out future tests that would be valuable
 test.describe('Profile Picture Progress Feature', () => {
-  test.skip('can set original profile picture', async ({ page, mockAuthenticatedUser }) => {
+  test('can set original profile picture', async ({ page, mockAuthenticatedUser }) => {
+    test.skip(!process.env.USE_FIXTURES, 'This test only runs when fixtures are enabled');
+    
     await mockAuthenticatedUser(page);
     await page.goto('/me');
     
-    // Find the form or button to set original profile picture
-    // Fill in the blob CID
-    // Submit and verify
+    // Find the profile picture progress section
+    await expect(page.locator('text=Profile Picture Progress')).toBeVisible();
+    
+    // Find original picture input (assuming it's a text field for entering a blob CID)
+    // This may need to be adjusted based on the exact UI implementation
+    const originalPictureInput = page.locator('input[name="originalPicture"], input[name="originalCid"]');
+    
+    // If there's any existing value, clear it
+    await originalPictureInput.clear();
+    
+    // Enter the fixture blob CID
+    await originalPictureInput.fill('bafyreib3hg56hnxcysikiv5rsr2okgujajrjrpz4kpf7se52jgygyz7d7u');
+    
+    // Find and click the save button
+    await page.locator('button:has-text("Save"), button:has-text("Update")').click();
+    
+    // After saving, we should still be on the profile page
+    await expect(page).toHaveURL('/me');
+    
+    // The input should still have our value
+    await expect(originalPictureInput).toHaveValue('bafyreib3hg56hnxcysikiv5rsr2okgujajrjrpz4kpf7se52jgygyz7d7u');
   });
   
-  test.skip('shows current progress percentage', async ({ page, mockAuthenticatedUser }) => {
+  test('shows progress indicator', async ({ page, mockAuthenticatedUser }) => {
+    test.skip(!process.env.USE_FIXTURES, 'This test only runs when fixtures are enabled');
+    
     await mockAuthenticatedUser(page);
     await page.goto('/me');
     
+    // Enable the profile picture progress feature if not already enabled
+    const toggleCheckbox = page.locator('input[name="enabled"]').first();
+    if (!(await toggleCheckbox.isChecked())) {
+      await toggleCheckbox.click();
+      await page.locator('button:has-text("Save")').click();
+      await page.waitForURL('/me');
+    }
+    
     // Check if progress indicator is visible
-    // Verify the percentage shown matches what's expected
+    // This will depend on the exact UI, but could be a progress bar or text
+    const progressElement = page.locator('text=/\\d+%/, text=/\\d+\\/\\d+/');
+    await expect(progressElement).toBeVisible();
   });
 });

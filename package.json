@@ -11,6 +11,9 @@
     "test:chrome": "playwright test --project=chromium",
     "test:firefox": "playwright test --project=firefox",
     "test:safari": "playwright test --project=webkit",
+    "test:fixtures": "USE_FIXTURES=1 playwright test",
+    "test:fixtures:ui": "USE_FIXTURES=1 playwright test --ui",
+    "test:fixtures:headed": "USE_FIXTURES=1 playwright test --headed",
     "report": "playwright show-report"
   },
   "keywords": ["bluesky", "profile", "oauth"],

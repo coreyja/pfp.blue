@@ -1,15 +1,11 @@
-import { test, expect } from '@playwright/test';
-
-// Mock OAuth flow
-// In a real test, we'd need to mock the Bluesky authentication service
-// For now, we'll just test the initial authentication request and check redirects
+import { test, expect } from './fixtures';
 
 test.describe('Authentication flow', () => {
   test('login form submits with correct parameters', async ({ page }) => {
     await page.goto('/login');
     
     // Fill in the login form
-    const testHandle = 'test.user.bsky.social';
+    const testHandle = 'fixture-user.test';
     await page.locator('input[name="did"]').fill(testHandle);
     
     // Intercept the form submission to check the parameters without actually submitting
@@ -38,21 +34,46 @@ test.describe('Authentication flow', () => {
     await expect(page).toHaveURL(/\/login|\/oauth\/bsky\/authorize/);
   });
   
-  // Simple test for logout functionality
-  test('logout link is available when user is logged in', async ({ page }) => {
-    // This test is aspirational - in a real scenario we'd need to mock
-    // authentication first, which requires more sophisticated test fixtures
+  // Using fixtures for a complete auth flow test
+  test('completes full authentication flow with fixtures', async ({ page }) => {
+    test.skip(!process.env.USE_FIXTURES, 'This test only runs when fixtures are enabled');
     
-    // For now, we're just checking that the /logout endpoint exists
-    // In a real test, we would:
-    // 1. Set up a mock authenticated session
-    // 2. Navigate to an authenticated page
-    // 3. Check for and click the logout link
-    // 4. Verify we're logged out
+    await page.goto('/login');
     
-    const response = await page.request.get('/logout');
+    // Fill in the login form with our fixture user
+    await page.locator('input[name="did"]').fill('fixture-user.test');
     
-    // Should either redirect to home or return a specific status code
-    expect(response.status()).toBeLessThan(500); // Should not be a server error
+    // Submit the form to start OAuth flow
+    await page.locator('button:has-text("Connect with Bluesky")').click();
+    
+    // With fixtures, this should complete the auth flow and redirect to the callback
+    await page.waitForURL(/\/oauth\/bsky\/callback/);
+    
+    // After callback processing, we should land on the profile page
+    await page.waitForURL('/me');
+    
+    // Verify we're logged in by checking for profile elements
+    await expect(page.locator('h1, h2').filter({ hasText: /Your Profile|Profile/i })).toBeVisible();
+    await expect(page.locator('text=Bluesky Account')).toBeVisible();
+  });
+  
+  test('logout works when user is logged in', async ({ page, mockAuthenticatedUser }) => {
+    test.skip(!process.env.USE_FIXTURES, 'This test only runs when fixtures are enabled');
+    
+    // Set up mock authentication
+    await mockAuthenticatedUser(page);
+    
+    // Look for and click the logout link
+    const logoutLink = page.locator('a:has-text("Logout")');
+    await expect(logoutLink).toBeVisible();
+    
+    // Click the logout link
+    await logoutLink.click();
+    
+    // Should be redirected to home page
+    await page.waitForURL('/');
+    
+    // Verify we're logged out by checking for login link
+    await expect(page.locator('a:has-text("Login")')).toBeVisible();
   });
 });
