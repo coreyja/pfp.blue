@@ -12,6 +12,7 @@
 - Run database migrations: `sqlx migrate run`
 - Create migration: `sqlx migrate add --source migrations <migration_name>`
 - Recreate DB from scratch: `cargo sqlx db drop -y && cargo sqlx db create && cargo sqlx migrate run`
+- Run all CI checks locally: `./scripts/local-ci.sh` (run this before committing/pushing)
 
 ## Background Jobs
 
@@ -133,3 +134,22 @@ Key components:
 - `User` - Represents a user in the system
 
 OAuth flow creates `OAuthSession`, which leads to `OAuthTokenSet`, which can be associated with `User`. A `Session` is created for the user when they authenticate.
+
+## CI/CD and Quality Checks
+
+Before committing or pushing code, run the local CI checks to ensure your changes will pass in the GitHub Actions workflow:
+
+```
+./scripts/local-ci.sh
+```
+
+This script runs the following checks:
+1. Verifies PostgreSQL is running
+2. Prepares the test database with migrations
+3. Verifies SQLx prepared queries are up-to-date (`cargo sqlx prepare --workspace --check`)
+4. Checks code formatting (`cargo fmt --all --check`)
+5. Runs clippy lints (`cargo clippy --all-targets --workspace`)
+6. Runs all tests (`cargo test --all-targets`)
+7. If installed, runs cargo-deny to check for prohibited dependencies (`cargo-deny check bans`)
+
+If any of these checks fail, the script will stop and show the error. Fix the issues before committing your changes.
