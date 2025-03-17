@@ -618,21 +618,21 @@ mod tests {
         // Test fraction format
         let result = extract_progress_from_handle("user.bsky.app 3/4");
         assert_eq!(result, Some((3.0, 4.0)));
-        
+
         let result = extract_progress_from_handle("42/100 progress");
         assert_eq!(result, Some((42.0, 100.0)));
-        
+
         // Test percentage format
         let result = extract_progress_from_handle("user.bsky.app 75%");
         assert_eq!(result, Some((75.0, 100.0)));
-        
+
         let result = extract_progress_from_handle("33.5% complete");
         assert_eq!(result, Some((33.5, 100.0)));
-        
+
         // Test invalid inputs
         let result = extract_progress_from_handle("user.bsky.app");
         assert_eq!(result, None);
-        
+
         let result = extract_progress_from_handle("0/0"); // Division by zero
         assert_eq!(result, None);
     }
@@ -644,10 +644,10 @@ pub async fn generate_progress_image(
     progress: f64,
 ) -> cja::Result<Vec<u8>> {
     use color_eyre::eyre::eyre;
-    use image::{ImageFormat, RgbaImage, Rgba};
+    use image::{ImageFormat, Rgba, RgbaImage};
     use imageproc::drawing::draw_filled_circle_mut;
-    use std::io::Cursor;
     use std::f64::consts::PI;
+    use std::io::Cursor;
 
     debug!("Generating progress image");
 
@@ -660,7 +660,7 @@ pub async fn generate_progress_image(
     // Get dimensions of the original image
     let width = original_img.width();
     let height = original_img.height();
-    
+
     debug!("Original image dimensions: {}x{}", width, height);
 
     // Use a high-resolution intermediate image for better quality
@@ -668,34 +668,40 @@ pub async fn generate_progress_image(
     let scale_factor = 4;
     let large_width = width * scale_factor;
     let large_height = height * scale_factor;
-    
+
     // Create a high-res version of the original image
     let large_img = original_img.resize_exact(
-        large_width, 
-        large_height, 
-        image::imageops::FilterType::Lanczos3
+        large_width,
+        large_height,
+        image::imageops::FilterType::Lanczos3,
     );
-    
+
     // Create a separate mask buffer at high resolution
     let mut mask = RgbaImage::new(large_width, large_height);
-    
+
     // Center coordinates for the high-res image
     let center_x = large_width as f32 / 2.0;
     let center_y = large_height as f32 / 2.0;
-    
+
     // Define the circle properties (scaled up)
     let outer_radius = ((width.min(height) as f32 / 2.0) - 10.0) * scale_factor as f32;
     let inner_radius = outer_radius - (10.0 * scale_factor as f32); // Line width of 10px
     let white_color = Rgba([255, 255, 255, 255]);
-    
-    debug!("Drawing circle with radius {} - {}", inner_radius, outer_radius);
-    
+
+    debug!(
+        "Drawing circle with radius {} - {}",
+        inner_radius, outer_radius
+    );
+
     // Our goal is to draw the arc starting from top (12 o'clock) and moving clockwise
     // First, determine the full angle we'll draw based on progress (0.0-1.0)
     let progress_angle = (2.0 * PI * progress) as f32;
-    
-    debug!("Progress: {}, Progress angle: {} radians", progress, progress_angle);
-    
+
+    debug!(
+        "Progress: {}, Progress angle: {} radians",
+        progress, progress_angle
+    );
+
     // Draw a filled arc by checking each pixel in the bounding box
     for y in 0..large_height {
         for x in 0..large_width {
@@ -703,12 +709,12 @@ pub async fn generate_progress_image(
             let dx = x as f32 - center_x;
             let dy = y as f32 - center_y;
             let distance = (dx * dx + dy * dy).sqrt();
-            
+
             // Only consider pixels in the ring area
             if distance >= inner_radius && distance <= outer_radius {
                 // To determine if a pixel should be drawn, we need to find its angle
                 // relative to the center, and see if it's within our progress arc
-                
+
                 // atan2(y,x) gives angles in this configuration:
                 // - Range: -π to π
                 // - 0: east (right)
@@ -716,46 +722,46 @@ pub async fn generate_progress_image(
                 //   but in screen coordinates, y increases downward, so π/2 is actually down (south)
                 // - π or -π: west (left)
                 // - -π/2: south (down) - but in screen coordinates this is north/up
-                
+
                 // For screen coordinates with (0,0) at top-left:
                 // - negative y is upward
                 // - positive y is downward
                 // So we need to flip the y for proper atan2 calculation
                 let raw_angle = (-dy).atan2(dx); // Negate y to convert to math coordinates
-                
+
                 // Now raw_angle follows standard math conventions:
                 // - 0: east (right/3 o'clock)
                 // - π/2: north (up/12 o'clock)
                 // - π or -π: west (left/9 o'clock)
                 // - -π/2: south (down/6 o'clock)
-                
+
                 // Convert to 0 to 2π range
                 let positive_angle = if raw_angle < 0.0 {
                     raw_angle + (2.0 * PI) as f32
                 } else {
                     raw_angle
                 };
-                
+
                 // To make 0 degrees at top (12 o'clock) and go clockwise:
                 // 1. Subtract π/2 to place 0 at 12 o'clock (rotate left by 90°)
                 // 2. Flip the direction by subtracting from 2π (to go clockwise)
-                
+
                 // Step 1: Rotate to make top 0° (subtract π/2)
                 let top_centered = if positive_angle >= (PI / 2.0) as f32 {
                     positive_angle - (PI / 2.0) as f32
                 } else {
                     positive_angle + (3.0 * PI / 2.0) as f32
                 };
-                
+
                 // Step 2: Reverse direction to go clockwise
                 let clockwise_angle = (2.0 * PI) as f32 - top_centered;
-                
+
                 // Now clockwise_angle has:
                 // - 0: top (12 o'clock)
                 // - π/2: right (3 o'clock)
                 // - π: bottom (6 o'clock)
                 // - 3π/2: left (9 o'clock)
-                
+
                 // Draw pixel if its angle is within our progress arc (0 to progress_angle)
                 if clockwise_angle <= progress_angle {
                     mask.put_pixel(x, y, white_color);
@@ -763,9 +769,9 @@ pub async fn generate_progress_image(
             }
         }
     }
-    
+
     debug!("Drew progress arc mask");
-    
+
     // Add a filled circle at the end of the progress arc
     if progress > 0.0 {
         // In our current system:
@@ -773,48 +779,48 @@ pub async fn generate_progress_image(
         // - π/2: right (3 o'clock)
         // - π: bottom (6 o'clock)
         // - 3π/2: left (9 o'clock)
-        
+
         // For standard trigonometry:
         // - 0: right (3 o'clock)
         // - π/2: up (12 o'clock)
         // - π: left (9 o'clock)
         // - 3π/2: down (6 o'clock)
-        
+
         // Convert our clockwise-from-top angle to standard angle
         // 1. Reverse direction: 2π - angle
         // 2. Rotate 90° counterclockwise: + π/2
         // 3. Normalize to 0-2π range
-        
+
         // For Step 1: We already have our angle in clockwise-from-top format
         let clockwise_angle = progress_angle;
-        
+
         // Step 2: Convert to counterclockwise-from-right (standard trig)
         // This is a two-step process:
         // a. Reverse direction (2π - angle)
         // b. Rotate 90° counterclockwise (add π/2)
         let reversed = (2.0 * PI) as f32 - clockwise_angle;
         let standard_angle = reversed + (PI / 2.0) as f32;
-        
+
         // Step 3: Normalize to 0-2π range
         let normalized_angle = if standard_angle >= (2.0 * PI) as f32 {
             standard_angle - (2.0 * PI) as f32
         } else {
             standard_angle
         };
-        
+
         // Use standard cos/sin with our normalized angle
         let end_x = center_x + outer_radius * normalized_angle.cos();
         let end_y = center_y + outer_radius * normalized_angle.sin();
-        
+
         let circle_radius = (5.0 * scale_factor as f32) as i32;
-        
+
         draw_filled_circle_mut(
             &mut mask,
             (end_x as i32, end_y as i32),
             circle_radius,
             white_color,
         );
-        
+
         debug!("Added end cap to progress arc");
     }
 
@@ -823,21 +829,21 @@ pub async fn generate_progress_image(
     for y in 0..large_height {
         for x in 0..large_width {
             let mask_pixel = mask.get_pixel(x, y);
-            
+
             // If mask pixel is white, set the result pixel to white
             if mask_pixel[3] > 0 {
                 large_result.put_pixel(x, y, white_color);
             }
         }
     }
-    
+
     // Resize back to original dimensions with high-quality downsampling
     let final_img = image::DynamicImage::ImageRgba8(large_result).resize_exact(
-        width, 
-        height, 
-        image::imageops::FilterType::Lanczos3
+        width,
+        height,
+        image::imageops::FilterType::Lanczos3,
     );
-    
+
     // Convert the final image to bytes
     let mut buffer = Vec::new();
     let mut cursor = Cursor::new(&mut buffer);
