@@ -644,8 +644,10 @@ pub async fn generate_progress_image(
     progress: f64,
 ) -> cja::Result<Vec<u8>> {
     use color_eyre::eyre::eyre;
-    use image::{ImageFormat, Rgba};
-    use imageproc::drawing::{draw_filled_circle_mut, draw_line_segment_mut};
+    use image::{ImageFormat, RgbaImage, Rgba};
+    use imageproc::drawing::draw_filled_circle_mut;
+    use imageproc::drawing::draw_antialiased_line_segment_mut;
+    use imageproc::pixelops::interpolate;
     use std::io::Cursor;
     use std::f64::consts::PI;
 
@@ -665,33 +667,46 @@ pub async fn generate_progress_image(
     };
 
     // Load the original image
-    let img = match image::load_from_memory(original_image_data) {
+    let original_img = match image::load_from_memory(original_image_data) {
         Ok(img) => img,
         Err(err) => return Err(eyre!("Failed to load image: {}", err)),
     };
 
-    // Convert to RGBA if it's not already
-    let mut img = img.to_rgba8();
-
-    // Get dimensions
-    let width = img.width();
-    let height = img.height();
+    // Get dimensions of the original image
+    let width = original_img.width();
+    let height = original_img.height();
     let size = width.min(height);
 
     debug!("Image dimensions: {}x{} Size: {}", width, height, size);
 
-    // Center coordinates
-    let center_x = width as f32 / 2.0;
-    let center_y = height as f32 / 2.0;
+    // For higher quality rendering, we'll create a larger image and then scale down
+    let scale_factor = 2.0;
+    let large_width = (width as f32 * scale_factor) as u32;
+    let large_height = (height as f32 * scale_factor) as u32;
+    
+    // Create a high-resolution version of the image
+    let large_img = original_img.resize_exact(
+        large_width, 
+        large_height, 
+        image::imageops::FilterType::Lanczos3
+    );
+    let mut large_img = large_img.to_rgba8();
+
+    // Create a separate buffer for the arc
+    let mut arc_buffer = RgbaImage::new(large_width, large_height);
+
+    // Center coordinates for the high-res image
+    let center_x = large_width as f32 / 2.0;
+    let center_y = large_height as f32 / 2.0;
 
     // Radius of the progress circle (slightly smaller than the image)
-    let radius = (size as f32 / 2.0) - 10.0;
+    let radius = (large_width.min(large_height) as f32 / 2.0) - (20.0 * scale_factor);
 
     debug!("Radius: {}", radius);
 
-    // Progress arc style
-    let line_width = 8.0; // Width of the progress arc
-    let white_color = Rgba([255, 255, 255, 255]); // White color for the arc
+    // Progress arc style - thinner, cleaner line for the high-res version
+    let white_color = Rgba([255, 255, 255, 255]); // Pure white color for the arc
+    let semi_trans_white = Rgba([255, 255, 255, 220]); // Slightly transparent white for anti-aliasing
 
     // Calculate progress
     let max_angle = 2.0 * PI * progress; // Full circle is 2π radians
@@ -700,59 +715,107 @@ pub async fn generate_progress_image(
     let start_angle = -PI / 2.0;
     
     // Draw the progress arc as a semi-circle going clockwise
-    // We'll approximate the arc using many small line segments
-    let num_segments = 180; // Number of line segments to use for the arc
+    // Use more segments for smoother curve in the high-res version
+    let num_segments = 360; // Use more segments for high-res image
     
     // Only draw up to the progress point
     let segments_to_draw = (num_segments as f64 * progress).ceil() as usize;
     
     debug!("Drawing progress arc with {} segments", segments_to_draw);
     
-    // We'll draw the arc by connecting many small line segments
-    for i in 0..segments_to_draw {
-        let angle1 = start_angle + (i as f64 * 2.0 * PI / num_segments as f64);
-        let angle2 = start_angle + ((i + 1) as f64 * 2.0 * PI / num_segments as f64);
+    // Track previous points to draw anti-aliased lines between them
+    let mut prev_x = (center_x + radius * start_angle.cos() as f32) as i32;
+    let mut prev_y = (center_y + radius * start_angle.sin() as f32) as i32;
+    
+    // We'll draw the arc by connecting many small anti-aliased line segments
+    for i in 1..=segments_to_draw {
+        let angle = start_angle + (i as f64 * 2.0 * PI / num_segments as f64);
         
-        // Draw a thick line segment by drawing multiple offset lines
-        for offset in 0..line_width as i32 {
-            let offset_f = offset as f32 - (line_width / 2.0);
-            let inner_radius = radius + offset_f;
+        let x = (center_x + radius * angle.cos() as f32) as i32;
+        let y = (center_y + radius * angle.sin() as f32) as i32;
+        
+        // Draw an anti-aliased line from previous point to current point
+        draw_antialiased_line_segment_mut(
+            &mut arc_buffer,
+            (prev_x, prev_y),
+            (x, y),
+            white_color,
+            |a, b, c| interpolate(a, b, c),
+        );
+        
+        // Update previous point
+        prev_x = x;
+        prev_y = y;
+    }
+    
+    debug!("Drew anti-aliased progress arc");
+    
+    // Now thicken the line with a blur effect for a cleaner look
+    let line_width = (6.0 * scale_factor) as u32;
+    let blur_radius = line_width / 2;
+    let blurred_arc = imageproc::filter::gaussian_blur_f32(&arc_buffer, blur_radius as f32 / 2.0);
+    
+    // Create the final blended image by compositing the blurred arc onto the original
+    for y in 0..large_height {
+        for x in 0..large_width {
+            let arc_pixel = blurred_arc.get_pixel(x, y);
             
-            let inner_x1 = center_x + inner_radius * angle1.cos() as f32;
-            let inner_y1 = center_y + inner_radius * angle1.sin() as f32;
-            let inner_x2 = center_x + inner_radius * angle2.cos() as f32;
-            let inner_y2 = center_y + inner_radius * angle2.sin() as f32;
-            
-            draw_line_segment_mut(
-                &mut img,
-                (inner_x1, inner_y1),
-                (inner_x2, inner_y2),
-                white_color,
-            );
+            // Only apply pixels that aren't fully transparent
+            if arc_pixel[3] > 0 {
+                let mut dest_pixel = *large_img.get_pixel(x, y);
+                
+                // Apply the arc pixel with a slight glow effect
+                // This makes the white border pop against any background
+                dest_pixel[0] = ((dest_pixel[0] as u16 * (255 - arc_pixel[3] as u16) + 
+                                  255 * arc_pixel[3] as u16) / 255) as u8;
+                dest_pixel[1] = ((dest_pixel[1] as u16 * (255 - arc_pixel[3] as u16) + 
+                                  255 * arc_pixel[3] as u16) / 255) as u8;
+                dest_pixel[2] = ((dest_pixel[2] as u16 * (255 - arc_pixel[3] as u16) + 
+                                  255 * arc_pixel[3] as u16) / 255) as u8;
+                
+                large_img.put_pixel(x, y, dest_pixel);
+            }
         }
     }
-
-    debug!("Drew progress arc");
-
-    // Add a small circle at the end of the progress arc to make it look nicer
+    
+    // Add a small filled circle at the end of the progress arc
     let end_angle = start_angle + max_angle;
     let end_x = center_x + radius * end_angle.cos() as f32;
     let end_y = center_y + radius * end_angle.sin() as f32;
     
+    let circle_radius = (line_width / 2) as i32;
+    
+    // Draw a slightly larger filled circle for the glow effect
     draw_filled_circle_mut(
-        &mut img,
+        &mut large_img,
         (end_x as i32, end_y as i32),
-        (line_width / 2.0) as i32,
+        circle_radius,
+        semi_trans_white,
+    );
+    
+    // Then draw a smaller, solid white circle on top
+    draw_filled_circle_mut(
+        &mut large_img,
+        (end_x as i32, end_y as i32),
+        circle_radius - 1,
         white_color,
     );
-
+    
     debug!("Added end cap to progress arc");
+    
+    // Resize back to the original dimensions with high-quality downsampling
+    let final_img = image::imageops::resize(
+        &large_img, 
+        width, 
+        height, 
+        image::imageops::FilterType::Lanczos3
+    );
 
     // Convert the image back to bytes
     // Always save as PNG for consistency
     let mut buffer = Vec::new();
     let mut cursor = Cursor::new(&mut buffer);
-    match img.write_to(&mut cursor, ImageFormat::Png) {
+    match final_img.write_to(&mut cursor, ImageFormat::Png) {
         Ok(_) => Ok(buffer),
         Err(err) => Err(eyre!("Failed to encode image: {}", err)),
     }
