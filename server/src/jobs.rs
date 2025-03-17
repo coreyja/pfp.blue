@@ -616,11 +616,9 @@ async fn generate_progress_image(
 ) -> cja::Result<Vec<u8>> {
     use color_eyre::eyre::eyre;
     use image::{ImageFormat, Rgba};
-    use imageproc::drawing::{
-        draw_filled_circle_mut, draw_filled_rect_mut, draw_hollow_circle_mut,
-    };
-    use imageproc::rect::Rect;
+    use imageproc::drawing::{draw_filled_circle_mut, draw_line_segment_mut};
     use std::io::Cursor;
+    use std::f64::consts::PI;
 
     debug!("Generating progress image");
 
@@ -654,70 +652,72 @@ async fn generate_progress_image(
     debug!("Image dimensions: {}x{} Size: {}", width, height, size);
 
     // Center coordinates
-    let center_x = width / 2;
-    let center_y = height / 2;
+    let center_x = width as f32 / 2.0;
+    let center_y = height as f32 / 2.0;
 
     // Radius of the progress circle (slightly smaller than the image)
-    let radius = (size / 2) as i32 - 10;
+    let radius = (size as f32 / 2.0) - 10.0;
 
     debug!("Radius: {}", radius);
 
-    // Progress bar style
-    let bar_width = 10;
-    let bar_color = Rgba([52, 152, 219, 200]); // Semi-transparent blue
-    let bg_color = Rgba([0, 0, 0, 100]); // Semi-transparent black
-    let outline_color = Rgba([255, 255, 255, 170]); // Semi-transparent white
+    // Progress arc style
+    let line_width = 8.0; // Width of the progress arc
+    let white_color = Rgba([255, 255, 255, 255]); // White color for the arc
 
-    // Add a semi-transparent overlay at the bottom for text
-    let overlay_height = 30;
-    let bottom_rect = Rect::at(0, (height - overlay_height) as i32).of_size(width, overlay_height);
-    draw_filled_rect_mut(&mut img, bottom_rect, Rgba([0, 0, 0, 150]));
-
-    debug!("Drew overlay for text");
-
-    // Starting angle is -90 degrees (top center)
-    let start_angle = -90.0_f64.to_radians();
-
-    // Draw background circle first (full 360 degrees)
-    for angle_deg in 0..360 {
-        let angle = (angle_deg as f64).to_radians();
-        let x = center_x as f32 + (radius as f32 * angle.cos() as f32);
-        let y = center_y as f32 + (radius as f32 * angle.sin() as f32);
-
-        draw_filled_circle_mut(&mut img, (x as i32, y as i32), bar_width / 2, bg_color);
-    }
-
-    debug!("Drew background circle");
-
-    // Draw the progress arc
-    for angle_deg in 0..=(progress * 360.0) as i32 {
-        let angle = start_angle + (angle_deg as f64).to_radians();
-        let x = center_x as f32 + (radius as f32 * angle.cos() as f32);
-        let y = center_y as f32 + (radius as f32 * angle.sin() as f32);
-
-        draw_filled_circle_mut(&mut img, (x as i32, y as i32), bar_width / 2, bar_color);
+    // Calculate progress
+    let max_angle = 2.0 * PI * progress; // Full circle is 2π radians
+    
+    // Starting angle is at the top (π * 3/2 or -π/2 radians)
+    let start_angle = -PI / 2.0;
+    
+    // Draw the progress arc as a semi-circle going clockwise
+    // We'll approximate the arc using many small line segments
+    let num_segments = 180; // Number of line segments to use for the arc
+    
+    // Only draw up to the progress point
+    let segments_to_draw = (num_segments as f64 * progress).ceil() as usize;
+    
+    debug!("Drawing progress arc with {} segments", segments_to_draw);
+    
+    // We'll draw the arc by connecting many small line segments
+    for i in 0..segments_to_draw {
+        let angle1 = start_angle + (i as f64 * 2.0 * PI / num_segments as f64);
+        let angle2 = start_angle + ((i + 1) as f64 * 2.0 * PI / num_segments as f64);
+        
+        // Draw a thick line segment by drawing multiple offset lines
+        for offset in 0..line_width as i32 {
+            let offset_f = offset as f32 - (line_width / 2.0);
+            let inner_radius = radius + offset_f;
+            
+            let inner_x1 = center_x + inner_radius * angle1.cos() as f32;
+            let inner_y1 = center_y + inner_radius * angle1.sin() as f32;
+            let inner_x2 = center_x + inner_radius * angle2.cos() as f32;
+            let inner_y2 = center_y + inner_radius * angle2.sin() as f32;
+            
+            draw_line_segment_mut(
+                &mut img,
+                (inner_x1, inner_y1),
+                (inner_x2, inner_y2),
+                white_color,
+            );
+        }
     }
 
     debug!("Drew progress arc");
 
-    // Draw outline circle
-    draw_hollow_circle_mut(
+    // Add a small circle at the end of the progress arc to make it look nicer
+    let end_angle = start_angle + max_angle;
+    let end_x = center_x + radius * end_angle.cos() as f32;
+    let end_y = center_y + radius * end_angle.sin() as f32;
+    
+    draw_filled_circle_mut(
         &mut img,
-        (center_x as i32, center_y as i32),
-        radius,
-        outline_color,
+        (end_x as i32, end_y as i32),
+        (line_width / 2.0) as i32,
+        white_color,
     );
 
-    debug!("Drew outline circle");
-
-    // Add a progress bar at the bottom
-    let indicator_width = (width as f64 * progress) as u32;
-    debug!("Indicator width: {}", indicator_width);
-    let indicator_rect = Rect::at(0, (height - 5) as i32).of_size(indicator_width, 5);
-    debug!("Indicator rect: {:?}", indicator_rect);
-    draw_filled_rect_mut(&mut img, indicator_rect, bar_color);
-
-    debug!("Drew progress bar");
+    debug!("Added end cap to progress arc");
 
     // Convert the image back to bytes
     // Always save as PNG for consistency
