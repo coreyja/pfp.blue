@@ -609,8 +609,37 @@ fn extract_progress_from_handle(handle: &str) -> Option<(f64, f64)> {
     None
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_progress_from_handle() {
+        // Test fraction format
+        let result = extract_progress_from_handle("user.bsky.app 3/4");
+        assert_eq!(result, Some((3.0, 4.0)));
+        
+        let result = extract_progress_from_handle("42/100 progress");
+        assert_eq!(result, Some((42.0, 100.0)));
+        
+        // Test percentage format
+        let result = extract_progress_from_handle("user.bsky.app 75%");
+        assert_eq!(result, Some((75.0, 100.0)));
+        
+        let result = extract_progress_from_handle("33.5% complete");
+        assert_eq!(result, Some((33.5, 100.0)));
+        
+        // Test invalid inputs
+        let result = extract_progress_from_handle("user.bsky.app");
+        assert_eq!(result, None);
+        
+        let result = extract_progress_from_handle("0/0"); // Division by zero
+        assert_eq!(result, None);
+    }
+}
+
 /// Generate a new profile picture with progress visualization
-async fn generate_progress_image(
+pub async fn generate_progress_image(
     original_image_data: &[u8],
     progress: f64,
 ) -> cja::Result<Vec<u8>> {
