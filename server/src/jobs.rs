@@ -644,146 +644,136 @@ pub async fn generate_progress_image(
     progress: f64,
 ) -> cja::Result<Vec<u8>> {
     use color_eyre::eyre::eyre;
-    use image::{ImageFormat, Rgba};
-    use imageproc::drawing::{draw_filled_circle_mut, draw_line_segment_mut};
+    use image::{ImageFormat, RgbaImage, Rgba};
+    use imageproc::drawing::draw_filled_circle_mut;
     use std::io::Cursor;
     use std::f64::consts::PI;
 
     debug!("Generating progress image");
 
     // Load the original image
-    let img = match image::load_from_memory(original_image_data) {
+    let original_img = match image::load_from_memory(original_image_data) {
         Ok(img) => img,
         Err(err) => return Err(eyre!("Failed to load image: {}", err)),
     };
 
-    // Convert to RGBA if it's not already
-    let mut img = img.to_rgba8();
-
-    // Get dimensions
-    let width = img.width();
-    let height = img.height();
+    // Get dimensions of the original image
+    let width = original_img.width();
+    let height = original_img.height();
     
-    debug!("Image dimensions: {}x{}", width, height);
+    debug!("Original image dimensions: {}x{}", width, height);
 
-    // Center coordinates
-    let center_x = width as f32 / 2.0;
-    let center_y = height as f32 / 2.0;
-
-    // Radius of the progress circle (slightly smaller than the image)
-    let radius = (width.min(height) as f32 / 2.0) - 10.0;
-
-    debug!("Radius: {}", radius);
-
-    // Progress arc style
-    let line_width = 10.0; // Width of the progress arc
-    let white_color = Rgba([255, 255, 255, 255]); // Pure white color for the arc
-
-    // Calculate progress
-    let max_angle = 2.0 * PI * progress; // Full circle is 2π radians
+    // Use a high-resolution intermediate image for better quality
+    // Scale factor of 4 gives very smooth circles
+    let scale_factor = 4;
+    let large_width = width * scale_factor;
+    let large_height = height * scale_factor;
     
-    // Starting angle is at the top (π * 3/2 or -π/2 radians)
-    let start_angle = -PI / 2.0;
+    // Create a high-res version of the original image
+    let large_img = original_img.resize_exact(
+        large_width, 
+        large_height, 
+        image::imageops::FilterType::Lanczos3
+    );
     
-    // Draw the progress arc as a semi-circle going clockwise
-    let num_segments = 360; // Number of line segments to use for the arc
+    // Create a separate mask buffer at high resolution
+    let mut mask = RgbaImage::new(large_width, large_height);
     
-    // Only draw up to the progress point
-    let segments_to_draw = (num_segments as f64 * progress).ceil() as usize;
+    // Center coordinates for the high-res image
+    let center_x = large_width as f32 / 2.0;
+    let center_y = large_height as f32 / 2.0;
     
-    debug!("Drawing progress arc with {} segments", segments_to_draw);
+    // Define the circle properties (scaled up)
+    let outer_radius = ((width.min(height) as f32 / 2.0) - 10.0) * scale_factor as f32;
+    let inner_radius = outer_radius - (10.0 * scale_factor as f32); // Line width of 10px
+    let white_color = Rgba([255, 255, 255, 255]);
     
-    // Draw the arc by connecting many small line segments
-    for i in 0..segments_to_draw {
-        let angle1 = start_angle + (i as f64 * 2.0 * PI / num_segments as f64);
-        let angle2 = start_angle + ((i + 1) as f64 * 2.0 * PI / num_segments as f64);
-        
-        // Calculate outer and inner points to draw a thick line
-        let outer_radius = radius + line_width / 2.0;
-        let inner_radius = radius - line_width / 2.0;
-        
-        // Calculate points on the arc
-        let outer_x1 = center_x + outer_radius * angle1.cos() as f32;
-        let outer_y1 = center_y + outer_radius * angle1.sin() as f32;
-        let outer_x2 = center_x + outer_radius * angle2.cos() as f32;
-        let outer_y2 = center_y + outer_radius * angle2.sin() as f32;
-        
-        let inner_x1 = center_x + inner_radius * angle1.cos() as f32;
-        let inner_y1 = center_y + inner_radius * angle1.sin() as f32;
-        let inner_x2 = center_x + inner_radius * angle2.cos() as f32;
-        let inner_y2 = center_y + inner_radius * angle2.sin() as f32;
-        
-        // Draw the outer edge of the arc
-        draw_line_segment_mut(
-            &mut img,
-            (outer_x1, outer_y1),
-            (outer_x2, outer_y2),
-            white_color,
-        );
-        
-        // Draw the inner edge of the arc
-        draw_line_segment_mut(
-            &mut img,
-            (inner_x1, inner_y1),
-            (inner_x2, inner_y2),
-            white_color,
-        );
-        
-        // Draw radial lines to connect inner and outer points
-        draw_line_segment_mut(
-            &mut img,
-            (outer_x1, outer_y1),
-            (inner_x1, inner_y1),
-            white_color,
-        );
-        
-        draw_line_segment_mut(
-            &mut img,
-            (outer_x2, outer_y2),
-            (inner_x2, inner_y2),
-            white_color,
-        );
-        
-        // Fill in the area between the lines
-        for j in 0..=10 {
-            let t = j as f32 / 10.0;
-            let fill_x1 = outer_x1 * (1.0 - t) + inner_x1 * t;
-            let fill_y1 = outer_y1 * (1.0 - t) + inner_y1 * t;
-            let fill_x2 = outer_x2 * (1.0 - t) + inner_x2 * t;
-            let fill_y2 = outer_y2 * (1.0 - t) + inner_y2 * t;
+    debug!("Drawing circle with radius {} - {}", inner_radius, outer_radius);
+    
+    // Calculate the maximum angle based on progress
+    let max_angle = (2.0 * PI * progress) as f32; // Full circle is 2π radians
+    let start_angle = (-PI / 2.0) as f32; // Start at the top (-90 degrees)
+    
+    // Draw a filled arc by checking each pixel in the bounding box
+    for y in 0..large_height {
+        for x in 0..large_width {
+            // Calculate the distance from center and angle
+            let dx = x as f32 - center_x;
+            let dy = y as f32 - center_y;
+            let distance = (dx * dx + dy * dy).sqrt();
             
-            draw_line_segment_mut(
-                &mut img,
-                (fill_x1, fill_y1),
-                (fill_x2, fill_y2),
-                white_color,
-            );
+            // Only consider pixels in the ring area
+            if distance >= inner_radius && distance <= outer_radius {
+                // Calculate the angle of this pixel
+                let angle = dy.atan2(dx);
+                
+                // Normalize angle to 0..2π range
+                let normalized_angle = if angle < 0.0 {
+                    angle + (2.0 * PI) as f32
+                } else {
+                    angle
+                };
+                
+                // Calculate the angle relative to the start angle
+                let relative_angle = normalized_angle - start_angle;
+                let wrapped_angle = if relative_angle < 0.0 {
+                    relative_angle + (2.0 * PI) as f32
+                } else {
+                    relative_angle
+                };
+                
+                // Draw pixel if it's within the progress arc
+                if wrapped_angle <= max_angle {
+                    mask.put_pixel(x, y, white_color);
+                }
+            }
         }
     }
-
-    debug!("Drew progress arc");
-
+    
+    debug!("Drew progress arc mask");
+    
     // Add a filled circle at the end of the progress arc
     if progress > 0.0 {
         let end_angle = start_angle + max_angle;
-        let end_x = center_x + radius * end_angle.cos() as f32;
-        let end_y = center_y + radius * end_angle.sin() as f32;
+        let end_x = center_x + outer_radius * end_angle.cos() as f32;
+        let end_y = center_y + outer_radius * end_angle.sin() as f32;
+        
+        let circle_radius = (5.0 * scale_factor as f32) as i32;
         
         draw_filled_circle_mut(
-            &mut img,
+            &mut mask,
             (end_x as i32, end_y as i32),
-            (line_width / 2.0) as i32,
+            circle_radius,
             white_color,
         );
         
         debug!("Added end cap to progress arc");
     }
 
-    // Convert the image back to bytes
-    // Always save as PNG for consistency
+    // Overlay the mask onto the original high-res image
+    let mut large_result = large_img.to_rgba8();
+    for y in 0..large_height {
+        for x in 0..large_width {
+            let mask_pixel = mask.get_pixel(x, y);
+            
+            // If mask pixel is white, set the result pixel to white
+            if mask_pixel[3] > 0 {
+                large_result.put_pixel(x, y, white_color);
+            }
+        }
+    }
+    
+    // Resize back to original dimensions with high-quality downsampling
+    let final_img = image::DynamicImage::ImageRgba8(large_result).resize_exact(
+        width, 
+        height, 
+        image::imageops::FilterType::Lanczos3
+    );
+    
+    // Convert the final image to bytes
     let mut buffer = Vec::new();
     let mut cursor = Cursor::new(&mut buffer);
-    match img.write_to(&mut cursor, ImageFormat::Png) {
+    match final_img.write_to(&mut cursor, ImageFormat::Png) {
         Ok(_) => Ok(buffer),
         Err(err) => Err(eyre!("Failed to encode image: {}", err)),
     }
