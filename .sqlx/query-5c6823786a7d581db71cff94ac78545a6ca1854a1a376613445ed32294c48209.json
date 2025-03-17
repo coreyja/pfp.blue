@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE profile_picture_progress\n            SET original_blob_cid = $1, updated_at_utc = NOW()\n            WHERE id = $2\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5c6823786a7d581db71cff94ac78545a6ca1854a1a376613445ed32294c48209"
+}

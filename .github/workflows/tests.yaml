@@ -1,0 +1,141 @@
+name: Tests
+
+on:
+  workflow_call:
+  pull_request:
+
+jobs:
+  playwright:
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      SQLX_OFFLINE: 1
+      OAUTH_CLIENT_SECRET: "f0ab19e292db6b56c49f821fe29ba479310e9b103e33fb70bcf9bc648191d858"
+      OAUTH_PRIVATE_KEY: LS0tLS1CRUdJTiBFQyBQUklWQVRFIEtFWS0tLS0tCk1IY0NBUUVFSUlTTEEyblFkbDlUK2YzQU56WEpiRjhRYzMzY3puUkd4alVrY0lGaHhPZllvQW9HQ0NxR1NNNDkKQXdFSG9VUURRZ0FFcmp3RTR3aFpQOUl5MXphWURrRFBRdmtzOU9TOVVhOTFqUW1aMk1KRzNzZysvU29oK2tSQgpKaUp0YTFaM0RNMks0UjFCR0VmUkliNUN1bkdzSG51d2R3PT0KLS0tLS1FTkQgRUMgUFJJVkFURSBLRVktLS0tLQo=
+      OAUTH_PUBLIC_KEY: LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0KTUZrd0V3WUhLb1pJemowQ0FRWUlLb1pJemowREFRY0RRZ0FFcmp3RTR3aFpQOUl5MXphWURrRFBRdmtzOU9TOQpVYTkxalFtWjJNSkczc2crL1NvaCtrUkJKaUp0YTFaM0RNMks0UjFCR0VmUkliNUN1bkdzSG51d2R3PT0KLS0tLS1FTkQgUFVCTElDIEtFWS0tLS0tCg==
+    services:
+      postgres:
+        image: postgres
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./end2end
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Install SQLx CLI
+        run: cargo install sqlx-cli --no-default-features --features rustls,postgres
+      - name: Build Server
+        run: cargo build
+      - name: Install Hivemind
+        run: |
+          curl -L https://github.com/DarthSim/hivemind/releases/download/v1.1.0/hivemind-v1.1.0-linux-amd64.gz | gunzip > hivemind
+          chmod +x hivemind
+          sudo mv hivemind /usr/local/bin/
+      - name: Prepare DB
+        run: ../scripts/prepare_test_db.sh
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: latest
+          run_install: false
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install Playwright Browsers
+        run: pnpm exec playwright install --with-deps
+      - name: Run Playwright tests
+        run: pnpm exec playwright test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 30
+  sqlx-prepare-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Install SQLx CLI
+        run: cargo install sqlx-cli --no-default-features --features rustls,postgres
+
+      - name: "Check committed `.sqlx` files. If this fails run the following locally and commit the results: `cargo sqlx prepare --workspace`"
+        run: cargo sqlx prepare --workspace --check
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Format
+        run: cargo fmt --all --check
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Clippy
+        run: cargo clippy --all-targets --workspace
+
+  tests:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      SQLX_OFFLINE: 1
+    services:
+      postgres:
+        image: postgres
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Install SQLx CLI
+        run: cargo install sqlx-cli --no-default-features --features rustls,postgres
+
+      - name: Run Migrations
+        run: ./scripts/migrate.sh
+
+      - name: Test
+        run: cargo test --all-targets
+  cargo-deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install cargo-binstall
+        run: curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
+      - name: Install cargo-deny
+        run: cargo binstall --no-confirm cargo-deny
+      - name: Cargo Deny
+        run: cargo-deny check bans

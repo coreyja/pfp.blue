@@ -1,0 +1,50 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id, token_id, enabled, original_blob_cid, created_at_utc, updated_at_utc\n            FROM profile_picture_progress\n            WHERE enabled = TRUE\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "token_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "enabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "original_blob_cid",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at_utc",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "updated_at_utc",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "e4ffc6f1979313ce47b877b7091fde857a1b9211881fc3f37f647e35129d4b48"
+}

@@ -1,0 +1,9 @@
+# E2E Testing Procfile to run all services
+
+# Fixture servers
+pds: cargo run --bin pds -- --port 3001
+plc-directory: PDS_URL=http://localhost:3001 RUST_LOG=debug cargo run --bin plc-directory -- --port 3002
+appview: AVATAR_CDN_URL=http://localhost:3003 RUST_LOG=debug cargo run --bin appview -- --port 3003
+
+# Run the main app using the fixtures
+server: DOMAIN=localhost:3000 PROTO=http PORT=3000 PLC_DIRECTORY_URL=http://localhost:3002 APPVIEW_URL=http://localhost:3003 AVATAR_CDN_URL=http://localhost:3003 USE_FIXTURES=1 PDS_URL=http://localhost:3001 RUST_LOG=debug cargo run --bin pfp-blue
