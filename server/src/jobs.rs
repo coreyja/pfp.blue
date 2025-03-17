@@ -616,7 +616,6 @@ pub async fn generate_progress_image(
 ) -> cja::Result<Vec<u8>> {
     use color_eyre::eyre::eyre;
     use image::{ImageFormat, Rgba, RgbaImage};
-    use imageproc::drawing::draw_filled_circle_mut;
     use std::f64::consts::PI;
     use std::io::Cursor;
 
@@ -743,57 +742,8 @@ pub async fn generate_progress_image(
 
     debug!("Drew progress arc mask");
 
-    // Add a filled circle at the end of the progress arc
-    if progress > 0.0 {
-        // In our current system:
-        // - 0: top (12 o'clock)
-        // - π/2: right (3 o'clock)
-        // - π: bottom (6 o'clock)
-        // - 3π/2: left (9 o'clock)
-
-        // For standard trigonometry:
-        // - 0: right (3 o'clock)
-        // - π/2: up (12 o'clock)
-        // - π: left (9 o'clock)
-        // - 3π/2: down (6 o'clock)
-
-        // Convert our clockwise-from-top angle to standard angle
-        // 1. Reverse direction: 2π - angle
-        // 2. Rotate 90° counterclockwise: + π/2
-        // 3. Normalize to 0-2π range
-
-        // For Step 1: We already have our angle in clockwise-from-top format
-        let clockwise_angle = progress_angle;
-
-        // Step 2: Convert to counterclockwise-from-right (standard trig)
-        // This is a two-step process:
-        // a. Reverse direction (2π - angle)
-        // b. Rotate 90° counterclockwise (add π/2)
-        let reversed = (2.0 * PI) as f32 - clockwise_angle;
-        let standard_angle = reversed + (PI / 2.0) as f32;
-
-        // Step 3: Normalize to 0-2π range
-        let normalized_angle = if standard_angle >= (2.0 * PI) as f32 {
-            standard_angle - (2.0 * PI) as f32
-        } else {
-            standard_angle
-        };
-
-        // Use standard cos/sin with our normalized angle
-        let end_x = center_x + outer_radius * normalized_angle.cos();
-        let end_y = center_y + outer_radius * normalized_angle.sin();
-
-        let circle_radius = (5.0 * scale_factor as f32) as i32;
-
-        draw_filled_circle_mut(
-            &mut mask,
-            (end_x as i32, end_y as i32),
-            circle_radius,
-            white_color,
-        );
-
-        debug!("Added end cap to progress arc");
-    }
+    // No dot at the end of the progress arc
+    debug!("No end cap added to progress arc");
 
     // Overlay the mask onto the original high-res image
     let mut large_result = large_img.to_rgba8();
