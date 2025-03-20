@@ -3,9 +3,6 @@
 name: Fly Deploy
 on:
   workflow_call:
-  push:
-    branches:
-      - main
 
 jobs:
   deploy:
