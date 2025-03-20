@@ -1,0 +1,20 @@
+name: CI/CD Pipeline
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  # Run tests for both pull requests and pushes to main
+  tests:
+    name: Run Tests
+    uses: ./.github/workflows/tests.yaml
+
+  # Only run deployment on pushes to main, and only after tests have passed
+  deploy:
+    name: Deploy to Fly.io
+    needs: tests
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/fly-deploy.yml
