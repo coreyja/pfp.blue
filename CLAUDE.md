@@ -71,6 +71,7 @@ Jobs are processed in the background and will retry on failure.
 - Error messages: Be descriptive and actionable
 - Error propagation: Use `?` operator, avoid unwrap/expect in production code
 - Tracing: Use tracing macros for observability (info, debug, etc.)
+- Database queries: **Always** use the `sqlx::query!` and `sqlx::query_as!` macros instead of the non-macro versions. These macros provide compile-time SQL validation and type-checking, preventing runtime SQL errors.
 
 ## Database Schema
 
