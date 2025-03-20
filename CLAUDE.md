@@ -19,6 +19,7 @@
 For background work, don't use `tokio::spawn`. Instead, use the cja job system:
 
 1. Create a new job struct that implements the `Job` trait (must also implement Default):
+
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct MyJob {
@@ -34,7 +35,7 @@ impl Job<AppState> for MyJob {
     async fn run(&self, app_state: AppState) -> cja::Result<()> {
         // Look up latest data from the database
         let entity = get_entity_by_id(&app_state.db, self.entity_id).await?;
-        
+
         // Process using the latest data from the database
         Ok(())
     }
@@ -42,39 +43,14 @@ impl Job<AppState> for MyJob {
 ```
 
 2. Add the job to the job registry in `src/jobs.rs`:
+
 ```rust
 // Add to the macro call
 cja::impl_job_registry!(AppState, NoopJob, UpdateProfileHandleJob, MyJob);
 ```
 
-3. Implement an enqueue method for the job:
-```rust
-impl MyJob {
-    /// Queue this job to run asynchronously
-    pub async fn enqueue(self, app_state: &AppState) -> cja::Result<()> {
-        // Jobs are enqueued into the database
-        let pool = &app_state.db;
-        
-        let job_data = serde_json::to_value(&self)?;
-            
-        sqlx::query(
-            r#"
-            INSERT INTO jobs (job_type, retries_remaining, data) 
-            VALUES ($1, $2, $3)
-            "#
-        )
-        .bind(Self::NAME)
-        .bind(3) // Allow up to 3 retries
-        .bind(job_data)
-        .execute(pool)
-        .await?;
-        
-        Ok(())
-    }
-}
-```
-
 4. To enqueue a job for background processing:
+
 ```rust
 MyJob { some_field: "value".to_string() }
     .enqueue(&app_state)
@@ -99,6 +75,7 @@ Jobs are processed in the background and will retry on failure.
 ## Database Schema
 
 Key tables and their primary key columns:
+
 - `users`: `id` (UUID)
 - `sessions`: `id` (UUID)
 - `oauth_tokens`: `id` (UUID) and `uuid_id` (UUID) - the latter is used for foreign keys
@@ -110,12 +87,14 @@ Key tables and their primary key columns:
 All UUID columns have the default value set to `gen_random_uuid()`.
 
 Important relationships:
+
 - `oauth_tokens.user_id` references `users.id`
 - `sessions.user_id` references `users.id`
 - `sessions.primary_token_id` references `oauth_tokens.uuid_id`
 - `profile_picture_progress.token_id` references `oauth_tokens.id`
 
 When adding new tables, ensure:
+
 1. UUID primary keys use `gen_random_uuid()` as default
 2. Foreign keys reference the correct column (check if it's `id` or a different name)
 3. Include the proper timestamps (`created_at_utc` and `updated_at_utc`)
@@ -123,11 +102,13 @@ When adding new tables, ensure:
 ## Authentication System
 
 The project uses a multi-layered authentication system:
+
 1. OAuth integration with Bluesky for authentication
 2. Session system for maintaining user state
 3. Linked accounts system where multiple Bluesky accounts can be linked to one user
 
 Key components:
+
 - `OAuthSession` - Temporary session for OAuth flow
 - `OAuthTokenSet` - Stores access tokens, refresh tokens, etc.
 - `Session` - User session after authentication
@@ -144,6 +125,7 @@ Before committing or pushing code, run the local CI checks to ensure your change
 ```
 
 This script runs the following checks:
+
 1. Verifies PostgreSQL is running
 2. Prepares the test database with migrations
 3. Verifies SQLx prepared queries are up-to-date (`cargo sqlx prepare --workspace --check`)
@@ -211,18 +193,21 @@ Options:
 ### Adding New Tests
 
 When adding a new user-facing feature:
+
 1. Create corresponding end-to-end tests in the `end2end/` directory
 2. Test both happy paths and error cases
 3. For features requiring authentication, use the authentication fixtures
 4. Make tests work with both real services and fixtures where possible
 
 The fixtures provide a test user with:
+
 - Handle: `fixture-user.test`
 - DID: `did:plc:abcdefg`
 
 ### Test Structure
 
 Current test structure:
+
 - `end2end/homepage.spec.ts` - Tests for homepage and navigation
 - `end2end/auth.spec.ts` - Tests for authentication flows
 - `end2end/profile.spec.ts` - Tests for profile management features

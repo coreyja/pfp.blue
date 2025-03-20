@@ -1266,32 +1266,30 @@ pub mod db {
         pool: &PgPool,
         user_id: uuid::Uuid,
     ) -> cja::Result<Vec<OAuthTokenSet>> {
-        let rows = sqlx::query(
+        let tokens = sqlx::query!(
             r#"
             SELECT did, access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id, handle
             FROM oauth_tokens
             WHERE user_id = $1
             ORDER BY updated_at_utc DESC
             "#,
+            user_id
         )
-        .bind(user_id)
         .fetch_all(pool)
-        .await?;
-
-        let tokens = rows
-            .into_iter()
-            .map(|row| OAuthTokenSet {
-                did: row.get("did"),
-                access_token: row.get("access_token"),
-                token_type: row.get("token_type"),
-                expires_at: row.get::<i64, _>("expires_at") as u64,
-                refresh_token: row.get("refresh_token"),
-                scope: row.get("scope"),
-                handle: row.get("handle"),
-                dpop_jkt: row.get("dpop_jkt"),
-                user_id: row.get("user_id"),
-            })
-            .collect();
+        .await?
+        .into_iter()
+        .map(|row| OAuthTokenSet {
+            did: row.did,
+            access_token: row.access_token,
+            token_type: row.token_type,
+            expires_at: row.expires_at as u64,
+            refresh_token: row.refresh_token,
+            scope: row.scope,
+            handle: row.handle,
+            dpop_jkt: row.dpop_jkt,
+            user_id: Some(row.user_id),
+        })
+        .collect();
 
         Ok(tokens)
     }
