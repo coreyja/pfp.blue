@@ -14,7 +14,6 @@ impl BlueskyOAuthConfig {
     pub fn from_env() -> cja::Result<Self> {
         let private_key = std::env::var("OAUTH_PRIVATE_KEY")?;
         let public_key = std::env::var("OAUTH_PUBLIC_KEY")?;
-        // Note: OAUTH_CLIENT_SECRET is no longer used
 
         let config = Self {
             private_key,
