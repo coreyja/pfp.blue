@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM oauth_sessions\n            WHERE created_at < $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2b96d3e6d447b2ee9eafd7ea7ada1971990b49244eadb20128a286e7cfa7ffb3"
+}

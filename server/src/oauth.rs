@@ -1073,7 +1073,7 @@ impl OAuthSession {
 /// Database functions for managing OAuth sessions and tokens
 pub mod db {
     use super::*;
-    use sqlx::{PgPool, Row};
+    use sqlx::PgPool;
     use uuid::Uuid;
 
     /// Stores a new OAuth session in the database
@@ -1087,19 +1087,19 @@ pub mod db {
             "dpop_nonce": session.dpop_nonce
         });
 
-        sqlx::query(
+        sqlx::query!(
             r#"
             INSERT INTO oauth_sessions (
                 id, session_id, did, state, token_endpoint, created_at, data
             ) VALUES (DEFAULT, $1, $2, $3, $4, $5, $6)
             "#,
+            session_id,
+            &session.did,
+            session.state.as_deref(),
+            &session.token_endpoint,
+            session.created_at as i64,
+            data
         )
-        .bind(session_id)
-        .bind(&session.did)
-        .bind(&session.state)
-        .bind(&session.token_endpoint)
-        .bind(session.created_at as i64)
-        .bind(data)
         .execute(pool)
         .await?;
 
@@ -1108,20 +1108,20 @@ pub mod db {
 
     /// Retrieves an OAuth session by session ID
     pub async fn get_session(pool: &PgPool, session_id: Uuid) -> cja::Result<Option<OAuthSession>> {
-        let row = sqlx::query(
+        let row = sqlx::query!(
             r#"
             SELECT did, state, token_endpoint, created_at, data
             FROM oauth_sessions
             WHERE session_id = $1
             "#,
+            session_id
         )
-        .bind(session_id)
         .fetch_optional(pool)
         .await?;
 
         Ok(row.map(|row| {
             // Extract PKCE data from the JSONB field
-            let data: Option<serde_json::Value> = row.get("data");
+            let data: Option<serde_json::Value> = row.data;
             let code_verifier = data
                 .as_ref()
                 .and_then(|d| d.get("code_verifier"))
@@ -1141,10 +1141,10 @@ pub mod db {
                 .map(String::from);
 
             OAuthSession {
-                did: row.get("did"),
-                state: row.get("state"),
-                token_endpoint: row.get("token_endpoint"),
-                created_at: row.get::<i64, _>("created_at") as u64,
+                did: row.did,
+                state: row.state,
+                token_endpoint: row.token_endpoint,
+                created_at: row.created_at as u64,
                 token_set: None, // Token set is retrieved separately
                 code_verifier,
                 code_challenge,
@@ -1175,22 +1175,20 @@ pub mod db {
         // Check if there's an existing token for this DID to preserve the handle if needed
         let existing_row = if token_set.handle.is_none() {
             // Only fetch the existing handle if the new token doesn't have one
-            sqlx::query(
+            sqlx::query!(
                 r#"
                 SELECT id, handle FROM oauth_tokens 
                 WHERE did = $1 AND handle IS NOT NULL
                 "#,
+                &token_set.did
             )
-            .bind(&token_set.did)
             .fetch_optional(pool)
             .await?
         } else {
             None // We already have a handle, no need to fetch
         };
 
-        let existing_handle = existing_row
-            .as_ref()
-            .and_then(|row| row.get::<Option<String>, _>("handle"));
+        let existing_handle = existing_row.as_ref().and_then(|row| row.handle.clone());
         let handle_to_use = token_set.handle.clone().or(existing_handle);
 
         // Log whether we're preserving the handle
@@ -1203,7 +1201,7 @@ pub mod db {
         }
 
         // Use upsert (INSERT ... ON CONFLICT ... DO UPDATE) to insert or update the token
-        sqlx::query(
+        sqlx::query!(
             r#"
             INSERT INTO oauth_tokens (
                 did, access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id, handle
@@ -1219,16 +1217,16 @@ pub mod db {
                 handle = COALESCE(EXCLUDED.handle, oauth_tokens.handle),
                 updated_at_utc = NOW()
             "#,
+            &token_set.did,
+            &token_set.access_token,
+            &token_set.token_type,
+            token_set.expires_at as i64,
+            token_set.refresh_token.as_deref(),
+            &token_set.scope,
+            token_set.dpop_jkt.as_deref(),
+            user_id,
+            handle_to_use.as_deref()
         )
-        .bind(&token_set.did)
-        .bind(&token_set.access_token)
-        .bind(&token_set.token_type)
-        .bind(token_set.expires_at as i64)
-        .bind(&token_set.refresh_token)
-        .bind(&token_set.scope)
-        .bind(&token_set.dpop_jkt)
-        .bind(user_id)
-        .bind(&handle_to_use)
         .execute(pool)
         .await?;
 
@@ -1237,27 +1235,27 @@ pub mod db {
 
     /// Retrieves the OAuth token for a DID
     pub async fn get_token(pool: &PgPool, did: &str) -> cja::Result<Option<OAuthTokenSet>> {
-        let row = sqlx::query(
+        let row = sqlx::query!(
             r#"
             SELECT access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id, handle
             FROM oauth_tokens
             WHERE did = $1
             "#,
+            did
         )
-        .bind(did)
         .fetch_optional(pool)
         .await?;
 
         Ok(row.map(|row| OAuthTokenSet {
             did: did.to_string(),
-            access_token: row.get("access_token"),
-            token_type: row.get("token_type"),
-            expires_at: row.get::<i64, _>("expires_at") as u64,
-            refresh_token: row.get("refresh_token"),
-            scope: row.get("scope"),
-            handle: row.get("handle"),
-            dpop_jkt: row.get("dpop_jkt"),
-            user_id: row.get("user_id"),
+            access_token: row.access_token,
+            token_type: row.token_type,
+            expires_at: row.expires_at as u64,
+            refresh_token: row.refresh_token,
+            scope: row.scope,
+            handle: row.handle,
+            dpop_jkt: row.dpop_jkt,
+            user_id: Some(row.user_id),
         }))
     }
 
@@ -1296,13 +1294,13 @@ pub mod db {
 
     /// Deletes a token for a DID
     pub async fn delete_token(pool: &PgPool, did: &str) -> cja::Result<()> {
-        sqlx::query(
+        sqlx::query!(
             r#"
             DELETE FROM oauth_tokens
             WHERE did = $1
             "#,
+            did
         )
-        .bind(did)
         .execute(pool)
         .await?;
 
@@ -1311,15 +1309,15 @@ pub mod db {
 
     /// Updates the handle for a token
     pub async fn update_token_handle(pool: &PgPool, did: &str, handle: &str) -> cja::Result<()> {
-        sqlx::query(
+        sqlx::query!(
             r#"
             UPDATE oauth_tokens
             SET handle = $2, updated_at_utc = NOW()
             WHERE did = $1
             "#,
+            did,
+            handle
         )
-        .bind(did)
-        .bind(handle)
         .execute(pool)
         .await?;
 
@@ -1329,20 +1327,20 @@ pub mod db {
     /// Gets the most recent DPoP nonce for a DID
     pub async fn get_latest_nonce(pool: &PgPool, did: &str) -> cja::Result<Option<String>> {
         // Find the most recent session for this DID that has a nonce
-        let row = sqlx::query(
+        let row = sqlx::query!(
             r#"
             SELECT data FROM oauth_sessions 
             WHERE did = $1 
             ORDER BY updated_at_utc DESC 
             LIMIT 1
             "#,
+            did
         )
-        .bind(did)
         .fetch_optional(pool)
         .await?;
 
         if let Some(row) = row {
-            let data: serde_json::Value = row.get("data");
+            let data: serde_json::Value = row.data.unwrap_or(serde_json::Value::Null);
             let nonce = data
                 .get("dpop_nonce")
                 .and_then(|v| v.as_str())
@@ -1361,17 +1359,17 @@ pub mod db {
         nonce: &str,
     ) -> cja::Result<()> {
         // First get the current session data
-        let row = sqlx::query(
+        let row = sqlx::query!(
             r#"
             SELECT data FROM oauth_sessions WHERE session_id = $1
             "#,
+            session_id
         )
-        .bind(session_id)
         .fetch_optional(pool)
         .await?;
 
         if let Some(row) = row {
-            let mut data: serde_json::Value = row.get("data");
+            let mut data: serde_json::Value = row.data.unwrap_or(serde_json::Value::Null);
 
             // Update the nonce in the data
             if let Some(obj) = data.as_object_mut() {
@@ -1382,15 +1380,15 @@ pub mod db {
             }
 
             // Update the session with the new data
-            sqlx::query(
+            sqlx::query!(
                 r#"
                 UPDATE oauth_sessions
                 SET data = $1, updated_at_utc = NOW()
                 WHERE session_id = $2
                 "#,
+                data,
+                session_id
             )
-            .bind(data)
-            .bind(session_id)
             .execute(pool)
             .await?;
         }
@@ -1408,13 +1406,13 @@ pub mod db {
         // Sessions expire after 1 hour
         let expired_timestamp = now - 3600;
 
-        let result = sqlx::query(
+        let result = sqlx::query!(
             r#"
             DELETE FROM oauth_sessions
             WHERE created_at < $1
             "#,
+            expired_timestamp as i64
         )
-        .bind(expired_timestamp as i64)
         .execute(pool)
         .await?;
 

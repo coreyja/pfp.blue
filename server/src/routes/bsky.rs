@@ -732,19 +732,16 @@ pub async fn callback(
 
         // Create a session
         // Get the token id to use as primary token
-        let token_id = match sqlx::query(
+        let token_id = match sqlx::query!(
             r#"
             SELECT uuid_id FROM oauth_tokens WHERE did = $1
             "#,
+            &token_set.did
         )
-        .bind(&token_set.did)
         .fetch_optional(&state.db)
         .await
         {
-            Ok(Some(row)) => {
-                let id: uuid::Uuid = row.get("uuid_id");
-                Some(id)
-            }
+            Ok(Some(row)) => Some(row.uuid_id),
             _ => None,
         };
 
@@ -1007,22 +1004,19 @@ pub async fn set_primary_account(
     };
 
     // Verify that this DID belongs to this user
-    let token = match sqlx::query(
+    let token = match sqlx::query!(
         r#"
         SELECT uuid_id FROM oauth_tokens
         WHERE did = $1 AND user_id = $2
         LIMIT 1
         "#,
+        &params.did,
+        user.user_id
     )
-    .bind(&params.did)
-    .bind(user.user_id)
     .fetch_optional(&state.db)
     .await
     {
-        Ok(Some(row)) => {
-            let id: uuid::Uuid = row.get("uuid_id");
-            id
-        }
+        Ok(Some(row)) => row.uuid_id,
         Ok(None) => {
             error!(
                 "Attempted to set primary account for DID not belonging to user: {}",
@@ -1363,19 +1357,19 @@ pub async fn get_token_endpoint_for_did(
     pool: &sqlx::PgPool,
     did: &str,
 ) -> cja::Result<Option<String>> {
-    let row = sqlx::query(
+    let row = sqlx::query!(
         r#"
         SELECT token_endpoint FROM oauth_sessions
         WHERE did = $1
         ORDER BY updated_at_utc DESC
         LIMIT 1
         "#,
+        did
     )
-    .bind(did)
     .fetch_optional(pool)
     .await?;
 
-    Ok(row.map(|r| r.get("token_endpoint")))
+    Ok(row.map(|r| r.token_endpoint))
 }
 
 /// Display profile information with multiple linked accounts
