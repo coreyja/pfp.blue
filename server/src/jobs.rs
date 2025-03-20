@@ -610,120 +610,165 @@ fn extract_progress_from_handle(handle: &str) -> Option<(f64, f64)> {
 }
 
 /// Generate a new profile picture with progress visualization
-async fn generate_progress_image(
+pub async fn generate_progress_image(
     original_image_data: &[u8],
     progress: f64,
 ) -> cja::Result<Vec<u8>> {
     use color_eyre::eyre::eyre;
-    use image::{ImageFormat, Rgba};
-    use imageproc::drawing::{
-        draw_filled_circle_mut, draw_filled_rect_mut, draw_hollow_circle_mut,
-    };
-    use imageproc::rect::Rect;
+    use image::{ImageFormat, Rgba, RgbaImage};
+    use std::f64::consts::PI;
     use std::io::Cursor;
 
     debug!("Generating progress image");
 
-    // Detect image format from magic bytes
-    let _format = match infer::get(original_image_data) {
-        Some(kind) => {
-            debug!("Detected image format: {}", kind.mime_type());
-            kind.mime_type().to_string()
-        }
-        None => {
-            // Default to PNG if we can't detect
-            debug!("Could not detect image format, defaulting to PNG");
-            "image/png".to_string()
-        }
-    };
-
     // Load the original image
-    let img = match image::load_from_memory(original_image_data) {
+    let original_img = match image::load_from_memory(original_image_data) {
         Ok(img) => img,
         Err(err) => return Err(eyre!("Failed to load image: {}", err)),
     };
 
-    // Convert to RGBA if it's not already
-    let mut img = img.to_rgba8();
+    // Get dimensions of the original image
+    let width = original_img.width();
+    let height = original_img.height();
 
-    // Get dimensions
-    let width = img.width();
-    let height = img.height();
-    let size = width.min(height);
+    debug!("Original image dimensions: {}x{}", width, height);
 
-    debug!("Image dimensions: {}x{} Size: {}", width, height, size);
+    // Use a high-resolution intermediate image for better quality
+    // Scale factor of 4 gives very smooth circles
+    let scale_factor = 4;
+    let large_width = width * scale_factor;
+    let large_height = height * scale_factor;
 
-    // Center coordinates
-    let center_x = width / 2;
-    let center_y = height / 2;
-
-    // Radius of the progress circle (slightly smaller than the image)
-    let radius = (size / 2) as i32 - 10;
-
-    debug!("Radius: {}", radius);
-
-    // Progress bar style
-    let bar_width = 10;
-    let bar_color = Rgba([52, 152, 219, 200]); // Semi-transparent blue
-    let bg_color = Rgba([0, 0, 0, 100]); // Semi-transparent black
-    let outline_color = Rgba([255, 255, 255, 170]); // Semi-transparent white
-
-    // Add a semi-transparent overlay at the bottom for text
-    let overlay_height = 30;
-    let bottom_rect = Rect::at(0, (height - overlay_height) as i32).of_size(width, overlay_height);
-    draw_filled_rect_mut(&mut img, bottom_rect, Rgba([0, 0, 0, 150]));
-
-    debug!("Drew overlay for text");
-
-    // Starting angle is -90 degrees (top center)
-    let start_angle = -90.0_f64.to_radians();
-
-    // Draw background circle first (full 360 degrees)
-    for angle_deg in 0..360 {
-        let angle = (angle_deg as f64).to_radians();
-        let x = center_x as f32 + (radius as f32 * angle.cos() as f32);
-        let y = center_y as f32 + (radius as f32 * angle.sin() as f32);
-
-        draw_filled_circle_mut(&mut img, (x as i32, y as i32), bar_width / 2, bg_color);
-    }
-
-    debug!("Drew background circle");
-
-    // Draw the progress arc
-    for angle_deg in 0..=(progress * 360.0) as i32 {
-        let angle = start_angle + (angle_deg as f64).to_radians();
-        let x = center_x as f32 + (radius as f32 * angle.cos() as f32);
-        let y = center_y as f32 + (radius as f32 * angle.sin() as f32);
-
-        draw_filled_circle_mut(&mut img, (x as i32, y as i32), bar_width / 2, bar_color);
-    }
-
-    debug!("Drew progress arc");
-
-    // Draw outline circle
-    draw_hollow_circle_mut(
-        &mut img,
-        (center_x as i32, center_y as i32),
-        radius,
-        outline_color,
+    // Create a high-res version of the original image
+    let large_img = original_img.resize_exact(
+        large_width,
+        large_height,
+        image::imageops::FilterType::Lanczos3,
     );
 
-    debug!("Drew outline circle");
+    // Create a separate mask buffer at high resolution
+    let mut mask = RgbaImage::new(large_width, large_height);
 
-    // Add a progress bar at the bottom
-    let indicator_width = (width as f64 * progress) as u32;
-    debug!("Indicator width: {}", indicator_width);
-    let indicator_rect = Rect::at(0, (height - 5) as i32).of_size(indicator_width, 5);
-    debug!("Indicator rect: {:?}", indicator_rect);
-    draw_filled_rect_mut(&mut img, indicator_rect, bar_color);
+    // Center coordinates for the high-res image
+    let center_x = large_width as f32 / 2.0;
+    let center_y = large_height as f32 / 2.0;
 
-    debug!("Drew progress bar");
+    // Define the circle properties (scaled up)
+    let outer_radius = ((width.min(height) as f32 / 2.0) - 10.0) * scale_factor as f32;
+    let inner_radius = outer_radius - (10.0 * scale_factor as f32); // Line width of 10px
+    let white_color = Rgba([255, 255, 255, 255]);
 
-    // Convert the image back to bytes
-    // Always save as PNG for consistency
+    debug!(
+        "Drawing circle with radius {} - {}",
+        inner_radius, outer_radius
+    );
+
+    // Our goal is to draw the arc starting from top (12 o'clock) and moving clockwise
+    // First, determine the full angle we'll draw based on progress (0.0-1.0)
+    let progress_angle = (2.0 * PI * progress) as f32;
+
+    debug!(
+        "Progress: {}, Progress angle: {} radians",
+        progress, progress_angle
+    );
+
+    // Draw a filled arc by checking each pixel in the bounding box
+    for y in 0..large_height {
+        for x in 0..large_width {
+            // Calculate the distance from center and angle
+            let dx = x as f32 - center_x;
+            let dy = y as f32 - center_y;
+            let distance = (dx * dx + dy * dy).sqrt();
+
+            // Only consider pixels in the ring area
+            if distance >= inner_radius && distance <= outer_radius {
+                // To determine if a pixel should be drawn, we need to find its angle
+                // relative to the center, and see if it's within our progress arc
+
+                // atan2(y,x) gives angles in this configuration:
+                // - Range: -π to π
+                // - 0: east (right)
+                // - π/2: north (up) - NOTE: This is actually wrong! In atan2, π/2 is up in math coordinates,
+                //   but in screen coordinates, y increases downward, so π/2 is actually down (south)
+                // - π or -π: west (left)
+                // - -π/2: south (down) - but in screen coordinates this is north/up
+
+                // For screen coordinates with (0,0) at top-left:
+                // - negative y is upward
+                // - positive y is downward
+                // So we need to flip the y for proper atan2 calculation
+                let raw_angle = (-dy).atan2(dx); // Negate y to convert to math coordinates
+
+                // Now raw_angle follows standard math conventions:
+                // - 0: east (right/3 o'clock)
+                // - π/2: north (up/12 o'clock)
+                // - π or -π: west (left/9 o'clock)
+                // - -π/2: south (down/6 o'clock)
+
+                // Convert to 0 to 2π range
+                let positive_angle = if raw_angle < 0.0 {
+                    raw_angle + (2.0 * PI) as f32
+                } else {
+                    raw_angle
+                };
+
+                // To make 0 degrees at top (12 o'clock) and go clockwise:
+                // 1. Subtract π/2 to place 0 at 12 o'clock (rotate left by 90°)
+                // 2. Flip the direction by subtracting from 2π (to go clockwise)
+
+                // Step 1: Rotate to make top 0° (subtract π/2)
+                let top_centered = if positive_angle >= (PI / 2.0) as f32 {
+                    positive_angle - (PI / 2.0) as f32
+                } else {
+                    positive_angle + (3.0 * PI / 2.0) as f32
+                };
+
+                // Step 2: Reverse direction to go clockwise
+                let clockwise_angle = (2.0 * PI) as f32 - top_centered;
+
+                // Now clockwise_angle has:
+                // - 0: top (12 o'clock)
+                // - π/2: right (3 o'clock)
+                // - π: bottom (6 o'clock)
+                // - 3π/2: left (9 o'clock)
+
+                // Draw pixel if its angle is within our progress arc (0 to progress_angle)
+                if clockwise_angle <= progress_angle {
+                    mask.put_pixel(x, y, white_color);
+                }
+            }
+        }
+    }
+
+    debug!("Drew progress arc mask");
+
+    // No dot at the end of the progress arc
+    debug!("No end cap added to progress arc");
+
+    // Overlay the mask onto the original high-res image
+    let mut large_result = large_img.to_rgba8();
+    for y in 0..large_height {
+        for x in 0..large_width {
+            let mask_pixel = mask.get_pixel(x, y);
+
+            // If mask pixel is white, set the result pixel to white
+            if mask_pixel[3] > 0 {
+                large_result.put_pixel(x, y, white_color);
+            }
+        }
+    }
+
+    // Resize back to original dimensions with high-quality downsampling
+    let final_img = image::DynamicImage::ImageRgba8(large_result).resize_exact(
+        width,
+        height,
+        image::imageops::FilterType::Lanczos3,
+    );
+
+    // Convert the final image to bytes
     let mut buffer = Vec::new();
     let mut cursor = Cursor::new(&mut buffer);
-    match img.write_to(&mut cursor, ImageFormat::Png) {
+    match final_img.write_to(&mut cursor, ImageFormat::Png) {
         Ok(_) => Ok(buffer),
         Err(err) => Err(eyre!("Failed to encode image: {}", err)),
     }
@@ -1143,4 +1188,33 @@ async fn update_profile_with_image(
         token.did
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_progress_from_handle() {
+        // Test fraction format
+        let result = extract_progress_from_handle("user.bsky.app 3/4");
+        assert_eq!(result, Some((3.0, 4.0)));
+
+        let result = extract_progress_from_handle("42/100 progress");
+        assert_eq!(result, Some((42.0, 100.0)));
+
+        // Test percentage format
+        let result = extract_progress_from_handle("user.bsky.app 75%");
+        assert_eq!(result, Some((75.0, 100.0)));
+
+        let result = extract_progress_from_handle("33.5% complete");
+        assert_eq!(result, Some((33.5, 100.0)));
+
+        // Test invalid inputs
+        let result = extract_progress_from_handle("user.bsky.app");
+        assert_eq!(result, None);
+
+        let result = extract_progress_from_handle("0/0"); // Division by zero
+        assert_eq!(result, None);
+    }
 }
