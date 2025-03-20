@@ -2,14 +2,12 @@ name: Tests
 
 on:
   workflow_call:
-  pull_request:
 
 jobs:
   playwright:
     env:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
       SQLX_OFFLINE: 1
-      OAUTH_CLIENT_SECRET: "f0ab19e292db6b56c49f821fe29ba479310e9b103e33fb70bcf9bc648191d858"
       OAUTH_PRIVATE_KEY: LS0tLS1CRUdJTiBFQyBQUklWQVRFIEtFWS0tLS0tCk1IY0NBUUVFSUlTTEEyblFkbDlUK2YzQU56WEpiRjhRYzMzY3puUkd4alVrY0lGaHhPZllvQW9HQ0NxR1NNNDkKQXdFSG9VUURRZ0FFcmp3RTR3aFpQOUl5MXphWURrRFBRdmtzOU9TOVVhOTFqUW1aMk1KRzNzZysvU29oK2tSQgpKaUp0YTFaM0RNMks0UjFCR0VmUkliNUN1bkdzSG51d2R3PT0KLS0tLS1FTkQgRUMgUFJJVkFURSBLRVktLS0tLQo=
       OAUTH_PUBLIC_KEY: LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0KTUZrd0V3WUhLb1pJemowQ0FRWUlLb1pJemowREFRY0RRZ0FFcmp3RTR3aFpQOUl5MXphWURrRFBRdmtzOU9TOQpVYTkxalFtWjJNSkczc2crL1NvaCtrUkJKaUp0YTFaM0RNMks0UjFCR0VmUkliNUN1bkdzSG51d2R3PT0KLS0tLS1FTkQgUFVCTElDIEtFWS0tLS0tCg==
     services:
@@ -129,7 +127,7 @@ jobs:
 
       - name: Test
         run: cargo test --all-targets
-        
+
       - name: Upload profile picture test artifacts
         uses: actions/upload-artifact@v4
         if: always()
