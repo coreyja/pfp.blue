@@ -4,6 +4,8 @@ pub struct Icon;
 
 impl Icon {
     // We need this method to return a String for use with other components
+    // Implemented as a static method because this is used with our nav_buttons component
+    #[allow(dead_code)]
     pub fn into_string(self) -> String {
         // This is a simplified implementation that just returns the user icon
         "<svg xmlns=\"http://www.w3.org/2000/svg\" class=\"h-5 w-5\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z\" /></svg>".to_string()

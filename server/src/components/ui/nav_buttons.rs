@@ -2,6 +2,8 @@ use maud::{html, Markup, Render};
 use super::button::{Button, ButtonVariant, IconPosition};
 use super::icon::Icon;
 
+// Add Default implementation to fix clippy warning
+#[derive(Default)]
 pub struct NavButtons {
     pub items: Vec<NavButton>,
     pub container_classes: Option<String>,
@@ -14,6 +16,8 @@ pub struct NavButton {
     pub is_active: bool,
 }
 
+// Allow unused variants as they'll likely be used in the future
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum NavButtonIcon {
     Home,
@@ -39,6 +43,7 @@ impl NavButtons {
         self
     }
 
+    #[allow(dead_code)]
     pub fn container_classes(mut self, classes: &str) -> Self {
         self.container_classes = Some(classes.to_string());
         self
@@ -60,6 +65,7 @@ impl NavButton {
         self
     }
 
+    #[allow(dead_code)]
     pub fn active(mut self, is_active: bool) -> Self {
         self.is_active = is_active;
         self
@@ -108,7 +114,8 @@ fn render_nav_button(button: &NavButton) -> Markup {
         .variant(variant)
         .href(&button.href);
     
-    if let Some(_) = &button.icon_type {
+    // Fix redundant pattern matching
+    if button.icon_type.is_some() {
         btn = btn.icon(button.get_icon_svg(), IconPosition::Left);
     }
     

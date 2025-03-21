@@ -23,6 +23,9 @@ impl AccountCard {
         self
     }
 
+    // This method follows a common Rust builder pattern even though Clippy complains
+    // The is_ prefix is appropriate as it sets a boolean property of the same name
+    #[allow(clippy::wrong_self_convention)]
     pub fn is_primary(mut self, is_primary: bool) -> Self {
         self.is_primary = is_primary;
         self

@@ -1,5 +1,6 @@
 use maud::{html, Markup, Render};
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum BadgeColor {
     Blue,
@@ -34,6 +35,7 @@ impl Badge {
         self
     }
 
+    #[allow(dead_code)]
     pub fn extra_classes(mut self, classes: &str) -> Self {
         self.extra_classes = Some(classes.to_string());
         self
