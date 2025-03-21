@@ -1,57 +1,57 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                SELECT uuid_id, did, access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id, handle\n                FROM oauth_tokens\n                WHERE uuid_id = $1\n                ",
+  "query": "\n                SELECT did, access_token, token_type, expires_at, refresh_token, \n                       scope, dpop_jkt, user_id, handle, id as token_id\n                FROM oauth_tokens\n                WHERE uuid_id = $1\n                ",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "uuid_id",
-        "type_info": "Uuid"
-      },
-      {
-        "ordinal": 1,
         "name": "did",
         "type_info": "Text"
       },
       {
-        "ordinal": 2,
+        "ordinal": 1,
         "name": "access_token",
         "type_info": "Text"
       },
       {
-        "ordinal": 3,
+        "ordinal": 2,
         "name": "token_type",
         "type_info": "Text"
       },
       {
-        "ordinal": 4,
+        "ordinal": 3,
         "name": "expires_at",
         "type_info": "Int8"
       },
       {
-        "ordinal": 5,
+        "ordinal": 4,
         "name": "refresh_token",
         "type_info": "Text"
       },
       {
-        "ordinal": 6,
+        "ordinal": 5,
         "name": "scope",
         "type_info": "Text"
       },
       {
-        "ordinal": 7,
+        "ordinal": 6,
         "name": "dpop_jkt",
         "type_info": "Text"
       },
       {
-        "ordinal": 8,
+        "ordinal": 7,
         "name": "user_id",
         "type_info": "Uuid"
       },
       {
-        "ordinal": 9,
+        "ordinal": 8,
         "name": "handle",
         "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "token_id",
+        "type_info": "Uuid"
       }
     ],
     "parameters": {
@@ -64,13 +64,13 @@
       false,
       false,
       false,
-      false,
       true,
       false,
       true,
       false,
-      true
+      true,
+      false
     ]
   },
-  "hash": "bb04a5df26d6a9b919aaed8862bd559f927b4da36a93d4289e79dea02a21c78e"
+  "hash": "c2ac7d1cc094274648125bd9315f2de8546a0a281070b404473ca4e97b2b405f"
 }
