@@ -1,7 +1,6 @@
 use maud::{html, Markup, Render};
 
 pub struct Page {
-    #[allow(dead_code)]
     pub title: String,
     pub content: Box<dyn Render>,
 }
@@ -9,8 +8,10 @@ pub struct Page {
 impl Render for Page {
     fn render(&self) -> Markup {
         html! {
-            // Add Tailwind CSS from CDN
-            script src="https://unpkg.com/@tailwindcss/browser@4" {}
+            head {
+                title { (self.title) }
+                script src="https://unpkg.com/@tailwindcss/browser@4" {}
+            }
 
             // Main container with gradient background
             div class="min-h-screen bg-gradient-to-br from-blue-100 via-indigo-50 to-purple-100 py-8 px-4 sm:px-6 lg:px-8" {
@@ -47,7 +48,7 @@ impl Card {
 impl Render for Card {
     fn render(&self) -> Markup {
         let width_class = self.max_width.as_deref().unwrap_or("max-w-md");
-        
+
         html! {
             div class={(width_class) " mx-auto bg-white rounded-2xl shadow-xl overflow-hidden"} {
                 (self.content.render())
@@ -83,7 +84,7 @@ impl Render for CurvedHeader {
                 @if let Some(content) = &self.content {
                     (content.render())
                 }
-                
+
                 div class="absolute left-0 right-0 bottom-0" {
                     (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 100" class="w-full h-20 fill-white"><path d="M0,64L80,69.3C160,75,320,85,480,80C640,75,800,53,960,42.7C1120,32,1280,32,1360,32L1440,32L1440,100L1360,100C1280,100,1120,100,960,100C800,100,640,100,480,100C320,100,160,100,80,100L0,100Z"></path></svg>"#))
                 }
@@ -123,11 +124,11 @@ impl ContentSection {
 impl Render for ContentSection {
     fn render(&self) -> Markup {
         let mut classes = self.padding.clone();
-        
+
         if let Some(margin) = &self.negative_margin_top {
             classes = format!("{} {} relative z-10", classes, margin);
         }
-        
+
         html! {
             div class=(classes) {
                 (self.content.render())
