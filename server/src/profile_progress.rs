@@ -1,5 +1,7 @@
 use chrono::{DateTime, Utc};
+use color_eyre::eyre::eyre;
 use sqlx::PgPool;
+use tracing::{error, info};
 use uuid::Uuid;
 
 /// Represents a profile picture progress setting in the database
@@ -39,7 +41,16 @@ impl ProfilePictureProgress {
             original_blob_cid
         )
         .fetch_one(pool)
-        .await?;
+        .await
+        .map_err(|e| {
+            error!("Failed to create profile picture progress: {:?}", e);
+            eyre!("Database error creating profile picture progress: {}", e)
+        })?;
+
+        info!(
+            "Created profile picture progress setting for token {}",
+            token_id
+        );
 
         Ok(Self {
             id: row.id,
@@ -62,7 +73,11 @@ impl ProfilePictureProgress {
             token_id
         )
         .fetch_optional(pool)
-        .await?;
+        .await
+        .map_err(|e| {
+            error!("Failed to query profile picture progress: {:?}", e);
+            eyre!("Database error querying profile picture progress: {}", e)
+        })?;
 
         Ok(row.map(|r| Self {
             id: r.id,
@@ -76,19 +91,34 @@ impl ProfilePictureProgress {
 
     /// Update the enabled status
     pub async fn update_enabled(&mut self, pool: &PgPool, enabled: bool) -> cja::Result<()> {
-        sqlx::query!(
+        let row = sqlx::query!(
             r#"
             UPDATE profile_picture_progress
             SET enabled = $1, updated_at_utc = NOW()
             WHERE id = $2
+            RETURNING updated_at_utc
             "#,
             enabled,
             self.id
         )
-        .execute(pool)
-        .await?;
+        .fetch_one(pool)
+        .await
+        .map_err(|e| {
+            error!(
+                "Failed to update profile picture progress enabled status: {:?}",
+                e
+            );
+            eyre!("Database error updating profile picture progress: {}", e)
+        })?;
 
         self.enabled = enabled;
+        self.updated_at_utc = row.updated_at_utc;
+
+        info!(
+            "Updated profile picture progress enabled status to {} for ID {}",
+            enabled, self.id
+        );
+
         Ok(())
     }
 
@@ -98,19 +128,34 @@ impl ProfilePictureProgress {
         pool: &PgPool,
         original_blob_cid: Option<String>,
     ) -> cja::Result<()> {
-        sqlx::query!(
+        let row = sqlx::query!(
             r#"
             UPDATE profile_picture_progress
             SET original_blob_cid = $1, updated_at_utc = NOW()
             WHERE id = $2
+            RETURNING updated_at_utc
             "#,
             original_blob_cid.as_ref(),
             self.id
         )
-        .execute(pool)
-        .await?;
+        .fetch_one(pool)
+        .await
+        .map_err(|e| {
+            error!(
+                "Failed to update profile picture original blob CID: {:?}",
+                e
+            );
+            eyre!("Database error updating profile picture blob CID: {}", e)
+        })?;
 
-        self.original_blob_cid = original_blob_cid;
+        self.original_blob_cid = original_blob_cid.clone();
+        self.updated_at_utc = row.updated_at_utc;
+
+        info!(
+            "Updated profile picture original blob CID to {:?} for ID {}",
+            original_blob_cid, self.id
+        );
+
         Ok(())
     }
 
@@ -123,12 +168,47 @@ impl ProfilePictureProgress {
     ) -> cja::Result<Self> {
         // Try to get existing settings
         if let Some(settings) = Self::get_by_token_id(pool, token_id).await? {
+            info!(
+                "Found existing profile picture progress settings for token {}",
+                token_id
+            );
             return Ok(settings);
         }
 
         // Create new settings if none exist
+        info!(
+            "Creating new profile picture progress settings for token {}",
+            token_id
+        );
         Self::create(pool, token_id, default_enabled, default_original_blob_cid).await
     }
 
-    // Removed unused method
+    /// Delete a profile picture progress setting
+    pub async fn delete(self, pool: &PgPool) -> cja::Result<()> {
+        sqlx::query!(
+            r#"
+            DELETE FROM profile_picture_progress
+            WHERE id = $1
+            "#,
+            self.id
+        )
+        .execute(pool)
+        .await
+        .map_err(|e| {
+            error!("Failed to delete profile picture progress: {:?}", e);
+            eyre!("Database error deleting profile picture progress: {}", e)
+        })?;
+
+        info!(
+            "Deleted profile picture progress for token {}",
+            self.token_id
+        );
+
+        Ok(())
+    }
+
+    /// Check if the profile picture progress is ready for an update
+    pub fn is_ready_for_update(&self) -> bool {
+        self.enabled && self.original_blob_cid.is_some()
+    }
 }

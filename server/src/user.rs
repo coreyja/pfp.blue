@@ -1,5 +1,7 @@
 use chrono::{DateTime, Utc};
+use color_eyre::eyre::eyre;
 use sqlx::postgres::PgPool;
+use tracing::{error, info};
 use uuid::Uuid;
 
 /// Represents a user in the system
@@ -82,6 +84,8 @@ impl User {
         .fetch_one(pool)
         .await?;
 
+        info!("Created new user with ID: {}", row.id);
+
         Ok(User {
             user_id: row.id,
             username: row.username,
@@ -113,6 +117,67 @@ impl User {
             updated_at_utc: r.updated_at_utc,
         }))
     }
+
+    /// Update the user's username
+    pub async fn update_username(&mut self, pool: &PgPool, username: &str) -> cja::Result<()> {
+        sqlx::query!(
+            r#"
+            UPDATE users SET username = $1, updated_at_utc = NOW()
+            WHERE id = $2
+            RETURNING updated_at_utc
+            "#,
+            username,
+            self.user_id
+        )
+        .fetch_one(pool)
+        .await
+        .map_err(|e| {
+            error!(
+                "Failed to update username for user {}: {:?}",
+                self.user_id, e
+            );
+            eyre!("Database error updating username: {}", e)
+        })?;
+
+        self.username = Some(username.to_string());
+        info!("Updated username for user {}: {}", self.user_id, username);
+
+        Ok(())
+    }
+
+    /// Update the user's email
+    pub async fn update_email(&mut self, pool: &PgPool, email: Option<&str>) -> cja::Result<()> {
+        let row = sqlx::query!(
+            r#"
+            UPDATE users SET email = $1, updated_at_utc = NOW()
+            WHERE id = $2
+            RETURNING updated_at_utc
+            "#,
+            email,
+            self.user_id
+        )
+        .fetch_one(pool)
+        .await
+        .map_err(|e| {
+            error!("Failed to update email for user {}: {:?}", self.user_id, e);
+            eyre!("Database error updating email: {}", e)
+        })?;
+
+        self.email = email.map(|e| e.to_string());
+        self.updated_at_utc = row.updated_at_utc;
+
+        info!("Updated email for user {}", self.user_id);
+
+        Ok(())
+    }
+
+    /// Get all of a user's linked OAuth tokens
+    pub async fn get_all_tokens(
+        &self,
+        pool: &PgPool,
+    ) -> cja::Result<Vec<crate::oauth::OAuthTokenSet>> {
+        crate::oauth::db::get_tokens_for_user(pool, self.user_id).await
+    }
 }
 
 impl Session {
@@ -142,6 +207,11 @@ impl Session {
         )
         .fetch_one(pool)
         .await?;
+
+        info!(
+            "Created new session {} for user {} expiring at {}",
+            row.id, user_id, expires_at
+        );
 
         Ok(Session {
             session_id: row.id,
@@ -190,15 +260,21 @@ impl Session {
     pub async fn invalidate(&mut self, pool: &PgPool) -> cja::Result<()> {
         sqlx::query!(
             r#"
-            UPDATE sessions SET is_active = FALSE
+            UPDATE sessions SET is_active = FALSE, updated_at_utc = NOW()
             WHERE id = $1
             "#,
             self.session_id
         )
         .execute(pool)
-        .await?;
+        .await
+        .map_err(|e| {
+            error!("Failed to invalidate session {}: {:?}", self.session_id, e);
+            eyre!("Database error invalidating session: {}", e)
+        })?;
 
         self.is_active = false;
+        info!("Session {} invalidated", self.session_id);
+
         Ok(())
     }
 
@@ -209,22 +285,67 @@ impl Session {
 
     /// Update the primary token for this session
     pub async fn set_primary_token(&mut self, pool: &PgPool, token_id: Uuid) -> cja::Result<()> {
-        sqlx::query!(
+        let row = sqlx::query!(
             r#"
             UPDATE sessions SET primary_token_id = $1, updated_at_utc = NOW()
             WHERE id = $2
+            RETURNING updated_at_utc
             "#,
             token_id,
             self.session_id
         )
-        .execute(pool)
-        .await?;
+        .fetch_one(pool)
+        .await
+        .map_err(|e| {
+            error!(
+                "Failed to set primary token for session {}: {:?}",
+                self.session_id, e
+            );
+            eyre!("Database error setting primary token: {}", e)
+        })?;
 
         self.primary_token_id = Some(token_id);
+        self.updated_at_utc = row.updated_at_utc;
+
+        info!(
+            "Updated primary token for session {} to {}",
+            self.session_id, token_id
+        );
+
         Ok(())
     }
 
-    // Removed unused method
+    /// Extend the session expiration
+    pub async fn extend_session(&mut self, pool: &PgPool, days: i64) -> cja::Result<()> {
+        let new_expiry = Utc::now() + chrono::Duration::days(days);
+
+        let row = sqlx::query!(
+            r#"
+            UPDATE sessions 
+            SET expires_at = $1, updated_at_utc = NOW()
+            WHERE id = $2
+            RETURNING expires_at, updated_at_utc
+            "#,
+            new_expiry,
+            self.session_id
+        )
+        .fetch_one(pool)
+        .await
+        .map_err(|e| {
+            error!("Failed to extend session {}: {:?}", self.session_id, e);
+            eyre!("Database error extending session: {}", e)
+        })?;
+
+        self.expires_at = row.expires_at;
+        self.updated_at_utc = row.updated_at_utc;
+
+        info!(
+            "Extended session {} to expire at {}",
+            self.session_id, new_expiry
+        );
+
+        Ok(())
+    }
 
     /// Get the primary token for this session
     pub async fn get_primary_token(
@@ -235,7 +356,8 @@ impl Session {
             // Query the oauth_tokens table to get the token by ID
             let row = sqlx::query!(
                 r#"
-                SELECT uuid_id, did, access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id, handle
+                SELECT did, access_token, token_type, expires_at, refresh_token, 
+                       scope, dpop_jkt, user_id, handle, id as token_id
                 FROM oauth_tokens
                 WHERE uuid_id = $1
                 "#,
@@ -257,6 +379,11 @@ impl Session {
                     dpop_jkt: row.dpop_jkt,
                     user_id: Some(row.user_id),
                 }));
+            } else {
+                error!(
+                    "Primary token {} for session {} not found",
+                    token_id, self.session_id
+                );
             }
         }
 

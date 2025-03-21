@@ -4,6 +4,7 @@ use jsonwebtoken::Algorithm;
 use p256::{ecdsa::VerifyingKey, pkcs8::DecodePublicKey, EncodedPoint, PublicKey};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
+use cja::jobs::Job;
 
 use crate::state::BlueskyOAuthConfig;
 
@@ -1417,5 +1418,97 @@ pub mod db {
         .await?;
 
         Ok(result.rows_affected())
+    }
+}
+
+/// Attempt to refresh a token if it's expired
+pub async fn refresh_token_if_needed(
+    token: &OAuthTokenSet,
+    state: &crate::state::AppState,
+    token_endpoint: &str,
+) -> cja::Result<Option<OAuthTokenSet>> {
+    use color_eyre::eyre::eyre;
+    use tracing::{error, info};
+
+    // Only refresh if token is expired and we have a refresh token
+    if !token.is_expired() || token.refresh_token.is_none() {
+        return Ok(None);
+    }
+
+    let refresh_token_str = token.refresh_token.as_ref().unwrap();
+    let client_id = state.client_id();
+
+    // Try to get the latest DPoP nonce
+    let dpop_nonce = match db::get_latest_nonce(&state.db, &token.did).await {
+        Ok(nonce) => nonce,
+        Err(err) => {
+            error!("Failed to get DPoP nonce: {:?}", err);
+            None
+        }
+    };
+
+    // Request a new token
+    match refresh_token(
+        &state.bsky_oauth,
+        token_endpoint,
+        &client_id,
+        refresh_token_str,
+        dpop_nonce.as_deref(),
+    )
+    .await
+    {
+        Ok(token_response) => {
+            // Create a new token set preserving the user ID and handle
+            let new_token = match OAuthTokenSet::from_token_response_with_jwk(
+                &token_response,
+                token.did.clone(),
+                &state.bsky_oauth.public_key,
+            ) {
+                Ok(new_token) => {
+                    // Set user ID and handle from original token
+                    let mut token_with_id = new_token.clone();
+                    token_with_id.user_id = token.user_id;
+                    token_with_id.handle = token.handle.clone();
+                    token_with_id
+                }
+                Err(err) => {
+                    error!("Failed to create token set with JWK: {:?}", err);
+                    // Fallback to standard token creation
+                    let mut standard_token =
+                        OAuthTokenSet::from_token_response(token_response, token.did.clone());
+                    standard_token.user_id = token.user_id;
+                    standard_token.handle = token.handle.clone();
+                    standard_token
+                }
+            };
+
+            // Store the new token
+            if let Err(err) = db::store_token(&state.db, &new_token).await {
+                error!("Failed to store refreshed token: {:?}", err);
+                return Err(eyre!("Failed to store refreshed token: {:?}", err));
+            }
+
+            // Also fetch profile to update handle if needed
+            if let Err(err) = crate::jobs::UpdateProfileHandleJob::from_token(&new_token)
+                .enqueue(state.clone(), "token_refresh".to_string())
+                .await
+            {
+                error!(
+                    "Failed to enqueue handle update job after token refresh: {:?}",
+                    err
+                );
+            } else {
+                info!(
+                    "Queued handle update job after token refresh for {}",
+                    new_token.did
+                );
+            }
+
+            Ok(Some(new_token))
+        }
+        Err(err) => {
+            error!("Failed to refresh token: {:?}", err);
+            Err(eyre!("Failed to refresh token: {:?}", err))
+        }
     }
 }

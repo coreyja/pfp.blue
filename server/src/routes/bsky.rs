@@ -9,7 +9,7 @@ use color_eyre::eyre::eyre;
 use maud::html;
 use serde::Deserialize;
 use sqlx::Row;
-use std::{str::FromStr, time::SystemTime};
+use std::time::SystemTime;
 use tower_cookies::{Cookie, Cookies};
 use tracing::{error, info};
 use uuid::Uuid;
@@ -89,40 +89,21 @@ pub async fn authorize(
         params.did, redirect_uri, params.state
     );
 
-    // Determine if input is a handle or DID
-    let did_str = params.did.clone();
-    let did = if did_str.starts_with("did:") {
-        // Input is already a DID
-        match atrium_api::types::string::Did::new(did_str.clone()) {
-            Ok(did) => did,
-            Err(_) => {
-                error!("Invalid DID: {}", did_str);
-                return (StatusCode::BAD_REQUEST, "Invalid DID".to_string()).into_response();
-            }
-        }
-    } else {
-        // Input is a handle, resolve to DID
-        match atrium_api::types::string::Handle::new(did_str.clone()) {
-            Ok(handle) => {
-                match crate::did::resolve_handle_to_did(&handle, state.bsky_client.clone()).await {
-                    Ok(did) => did,
-                    Err(err) => {
-                        error!("Failed to resolve handle to DID: {:?}", err);
-                        return (
-                            StatusCode::BAD_REQUEST,
-                            format!("Failed to resolve handle to DID: {:?}", err),
-                        )
-                            .into_response();
-                    }
-                }
-            }
-            Err(_) => {
-                error!("Invalid handle: {}", did_str);
-                return (StatusCode::BAD_REQUEST, "Invalid handle".to_string()).into_response();
-            }
+    // Resolve DID or handle using our helper function
+    let did = match crate::did::resolve_did_or_handle(&params.did, state.bsky_client.clone()).await
+    {
+        Ok(did) => did,
+        Err(err) => {
+            error!("Invalid DID or handle {}: {:?}", params.did, err);
+            return (
+                StatusCode::BAD_REQUEST,
+                format!("Invalid DID or handle: {:?}", err),
+            )
+                .into_response();
         }
     };
 
+    // Get the DID document
     let did_doc = match crate::did::resolve_did_to_document(&did, state.bsky_client.clone()).await {
         Ok(doc) => doc,
         Err(err) => {
@@ -135,6 +116,7 @@ pub async fn authorize(
         }
     };
 
+    // Get auth metadata for the DID
     let auth_metadata =
         match crate::did::document_to_auth_server_metadata(&did_doc, state.bsky_client.clone())
             .await
@@ -214,82 +196,8 @@ async fn fetch_profile_for_display(
     did: &str,
     app_state: &crate::state::AppState,
 ) -> cja::Result<serde_json::Value> {
-    use color_eyre::eyre::eyre;
-    use tracing::info;
-
-    let client = reqwest::Client::new();
-
-    // First, resolve the DID document to find the PDS endpoint
-    // Use the app_state's configured client to respect environment variables
-    let xrpc_client = app_state.bsky_client.clone();
-
-    // Convert string DID to DID object
-    let did_obj = match atrium_api::types::string::Did::new(did.to_string()) {
-        Ok(did) => did,
-        Err(err) => {
-            return Err(eyre!("Invalid DID format: {}", err));
-        }
-    };
-
-    // Resolve DID to document
-    let did_document = match crate::did::resolve_did_to_document(&did_obj, xrpc_client).await {
-        Ok(doc) => doc,
-        Err(err) => {
-            return Err(eyre!("Failed to resolve DID document: {}", err));
-        }
-    };
-
-    // Find the PDS service endpoint
-    let services = match did_document.service.as_ref() {
-        Some(services) => services,
-        None => {
-            return Err(eyre!("No service endpoints found in DID document"));
-        }
-    };
-
-    let pds_service = match services.iter().find(|s| s.id == "#atproto_pds") {
-        Some(service) => service,
-        None => {
-            return Err(eyre!(
-                "No ATProto PDS service endpoint found in DID document"
-            ));
-        }
-    };
-
-    let pds_endpoint = &pds_service.service_endpoint;
-    info!("Found PDS endpoint for profile display: {}", pds_endpoint);
-
-    // Construct the full URL to the PDS endpoint
-    let get_record_url = format!("{}/xrpc/com.atproto.repo.getRecord", pds_endpoint);
-
-    // Make unauthenticated API request to get profile directly from user's PDS
-    let response = client
-        .get(&get_record_url)
-        .query(&[
-            ("repo", did),
-            ("collection", "app.bsky.actor.profile"),
-            ("rkey", "self"),
-        ])
-        .send()
-        .await?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let error_text = response
-            .text()
-            .await
-            .unwrap_or_else(|_| "Failed to read error response".to_string());
-
-        return Err(eyre!(
-            "Failed to fetch user profile: {} - {}",
-            status,
-            error_text
-        ));
-    }
-
-    // Parse the response JSON
-    let profile_data = response.json::<serde_json::Value>().await?;
-    Ok(profile_data)
+    // Simply delegate to our api module which handles all the error cases properly
+    crate::api::get_user_profile(did, None, app_state).await
 }
 
 /// Fetch a blob by its CID directly from the user's PDS
@@ -303,56 +211,25 @@ pub async fn fetch_blob_by_cid(
         cid, did_or_handle
     );
 
-    // First, resolve the user's DID document to find their PDS endpoint
+    // Resolve the DID using our helper function
+    let did_obj =
+        crate::did::resolve_did_or_handle(did_or_handle, app_state.bsky_client.clone()).await?;
+    let did_str = did_obj.to_string();
+
+    // Try to fetch the blob using our api module
     let client = reqwest::Client::new();
-    // Use the app_state's configured client to respect environment variables
-    let xrpc_client = app_state.bsky_client.clone();
-
-    // Check if the input is a handle or a DID
-    let did_obj = if did_or_handle.starts_with("did:") {
-        // It's already a DID
-        atrium_api::types::string::Did::from_str(did_or_handle)
-            .map_err(|e| eyre!("Invalid DID format: {}", e))?
-    } else {
-        // It's a handle, try to resolve it to a DID first
-        let handle = atrium_api::types::string::Handle::from_str(did_or_handle)
-            .map_err(|e| eyre!("Invalid handle format: {}", e))?;
-
-        info!("Resolving handle {} to DID", did_or_handle);
-        crate::did::resolve_handle_to_did(&handle, xrpc_client.clone()).await?
-    };
-
-    info!("Resolving DID document for {}", did_obj.as_str());
-    let did_document = crate::did::resolve_did_to_document(&did_obj, xrpc_client).await?;
-
-    // Find the PDS service endpoint
-    let services = did_document
-        .service
-        .as_ref()
-        .ok_or_else(|| eyre!("No service endpoints found in DID document"))?;
-
-    let pds_service = services
-        .iter()
-        .find(|s| s.id == "#atproto_pds")
-        .ok_or_else(|| eyre!("No ATProto PDS service endpoint found in DID document"))?;
-
-    let pds_endpoint = &pds_service.service_endpoint;
-    info!("Found PDS endpoint: {}", pds_endpoint);
+    let pds_endpoint =
+        crate::api::find_pds_endpoint(&did_str, app_state.bsky_client.clone()).await?;
 
     // Construct the getBlob URL using the PDS endpoint with the resolved DID
     let blob_url = format!(
         "{}/xrpc/com.atproto.sync.getBlob?did={}&cid={}",
-        pds_endpoint,
-        did_obj.as_str(),
-        cid
+        pds_endpoint, did_str, cid
     );
     info!("Requesting blob from PDS: {}", blob_url);
 
     // Create a request for the blob
-    let request = client.get(&blob_url);
-
-    // Send the request
-    let response = request.send().await?;
+    let response = client.get(&blob_url).send().await?;
 
     if !response.status().is_success() {
         let status = response.status();
@@ -368,7 +245,7 @@ pub async fn fetch_blob_by_cid(
         let cdn_url = format!(
             "{}/img/avatar/plain/{}/{}@jpeg",
             app_state.avatar_cdn_url(),
-            did_obj.as_str(),
+            did_str,
             cid
         );
 
@@ -411,6 +288,304 @@ pub async fn fetch_blob_by_cid(
     }
 }
 
+/// Helper function to handle OAuth error responses
+fn handle_oauth_error(error: &str, error_description: Option<String>, client_id: &str, redirect_uri: &str) -> axum::response::Response {
+    let error_description = error_description.unwrap_or_else(|| "No error description provided".to_string());
+    error!("OAuth error: {} - {}", error, error_description);
+
+    maud::html! {
+        h1 { "Authentication Error" }
+        p { "There was an error during authentication:" }
+        p { "Error: " (error) }
+        p { "Description: " (error_description) }
+        p { "Debug Info:" }
+        p { "Client ID: " (client_id) }
+        p { "Redirect URI: " (redirect_uri) }
+        p {
+            a href="/" { "Return to Home" }
+        }
+    }
+    .into_response()
+}
+
+/// Helper function to handle missing code error
+fn handle_missing_code_error(state_param: Option<&str>, client_id: &str, redirect_uri: &str) -> axum::response::Response {
+    error!("No code parameter in callback");
+
+    maud::html! {
+        h1 { "Authentication Error" }
+        p { "There was an error during the authorization process." }
+        p { "The Bluesky server did not provide an authorization code in the callback." }
+        p { "Debug Information:" }
+        p { "State parameter: " (state_param.unwrap_or("None")) }
+        p { "Client ID: " (client_id) }
+        p { "Redirect URI: " (redirect_uri) }
+        p {
+            a href="/" { "Return to Home" }
+        }
+        p {
+            a href="/login" { "Try Again" }
+        }
+    }
+    .into_response()
+}
+
+/// Helper function to get session ID from state or cookie
+async fn get_session_id_and_data(
+    state_param: Option<&str>, 
+    cookies: &Cookies,
+    db_pool: &sqlx::PgPool
+) -> Result<(Uuid, OAuthSession), (StatusCode, String)> {
+    // Get the session ID from the state parameter or the cookie
+    let session_id = match state_param
+        .and_then(|s| Uuid::parse_str(s).ok())
+        .or_else(|| {
+            cookies
+                .get("bsky_session_id")
+                .and_then(|c| Uuid::parse_str(c.value()).ok())
+        }) {
+        Some(id) => id,
+        None => {
+            error!("No valid session ID found in state or cookie");
+            return Err((
+                StatusCode::BAD_REQUEST,
+                "No valid session found. Please try authenticating again.".to_string(),
+            ));
+        }
+    };
+
+    // Retrieve session data from the database
+    let session = match oauth::db::get_session(db_pool, session_id).await {
+        Ok(Some(session)) => session,
+        Ok(None) => {
+            error!("Session not found: {}", session_id);
+            return Err((
+                StatusCode::BAD_REQUEST,
+                "Session not found. Please try authenticating again.".to_string(),
+            ));
+        }
+        Err(err) => {
+            error!("Failed to retrieve session: {:?}", err);
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to retrieve session data".to_string(),
+            ));
+        }
+    };
+
+    // Check if the session is expired
+    if session.is_expired() {
+        error!("Session expired: {}", session_id);
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Session expired. Please try authenticating again.".to_string(),
+        ));
+    }
+
+    Ok((session_id, session))
+}
+
+/// Helper function to exchange code for token
+async fn exchange_auth_code_for_token(
+    oauth_config: &crate::state::BlueskyOAuthConfig,
+    session_id: Uuid,
+    session: &OAuthSession,
+    code: &str,
+    client_id: &str,
+    redirect_uri: &str,
+    db_pool: &sqlx::PgPool,
+) -> Result<oauth::TokenResponse, (StatusCode, String)> {
+    let code_verifier = session.code_verifier.as_deref();
+    let mut attempts = 0;
+    let mut last_error = None;
+    let mut token_response = None;
+
+    // Try up to 2 times - once with the stored nonce and once with a new nonce if needed
+    while attempts < 2 && token_response.is_none() {
+        match oauth::exchange_code_for_token(
+            oauth_config,
+            &session.token_endpoint,
+            client_id,
+            code,
+            redirect_uri,
+            code_verifier,
+            session.dpop_nonce.as_deref(), // Use the stored nonce if available
+        )
+        .await
+        {
+            Ok(response) => {
+                token_response = Some(response);
+            }
+            Err(err) => {
+                last_error = Some(err.to_string());
+
+                // Check if the error contains a DPoP nonce error
+                if last_error.as_ref().unwrap().contains("use_dpop_nonce")
+                    || last_error.as_ref().unwrap().contains("nonce mismatch")
+                {
+                    // Try to extract the nonce from the error message
+                    if let Some(nonce) = extract_dpop_nonce_from_error(last_error.as_ref().unwrap()) {
+                        // Save the new nonce in the database for this session
+                        if let Err(e) = oauth::db::update_session_nonce(db_pool, session_id, &nonce).await {
+                            error!("Failed to update session nonce: {:?}", e);
+                        } else {
+                            // Continue to retry with the new nonce
+                            attempts += 1;
+                            continue;
+                        }
+                    }
+                }
+
+                // If we couldn't extract a nonce or it's not a nonce error, break
+                break;
+            }
+        }
+
+        attempts += 1;
+    }
+
+    match token_response {
+        Some(token) => Ok(token),
+        None => {
+            let error_msg = last_error
+                .unwrap_or_else(|| "Unknown error".to_string());
+            error!("Token exchange failed: {:?}", error_msg);
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!(
+                    "Failed to exchange authorization code for token: {:?}",
+                    error_msg
+                ),
+            ))
+        }
+    }
+}
+
+/// Extract DPoP nonce from error message
+fn extract_dpop_nonce_from_error(error_message: &str) -> Option<String> {
+    if let Some(nonce_start) = error_message.find("\"dpop_nonce\":\"") {
+        let nonce_substring = &error_message[nonce_start + 14..];
+        if let Some(nonce_end) = nonce_substring.find('\"') {
+            let new_nonce = &nonce_substring[..nonce_end];
+            return Some(new_nonce.to_string());
+        }
+    }
+    None
+}
+
+/// Helper function to get or create a user ID for a token
+async fn get_or_create_user_id_for_token(
+    token_set: &OAuthTokenSet,
+    did: &str,
+    db_pool: &sqlx::PgPool,
+) -> Result<uuid::Uuid, (StatusCode, String)> {
+    if let Some(user_id) = token_set.user_id {
+        // We already have a linked user from the existing session
+        return Ok(user_id);
+    }
+    
+    // We need to find or create a user for this token
+    match crate::user::User::get_by_did(db_pool, did).await {
+        Ok(Some(user)) => Ok(user.user_id),
+        Ok(None) => {
+            // Create a new user
+            match crate::user::User::create(db_pool, None, None).await {
+                Ok(user) => Ok(user.user_id),
+                Err(err) => {
+                    error!("Failed to create user: {:?}", err);
+                    Err((StatusCode::INTERNAL_SERVER_ERROR, "Failed to create user".to_string()))
+                }
+            }
+        }
+        Err(err) => {
+            error!("Failed to find user: {:?}", err);
+            Err((StatusCode::INTERNAL_SERVER_ERROR, "Database error".to_string()))
+        }
+    }
+}
+
+/// Helper function to create a user session if needed
+async fn ensure_user_session(
+    cookies: &Cookies,
+    db_pool: &sqlx::PgPool,
+    user_id: uuid::Uuid,
+    token_set: &OAuthTokenSet,
+) -> Result<(), (StatusCode, String)> {
+    // Check if we already have a session
+    let have_session = if let Some(session_id) = crate::auth::get_session_id_from_cookie(cookies) {
+        matches!(
+            crate::auth::validate_session(db_pool, session_id).await,
+            Ok(Some(_))
+        )
+    } else {
+        false
+    };
+
+    // Only create a new session if we don't already have one
+    if !have_session {
+        // Get the token id to use as primary token
+        let token_id = match sqlx::query!(
+            r#"
+            SELECT uuid_id FROM oauth_tokens WHERE did = $1
+            "#,
+            &token_set.did
+        )
+        .fetch_optional(db_pool)
+        .await
+        {
+            Ok(Some(row)) => Some(row.uuid_id),
+            _ => None,
+        };
+
+        if let Err(err) = crate::auth::create_session_and_set_cookie(
+            db_pool,
+            cookies,
+            user_id,
+            None, // User agent
+            None, // IP address
+            token_id, // Set this token as primary
+        )
+        .await
+        {
+            error!("Failed to create session: {:?}", err);
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to create session".to_string(),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+/// Check if there's an existing user session and return user ID if found
+async fn check_existing_user_session(
+    cookies: &Cookies,
+    db_pool: &sqlx::PgPool,
+) -> Option<uuid::Uuid> {
+    if let Some(session_id) = crate::auth::get_session_id_from_cookie(cookies) {
+        match crate::auth::validate_session(db_pool, session_id).await {
+            Ok(Some(user_session)) => {
+                // User is already logged in, get their ID
+                match user_session.get_user(db_pool).await {
+                    Ok(Some(user)) => {
+                        info!(
+                            "Found existing user session, linking new account to user_id: {}",
+                            user.user_id
+                        );
+                        Some(user.user_id)
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    } else {
+        None
+    }
+}
+
+/// Handle the OAuth callback - main entry point
 pub async fn callback(
     State(state): State<AppState>,
     cookies: Cookies,
@@ -435,213 +610,49 @@ pub async fn callback(
 
     // If we have an error, display it
     if let Some(error) = params.error {
-        let error_description = params
-            .error_description
-            .unwrap_or_else(|| "No error description provided".to_string());
-        error!("OAuth error: {} - {}", error, error_description);
-
-        return maud::html! {
-            h1 { "Authentication Error" }
-            p { "There was an error during authentication:" }
-            p { "Error: " (error) }
-            p { "Description: " (error_description) }
-            p { "Debug Info:" }
-            p { "Client ID: " (client_id) }
-            p { "Redirect URI: " (redirect_uri) }
-            p {
-                a href="/" { "Return to Home" }
-            }
-        }
-        .into_response();
+        return handle_oauth_error(&error, params.error_description, &client_id, &redirect_uri);
     }
 
     // Make sure we have a code
     let code = match params.code {
         Some(code) => code,
         None => {
-            error!("No code parameter in callback");
-
-            // Provide a more user-friendly response with debugging info
-            return maud::html! {
-                h1 { "Authentication Error" }
-                p { "There was an error during the authorization process." }
-                p { "The Bluesky server did not provide an authorization code in the callback." }
-                p { "Debug Information:" }
-                p { "State parameter: " (params.state.as_deref().unwrap_or("None")) }
-                p { "Client ID: " (client_id) }
-                p { "Redirect URI: " (redirect_uri) }
-                p {
-                    a href="/" { "Return to Home" }
-                }
-                p {
-                    a href="/login" { "Try Again" }
-                }
-            }
-            .into_response();
+            return handle_missing_code_error(params.state.as_deref(), &client_id, &redirect_uri);
         }
     };
 
     info!("Received code: {}, state: {:?}", code, params.state);
 
-    // Get the session ID from the state parameter or the cookie
-    let session_id = match params
-        .state
-        .as_ref()
-        .and_then(|s| Uuid::parse_str(s).ok())
-        .or_else(|| {
-            cookies
-                .get("bsky_session_id")
-                .and_then(|c| Uuid::parse_str(c.value()).ok())
-        }) {
-        Some(id) => id,
-        None => {
-            error!("No valid session ID found in state or cookie");
-            return (
-                StatusCode::BAD_REQUEST,
-                "No valid session found. Please try authenticating again.".to_string(),
-            )
-                .into_response();
+    // Get the session ID and data
+    let (session_id, session) = match get_session_id_and_data(
+        params.state.as_deref(),
+        &cookies,
+        &state.db
+    ).await {
+        Ok(result) => result,
+        Err((status, message)) => {
+            return (status, message).into_response();
         }
     };
 
-    // Retrieve session data from the database
-    let session = match oauth::db::get_session(&state.db, session_id).await {
-        Ok(Some(session)) => session,
-        Ok(None) => {
-            error!("Session not found: {}", session_id);
-            return (
-                StatusCode::BAD_REQUEST,
-                "Session not found. Please try authenticating again.".to_string(),
-            )
-                .into_response();
-        }
-        Err(err) => {
-            error!("Failed to retrieve session: {:?}", err);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to retrieve session data".to_string(),
-            )
-                .into_response();
-        }
-    };
-
-    // Check if the session is expired
-    if session.is_expired() {
-        error!("Session expired: {}", session_id);
-        return (
-            StatusCode::BAD_REQUEST,
-            "Session expired. Please try authenticating again.".to_string(),
-        )
-            .into_response();
-    }
-
-    // Get the code verifier from the session for PKCE
-    let code_verifier = session.code_verifier.as_deref();
-
-    // Exchange the code for an access token
-    let mut attempts = 0;
-    let mut last_error = None;
-    let mut token_response = None;
-
-    // Try up to 2 times - once with the stored nonce and once with a new nonce if needed
-    while attempts < 2 && token_response.is_none() {
-        match oauth::exchange_code_for_token(
-            &state.bsky_oauth,
-            &session.token_endpoint,
-            &client_id,
-            &code,
-            &redirect_uri,
-            code_verifier,
-            session.dpop_nonce.as_deref(), // Use the stored nonce if available
-        )
-        .await
-        {
-            Ok(response) => {
-                token_response = Some(response);
-            }
-            Err(err) => {
-                last_error = Some(err.to_string());
-
-                // Check if the error contains a DPoP nonce error
-                if last_error.as_ref().unwrap().contains("use_dpop_nonce")
-                    || last_error.as_ref().unwrap().contains("nonce mismatch")
-                {
-                    // Try to extract the nonce from the error message
-                    if let Some(nonce_start) =
-                        last_error.as_ref().unwrap().find("\"dpop_nonce\":\"")
-                    {
-                        let nonce_substring = &last_error.as_ref().unwrap()[nonce_start + 14..];
-                        if let Some(nonce_end) = nonce_substring.find('\"') {
-                            let new_nonce = &nonce_substring[..nonce_end];
-
-                            // Save the new nonce in the database for this session
-                            if let Err(e) =
-                                oauth::db::update_session_nonce(&state.db, session_id, new_nonce)
-                                    .await
-                            {
-                                error!("Failed to update session nonce: {:?}", e);
-                            } else {
-                                // Update the session object with the new nonce
-                                let mut updated_session = session.clone();
-                                updated_session.dpop_nonce = Some(new_nonce.to_string());
-
-                                // Try again with the new session containing the updated nonce
-                                attempts += 1;
-                                continue;
-                            }
-                        }
-                    }
-                }
-
-                // If we couldn't extract a nonce or it's not a nonce error, break
-                break;
-            }
-        }
-
-        attempts += 1;
-    }
-
-    let token_response = match token_response {
-        Some(token) => token,
-        None => {
-            let error_msg = last_error
-                .as_ref()
-                .unwrap_or(&"Unknown error".to_string())
-                .clone();
-            error!("Token exchange failed: {:?}", error_msg);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!(
-                    "Failed to exchange authorization code for token: {:?}",
-                    error_msg
-                ),
-            )
-                .into_response();
+    // Exchange the authorization code for an access token
+    let token_response = match exchange_auth_code_for_token(
+        &state.bsky_oauth,
+        session_id,
+        &session,
+        &code,
+        &client_id,
+        &redirect_uri,
+        &state.db
+    ).await {
+        Ok(token) => token,
+        Err((status, message)) => {
+            return (status, message).into_response();
         }
     };
 
     // Check if there's an existing user session
-    let current_user_id =
-        if let Some(session_id) = crate::auth::get_session_id_from_cookie(&cookies) {
-            match crate::auth::validate_session(&state.db, session_id).await {
-                Ok(Some(user_session)) => {
-                    // User is already logged in, get their ID
-                    match user_session.get_user(&state.db).await {
-                        Ok(Some(user)) => {
-                            info!(
-                                "Found existing user session, linking new account to user_id: {}",
-                                user.user_id
-                            );
-                            Some(user.user_id)
-                        }
-                        _ => None,
-                    }
-                }
-                _ => None,
-            }
-        } else {
-            None
-        };
+    let current_user_id = check_existing_user_session(&cookies, &state.db).await;
 
     // Create a token set with JWK thumbprint and user_id if we have one
     let mut token_set = match OAuthTokenSet::from_token_response_with_jwk(
@@ -672,8 +683,7 @@ pub async fn callback(
             .into_response();
     }
 
-    // Immediately fetch profile to get and update the handle
-    // Use the job system to do this in the background
+    // Schedule a background job to update the handle
     if let Err(err) = crate::jobs::UpdateProfileHandleJob::from_token(&token_set)
         .enqueue(state.clone(), "callback".to_string())
         .await
@@ -686,82 +696,17 @@ pub async fn callback(
 
     info!("Authentication successful for DID: {}", session.did);
 
-    // Profile image fetching and display is handled in display_profile_multi function
-
-    // Check if we already have a user from the token set
-    let user_id = if let Some(user_id) = token_set.user_id {
-        // We already have a linked user from the existing session
-        user_id
-    } else {
-        // We need to find or create a user for this token
-        match crate::user::User::get_by_did(&state.db, &session.did).await {
-            Ok(Some(user)) => user.user_id,
-            Ok(None) => {
-                // Create a new user
-                match crate::user::User::create(&state.db, None, None).await {
-                    Ok(user) => user.user_id,
-                    Err(err) => {
-                        error!("Failed to create user: {:?}", err);
-                        return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to create user")
-                            .into_response();
-                    }
-                }
-            }
-            Err(err) => {
-                error!("Failed to find user: {:?}", err);
-                return (StatusCode::INTERNAL_SERVER_ERROR, "Database error").into_response();
-            }
+    // Get or create a user ID for this token
+    let user_id = match get_or_create_user_id_for_token(&token_set, &session.did, &state.db).await {
+        Ok(id) => id,
+        Err((status, message)) => {
+            return (status, message).into_response();
         }
     };
 
-    // Check if we already have a session
-    let have_session = if let Some(session_id) = crate::auth::get_session_id_from_cookie(&cookies) {
-        matches!(
-            crate::auth::validate_session(&state.db, session_id).await,
-            Ok(Some(_))
-        )
-    } else {
-        false
-    };
-
-    // Only create a new session if we don't already have one
-    if !have_session {
-        // Create a session for this user
-        let user_agent_str = None; // Simplify by not using User-Agent header for now
-        let ip_address = None; // Simplified to not use client IP address
-
-        // Create a session
-        // Get the token id to use as primary token
-        let token_id = match sqlx::query!(
-            r#"
-            SELECT uuid_id FROM oauth_tokens WHERE did = $1
-            "#,
-            &token_set.did
-        )
-        .fetch_optional(&state.db)
-        .await
-        {
-            Ok(Some(row)) => Some(row.uuid_id),
-            _ => None,
-        };
-
-        if let Err(err) = crate::auth::create_session_and_set_cookie(
-            &state.db,
-            &cookies,
-            user_id,
-            user_agent_str,
-            ip_address,
-            token_id, // Set this token as primary
-        )
-        .await
-        {
-            error!("Failed to create session: {:?}", err);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to create session",
-            )
-                .into_response();
-        }
+    // Ensure we have a user session
+    if let Err((status, message)) = ensure_user_session(&cookies, &state.db, user_id, &token_set).await {
+        return (status, message).into_response();
     }
 
     // For backward compatibility, also set the legacy DID cookie
@@ -819,113 +764,52 @@ pub async fn get_token(
 
     // Check if the token is expired
     if token.is_expired() {
-        // If we have a refresh token, try to refresh it
-        if let Some(refresh_token) = &token.refresh_token {
-            let client_id = state.client_id();
-
-            // Try to get the session to get the stored DPoP nonce
-            let session_id = uuid::Uuid::new_v4(); // Dummy UUID for this request
-            let session = match oauth::db::get_session(&state.db, session_id).await {
-                Ok(Some(s)) => s,
-                _ => OAuthSession::new(
-                    params.did.clone(),
-                    None,
-                    params.token_endpoint.clone().unwrap_or_default(),
-                ),
-            };
-
-            match oauth::refresh_token(
-                &state.bsky_oauth,
-                &params.token_endpoint.unwrap_or_default(),
-                &client_id,
-                refresh_token,
-                session.dpop_nonce.as_deref(),
-            )
-            .await
-            {
-                Ok(token_response) => {
-                    // Create a new token set with JWK thumbprint and preserve the handle
-                    let new_token = match OAuthTokenSet::from_token_response_with_jwk(
-                        &token_response,
-                        token.did.clone(),
-                        &state.bsky_oauth.public_key,
-                    ) {
-                        Ok(new_token) => new_token.with_handle_from(&token),
-                        Err(err) => {
-                            error!("Failed to create token set with JWK: {:?}", err);
-                            // Fallback to standard token creation
-                            OAuthTokenSet::from_token_response(token_response, token.did.clone())
-                                .with_handle_from(&token)
-                        }
-                    };
-
-                    // Store the new token
-                    if let Err(err) = oauth::db::store_token(&state.db, &new_token).await {
-                        error!("Failed to store refreshed token: {:?}", err);
-                        return (
-                            StatusCode::INTERNAL_SERVER_ERROR,
-                            "Failed to store refreshed token".to_string(),
-                        )
-                            .into_response();
-                    }
-
-                    // Also fetch profile to update handle if needed (don't block on this)
-                    // Use the job system to do this asynchronously
-                    if let Err(err) = crate::jobs::UpdateProfileHandleJob::from_token(&new_token)
-                        .enqueue(state.clone(), "get_token".to_string())
-                        .await
-                    {
-                        error!(
-                            "Failed to enqueue handle update job after token refresh: {:?}",
-                            err
-                        );
-                    } else {
-                        info!(
-                            "Queued handle update job after token refresh for {}",
-                            &new_token.did
-                        );
-                    }
-
-                    // Return the refreshed token
-                    return Json(serde_json::json!({
-                        "did": new_token.did,
-                        "access_token": new_token.access_token,
-                        "token_type": new_token.token_type,
-                        "expires_in": if new_token.expires_at > SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() {
-                            new_token.expires_at - SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs()
-                        } else { 0 },
-                        "scope": new_token.scope,
-                        "status": "refreshed"
-                    })).into_response();
-                }
-                Err(err) => {
-                    error!("Failed to refresh token: {:?}", err);
-
-                    // Delete the expired token
-                    if let Err(e) = oauth::db::delete_token(&state.db, &token.did).await {
-                        error!("Failed to delete expired token: {:?}", e);
-                    }
-
-                    return (
-                        StatusCode::UNAUTHORIZED,
-                        "Token expired and refresh failed. Please authenticate again.".to_string(),
-                    )
-                        .into_response();
+        // Get token endpoint from parameters or fetch it
+        let token_endpoint = match params.token_endpoint.clone() {
+            Some(endpoint) => endpoint,
+            None => {
+                // Try to find a stored token endpoint or use default
+                match get_token_endpoint_for_did(&state.db, &token.did).await {
+                    Ok(Some(endpoint)) => endpoint,
+                    _ => "https://bsky.social/xrpc/com.atproto.server.refreshSession".to_string(),
                 }
             }
-        } else {
-            // No refresh token, need to authenticate again
+        };
 
-            // Delete the expired token
-            if let Err(e) = oauth::db::delete_token(&state.db, &token.did).await {
-                error!("Failed to delete expired token: {:?}", e);
+        // Attempt to refresh the token using our helper
+        match oauth::refresh_token_if_needed(&token, &state, &token_endpoint).await {
+            Ok(Some(new_token)) => {
+                // Return the refreshed token
+                return Json(serde_json::json!({
+                    "did": new_token.did,
+                    "access_token": new_token.access_token,
+                    "token_type": new_token.token_type,
+                    "expires_in": if new_token.expires_at > SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() {
+                        new_token.expires_at - SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs()
+                    } else { 0 },
+                    "scope": new_token.scope,
+                    "status": "refreshed"
+                })).into_response();
             }
+            Ok(None) => {
+                // This shouldn't happen - we already verified the token is expired
+                error!("Token wasn't refreshed despite being expired");
+            }
+            Err(err) => {
+                error!("Failed to refresh token: {:?}", err);
 
-            return (
-                StatusCode::UNAUTHORIZED,
-                "Token expired. Please authenticate again.".to_string(),
-            )
-                .into_response();
+                // Delete the expired token
+                if let Err(e) = oauth::db::delete_token(&state.db, &token.did).await {
+                    error!("Failed to delete expired token: {:?}", e);
+                }
+
+                // No refresh token or refresh failed
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    "Token expired and refresh failed. Please authenticate again.".to_string(),
+                )
+                    .into_response();
+            }
         }
     }
 
@@ -1191,157 +1075,54 @@ pub async fn profile(
 
     // Check if the primary token is expired and try to refresh it
     if primary_token.is_expired() {
-        if let Some(refresh_token) = &primary_token.refresh_token {
-            let client_id = state.client_id();
-
-            // Try to get the latest DPoP nonce
-            let dpop_nonce = match oauth::db::get_latest_nonce(&state.db, &primary_token.did).await
-            {
-                Ok(nonce) => nonce,
-                Err(err) => {
-                    error!("Failed to get DPoP nonce: {:?}", err);
-                    None
-                }
-            };
-
-            // Lookup the token endpoint in the OAuthSession
-            let token_endpoint = match get_token_endpoint_for_did(&state.db, &primary_token.did)
-                .await
-            {
-                Ok(Some(endpoint)) => endpoint,
-                _ => {
-                    // We need to resolve the PDS to get the correct endpoint
-                    info!(
-                        "No stored token endpoint found for DID: {}, resolving PDS",
-                        &primary_token.did
-                    );
-
-                    // Try to resolve the PDS endpoint
-                    let xrpc_client = std::sync::Arc::new(
-                        atrium_xrpc_client::reqwest::ReqwestClient::new("https://bsky.social"),
-                    );
-
-                    match atrium_api::types::string::Did::new(primary_token.did.clone()) {
-                        Ok(did_obj) => {
-                            match crate::did::resolve_did_to_document(&did_obj, xrpc_client).await {
-                                Ok(did_document) => {
-                                    if let Some(services) = did_document.service.as_ref() {
-                                        if let Some(pds_service) =
-                                            services.iter().find(|s| s.id == "#atproto_pds")
-                                        {
-                                            let pds_endpoint = &pds_service.service_endpoint;
-                                            let refresh_endpoint = format!(
-                                                "{}/xrpc/com.atproto.server.refreshSession",
-                                                pds_endpoint
-                                            );
-                                            info!(
-                                                "Resolved PDS endpoint for refresh: {}",
-                                                refresh_endpoint
-                                            );
-                                            refresh_endpoint
-                                        } else {
-                                            // Fallback to bsky.social if no PDS service found
-                                            "https://bsky.social/xrpc/com.atproto.server.refreshSession".to_string()
-                                        }
-                                    } else {
-                                        // Fallback to bsky.social if no services found
-                                        "https://bsky.social/xrpc/com.atproto.server.refreshSession"
-                                            .to_string()
-                                    }
-                                }
-                                Err(_) => {
-                                    // Fallback to bsky.social on resolution error
-                                    "https://bsky.social/xrpc/com.atproto.server.refreshSession"
-                                        .to_string()
-                                }
-                            }
-                        }
-                        Err(_) => {
-                            // Fallback to bsky.social on DID parse error
-                            "https://bsky.social/xrpc/com.atproto.server.refreshSession".to_string()
-                        }
+        // Lookup the token endpoint for refreshing
+        let token_endpoint = match get_token_endpoint_for_did(&state.db, &primary_token.did).await {
+            Ok(Some(endpoint)) => endpoint,
+            _ => {
+                // Resolve the PDS endpoint
+                info!(
+                    "No stored token endpoint found for DID: {}, resolving PDS",
+                    &primary_token.did
+                );
+                match crate::api::find_pds_endpoint(&primary_token.did, state.bsky_client.clone())
+                    .await
+                {
+                    Ok(pds_endpoint) => {
+                        let refresh_endpoint =
+                            format!("{}/xrpc/com.atproto.server.refreshSession", pds_endpoint);
+                        info!("Resolved PDS endpoint for refresh: {}", refresh_endpoint);
+                        refresh_endpoint
+                    }
+                    Err(e) => {
+                        error!("Failed to resolve PDS endpoint: {:?}, using default", e);
+                        "https://bsky.social/xrpc/com.atproto.server.refreshSession".to_string()
                     }
                 }
-            };
+            }
+        };
 
-            match oauth::refresh_token(
-                &state.bsky_oauth,
-                &token_endpoint,
-                &client_id,
-                refresh_token,
-                dpop_nonce.as_deref(),
-            )
-            .await
-            {
-                Ok(token_response) => {
-                    // Create a new token set with JWK thumbprint and preserve the handle
-                    let new_token = match OAuthTokenSet::from_token_response_with_jwk(
-                        &token_response,
-                        primary_token.did.clone(),
-                        &state.bsky_oauth.public_key,
-                    ) {
-                        Ok(token) => {
-                            // Set the user_id and preserve the handle
-                            token
-                                .with_user_id(user.user_id)
-                                .with_handle_from(&primary_token)
-                        }
-                        Err(err) => {
-                            error!("Failed to create token set with JWK: {:?}", err);
-                            // Fallback to standard token creation
-                            OAuthTokenSet::from_token_response(
-                                token_response,
-                                primary_token.did.clone(),
-                            )
-                            .with_user_id(user.user_id)
-                            .with_handle_from(&primary_token)
-                        }
-                    };
+        // Use our helper function to attempt token refresh
+        match oauth::refresh_token_if_needed(&primary_token, &state, &token_endpoint).await {
+            Ok(Some(new_token)) => {
+                // Refresh all tokens
+                let tokens = match oauth::db::get_tokens_for_user(&state.db, user.user_id).await {
+                    Ok(tokens) => tokens,
+                    Err(_) => vec![new_token.clone()],
+                };
 
-                    // Store the new token
-                    if let Err(err) = oauth::db::store_token(&state.db, &new_token).await {
-                        error!("Failed to store refreshed token: {:?}", err);
-                        return (
-                            StatusCode::INTERNAL_SERVER_ERROR,
-                            "Failed to store refreshed token".to_string(),
-                        )
-                            .into_response();
-                    }
-
-                    // Also fetch profile to update handle if needed (don't block on this)
-                    // Use the job system to do this asynchronously
-                    if let Err(err) = crate::jobs::UpdateProfileHandleJob::from_token(&new_token)
-                        .enqueue(state.clone(), "profile_route".to_string())
-                        .await
-                    {
-                        error!(
-                            "Failed to enqueue handle update job after token refresh: {:?}",
-                            err
-                        );
-                    } else {
-                        info!(
-                            "Queued handle update job after token refresh for {}",
-                            &new_token.did
-                        );
-                    }
-
-                    // Refresh all tokens
-                    let tokens = match oauth::db::get_tokens_for_user(&state.db, user.user_id).await
-                    {
-                        Ok(tokens) => tokens,
-                        Err(_) => vec![new_token.clone()],
-                    };
-
-                    // Display the profile with the refreshed token and all tokens
-                    return display_profile_multi(&state, new_token, tokens)
-                        .await
-                        .into_response();
-                }
-                Err(err) => {
-                    error!("Failed to refresh token: {:?}", err);
-                    // Token refresh failed, but we still show the profile with expired token
-                    // so the user can see other linked accounts
-                }
+                // Display the profile with the refreshed token and all tokens
+                return display_profile_multi(&state, new_token, tokens)
+                    .await
+                    .into_response();
+            }
+            Ok(None) => {
+                // Token wasn't refreshed (shouldn't happen as we already checked is_expired)
+                info!("Token wasn't refreshed (unexpected - should be expired)");
+            }
+            Err(err) => {
+                error!("Failed to refresh token: {:?}", err);
+                // Token refresh failed, but we still show the profile with expired token
+                // so the user can see other linked accounts
             }
         }
     }
@@ -1386,93 +1167,41 @@ async fn display_profile_multi(
         error!("Failed to enqueue handle update job for display: {:?}", err);
     }
 
-    // Fetch profile data directly (we don't have to make this async since we're also updating in background)
-    let profile_data = match fetch_profile_for_display(&primary_token.did, state).await {
-        Ok(data) => Some(data),
+    // Fetch profile data with avatar using our API helpers
+    let profile_info = match crate::api::get_profile_with_avatar(&primary_token.did, state).await {
+        Ok(info) => info,
         Err(e) => {
-            error!("Failed to fetch user profile for display: {:?}", e);
-            None
+            error!("Failed to fetch profile info: {:?}", e);
+            // Create default profile info with just the DID
+            crate::api::ProfileDataParams {
+                display_name: None,
+                handle: None,
+                avatar: None,
+                description: None,
+                profile_data: None,
+            }
         }
     };
 
-    // Try to extract avatar CID from profile
-    let mut avatar_blob_cid = None;
-    if let Some(data) = &profile_data {
-        if let Some(value) = data.get("value") {
-            if let Some(avatar) = value.get("avatar") {
-                if let Some(ref_obj) = avatar.get("ref") {
-                    if let Some(link) = ref_obj.get("$link") {
-                        if let Some(cid_str) = link.as_str() {
-                            avatar_blob_cid = Some(cid_str.to_string());
-                            info!("Found avatar blob CID: {}", cid_str);
-                        }
-                    }
-                }
-            }
-        }
-    }
+    // Extract information for display
+    let display_name = profile_info
+        .display_name
+        .unwrap_or_else(|| primary_token.did.clone());
+    let handle = profile_info.handle;
 
-    // Try to fetch avatar blob
-    let avatar_blob = if let Some(ref cid) = avatar_blob_cid {
-        match fetch_blob_by_cid(&primary_token.did, cid, state).await {
-            Ok(blob) => {
-                info!("Successfully fetched avatar blob: {} bytes", blob.len());
-                Some(blob)
-            }
-            Err(e) => {
-                error!("Failed to fetch avatar blob: {:?}", e);
-                None
-            }
-        }
+    // Extract avatar information and encode as base64 if available
+    let avatar_blob_cid = profile_info.avatar.as_ref().map(|a| a.cid.clone());
+
+    // Encode avatar as base64 if available
+    let avatar_base64 = if let Some(avatar) = &profile_info.avatar {
+        avatar.data.as_ref().map(|data| format!(
+                "data:{};base64,{}",
+                avatar.mime_type,
+                base64::Engine::encode(&base64::engine::general_purpose::STANDARD, data)
+            ))
     } else {
         None
     };
-
-    // Determine mime type for image
-    let mut mime_type = "image/jpeg"; // Default if we can't detect
-
-    // Try to extract the mime type from the profile data
-    if let Some(data) = &profile_data {
-        if let Some(value) = data.get("value") {
-            if let Some(avatar) = value.get("avatar") {
-                if let Some(mime) = avatar.get("mimeType") {
-                    if let Some(mime_str) = mime.as_str() {
-                        mime_type = mime_str;
-                        info!("Detected mime type from profile: {}", mime_type);
-                    }
-                }
-            }
-        }
-    }
-
-    // Encode avatar as base64
-    let avatar_base64 = avatar_blob.as_ref().map(|blob| {
-        format!(
-            "data:{};base64,{}",
-            mime_type,
-            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, blob)
-        )
-    });
-
-    // Extract display name and handle from profile
-    let mut display_name = primary_token.did.clone();
-    let mut handle = None;
-
-    if let Some(data) = &profile_data {
-        if let Some(value) = data.get("value") {
-            if let Some(name) = value.get("displayName") {
-                if let Some(name_str) = name.as_str() {
-                    display_name = name_str.to_string();
-                }
-            }
-
-            if let Some(h) = value.get("handle") {
-                if let Some(h_str) = h.as_str() {
-                    handle = Some(h_str.to_string());
-                }
-            }
-        }
-    }
 
     // Create profile display
     html! {
@@ -1627,14 +1356,14 @@ async fn display_profile_multi(
                     }
 
                     // Profile data section with improved styling
-                    @if let Some(data) = &profile_data {
+                    @if let Some(profile_data) = &profile_info.profile_data {
                         div class="mb-8" {
                             h3 class="text-xl font-bold text-gray-800 mb-4" { "Profile Data" }
                             details class="bg-gray-50 rounded-lg border border-gray-200" {
                                 summary class="cursor-pointer font-medium text-gray-700 p-4 hover:bg-gray-100" { "View Raw JSON" }
                                 pre class="bg-gray-900 text-gray-100 p-4 rounded-b-lg overflow-x-auto text-sm" {
                                     code {
-                                        (serde_json::to_string_pretty(data).unwrap_or_else(|_| "Failed to format profile data".to_string()))
+                                        (serde_json::to_string_pretty(profile_data).unwrap_or_else(|_| "Failed to format profile data".to_string()))
                                     }
                                 }
                             }

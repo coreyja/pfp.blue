@@ -1,21 +1,27 @@
-use crate::{auth::AuthUser, state::AppState};
+use crate::{auth::AuthUser, profile_progress::ProfilePictureProgress, state::AppState};
 use axum::extract::{Form, State};
 use axum::{
-    response::IntoResponse,
+    response::{IntoResponse, Redirect},
     routing::{get, post},
 };
 use cja::jobs::Job as _;
+use color_eyre::eyre::eyre;
 use serde::Deserialize;
 use tower_cookies::{Cookie, Cookies};
+use tracing::{error, info};
+use uuid::Uuid;
 
 pub mod bsky;
 
+/// Build the application router with all routes
 pub fn routes(app_state: AppState) -> axum::Router {
     axum::Router::new()
-        .route("/", get(root))
-        .route("/me", get(bsky::profile))
-        .route("/login", get(login))
+        // Public pages
+        .route("/", get(root_page))
+        .route("/login", get(login_page))
         .route("/logout", get(logout))
+        // Authenticated pages
+        .route("/me", get(bsky::profile))
         // Profile Picture Progress routes
         .route("/profile_progress/toggle", post(toggle_profile_progress))
         .route(
@@ -34,7 +40,8 @@ pub fn routes(app_state: AppState) -> axum::Router {
         .with_state(app_state)
 }
 
-async fn root() -> impl IntoResponse {
+/// Root page handler - displays the homepage
+async fn root_page() -> impl IntoResponse {
     maud::html! {
         // Add Tailwind CSS from CDN
         script src="https://unpkg.com/@tailwindcss/browser@4" {}
@@ -119,7 +126,8 @@ async fn root() -> impl IntoResponse {
     }
 }
 
-async fn login(State(state): State<AppState>) -> impl IntoResponse {
+/// Login page handler - displays the login form
+async fn login_page(State(state): State<AppState>) -> impl IntoResponse {
     maud::html! {
         // Add Tailwind CSS from CDN
         script src="https://unpkg.com/@tailwindcss/browser@4" {}
@@ -199,59 +207,36 @@ async fn login(State(state): State<AppState>) -> impl IntoResponse {
     }
 }
 
-/// Toggle profile picture progress feature for a token
+/// Parameters for toggling profile picture progress
 #[derive(Deserialize)]
 struct ToggleProfileProgressParams {
     token_id: String, // This is the DID string, not a UUID
     enabled: Option<String>,
 }
 
+/// Handler for toggling profile picture progress
 async fn toggle_profile_progress(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
     Form(params): Form<ToggleProfileProgressParams>,
 ) -> impl IntoResponse {
-    use tracing::{error, info};
-
-    // First, validate that this token belongs to the user
-    let token_result = sqlx::query!(
-        r#"
-        SELECT id FROM oauth_tokens
-        WHERE did = $1 AND user_id = $2
-        "#,
-        params.token_id,
-        user.user_id
-    )
-    .fetch_optional(&state.db)
-    .await;
-
-    let token_id = match token_result {
-        Ok(Some(row)) => row.id,
-        Ok(None) => {
-            error!(
-                "Attempted to toggle progress for token not belonging to user: {}",
-                params.token_id
-            );
-            return axum::response::Redirect::to("/me").into_response();
-        }
-        Err(err) => {
-            error!("Database error when checking token ownership: {:?}", err);
-            return axum::response::Redirect::to("/me").into_response();
+    // Validate token ownership and get token ID
+    let token_id = match validate_token_ownership(&state, &params.token_id, user.user_id).await {
+        Ok(id) => id,
+        Err(e) => {
+            error!("Token ownership validation failed: {}", e);
+            return Redirect::to("/me").into_response();
         }
     };
 
     // Get or create the profile progress settings
-    let result = crate::profile_progress::ProfilePictureProgress::get_or_create(
-        &state.db,
-        token_id,
-        params.enabled.is_some(),
-        None,
-    )
-    .await;
+    let result =
+        ProfilePictureProgress::get_or_create(&state.db, token_id, params.enabled.is_some(), None)
+            .await;
 
     match result {
         Ok(mut settings) => {
-            // If settings were found or created, update the enabled status
+            // Update the enabled status
             if let Err(err) = settings
                 .update_enabled(&state.db, params.enabled.is_some())
                 .await
@@ -271,52 +256,33 @@ async fn toggle_profile_progress(
     }
 
     // Redirect back to profile page
-    axum::response::Redirect::to("/me").into_response()
+    Redirect::to("/me").into_response()
 }
 
-/// Set the original profile picture for progress visualization
+/// Parameters for setting original profile picture
 #[derive(Deserialize)]
 struct SetOriginalProfilePictureParams {
     token_id: String, // This is the DID string, not a UUID
     blob_cid: String,
 }
 
+/// Handler for setting original profile picture
 async fn set_original_profile_picture(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
     Form(params): Form<SetOriginalProfilePictureParams>,
 ) -> impl IntoResponse {
-    use tracing::{error, info};
-
-    // First, validate that this token belongs to the user
-    let token_result = sqlx::query!(
-        r#"
-        SELECT id FROM oauth_tokens
-        WHERE did = $1 AND user_id = $2
-        "#,
-        params.token_id,
-        user.user_id
-    )
-    .fetch_optional(&state.db)
-    .await;
-
-    let token_id = match token_result {
-        Ok(Some(row)) => row.id,
-        Ok(None) => {
-            error!(
-                "Attempted to set original profile picture for token not belonging to user: {}",
-                params.token_id
-            );
-            return axum::response::Redirect::to("/me").into_response();
-        }
-        Err(err) => {
-            error!("Database error when checking token ownership: {:?}", err);
-            return axum::response::Redirect::to("/me").into_response();
+    // Validate token ownership and get token ID
+    let token_id = match validate_token_ownership(&state, &params.token_id, user.user_id).await {
+        Ok(id) => id,
+        Err(e) => {
+            error!("Token ownership validation failed: {}", e);
+            return Redirect::to("/me").into_response();
         }
     };
 
     // Get or create the profile progress settings
-    let result = crate::profile_progress::ProfilePictureProgress::get_or_create(
+    let result = ProfilePictureProgress::get_or_create(
         &state.db,
         token_id,
         true, // Enable when setting an original profile picture
@@ -338,14 +304,8 @@ async fn set_original_profile_picture(
                     token_id, params.blob_cid
                 );
 
-                // Also enqueue a job to update the profile picture
-                let job = crate::jobs::UpdateProfilePictureProgressJob::new(token_id);
-                if let Err(e) = job
-                    .enqueue(state.clone(), "enabled_profile_progress".to_string())
-                    .await
-                {
-                    error!("Failed to enqueue profile picture update job: {:?}", e);
-                }
+                // Enqueue a job to update the profile picture
+                enqueue_profile_picture_update_job(&state, token_id).await;
             }
         }
         Err(err) => {
@@ -354,28 +314,65 @@ async fn set_original_profile_picture(
     }
 
     // Redirect back to profile page
-    axum::response::Redirect::to("/me").into_response()
+    Redirect::to("/me").into_response()
 }
 
-use maud::{Escaper, Render};
-use std::fmt;
-use std::fmt::Write as _;
+/// Helper function to validate token ownership and return token ID
+async fn validate_token_ownership(state: &AppState, did: &str, user_id: Uuid) -> cja::Result<Uuid> {
+    let token_result = sqlx::query!(
+        r#"
+        SELECT id FROM oauth_tokens
+        WHERE did = $1 AND user_id = $2
+        "#,
+        did,
+        user_id
+    )
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|e| {
+        error!("Database error when checking token ownership: {:?}", e);
+        eyre!("Database error: {}", e)
+    })?;
 
-/// Renders the given value using its `Debug` implementation.
-#[allow(dead_code)]
-struct Debug<T: fmt::Debug>(T);
+    match token_result {
+        Some(row) => Ok(row.id),
+        None => {
+            error!("Attempted to access token not belonging to user: {}", did);
+            Err(eyre!("Token not found or not owned by user"))
+        }
+    }
+}
 
-impl<T: fmt::Debug> Render for Debug<T> {
+/// Helper function to enqueue a profile picture update job
+async fn enqueue_profile_picture_update_job(state: &AppState, token_id: Uuid) {
+    let job = crate::jobs::UpdateProfilePictureProgressJob::new(token_id);
+    if let Err(e) = job
+        .enqueue(state.clone(), "enabled_profile_progress".to_string())
+        .await
+    {
+        error!("Failed to enqueue profile picture update job: {:?}", e);
+    } else {
+        info!("Enqueued profile picture update job for token {}", token_id);
+    }
+}
+
+/// Helper for rendering debug output in templates
+#[derive(Debug)]
+struct DebugRenderer<T: std::fmt::Debug>(T);
+
+impl<T: std::fmt::Debug> maud::Render for DebugRenderer<T> {
     fn render_to(&self, output: &mut String) {
-        let mut escaper = Escaper::new(output);
-        write!(escaper, "{:?}", self.0).unwrap();
+        let mut escaper = maud::Escaper::new(output);
+        std::fmt::Write::write_fmt(&mut escaper, format_args!("{:?}", self.0)).unwrap();
     }
 }
 
 /// Logout route - clears authentication cookies and redirects to home
 async fn logout(State(state): State<AppState>, cookies: Cookies) -> impl IntoResponse {
     // End the session
-    let _ = crate::auth::end_session(&state.db, &cookies).await;
+    if let Err(e) = crate::auth::end_session(&state.db, &cookies).await {
+        error!("Error ending session: {:?}", e);
+    }
 
     // Also clear the old legacy cookie if it exists
     if let Some(_cookie) = cookies.get(bsky::AUTH_DID_COOKIE) {
@@ -386,8 +383,10 @@ async fn logout(State(state): State<AppState>, cookies: Cookies) -> impl IntoRes
         remove_cookie.set_secure(std::env::var("PROTO").ok() == Some("https".to_owned()));
 
         cookies.add(remove_cookie);
+        info!("Removed legacy auth cookie");
     }
 
     // Redirect to home page
-    axum::response::Redirect::to("/")
+    info!("User logged out successfully");
+    Redirect::to("/")
 }

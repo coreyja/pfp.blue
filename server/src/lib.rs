@@ -1,3 +1,4 @@
+pub mod api;
 pub mod auth;
 pub mod cron;
 pub mod did;
