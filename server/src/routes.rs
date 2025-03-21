@@ -371,8 +371,6 @@ async fn enqueue_profile_picture_update_job(state: &AppState, token_id: Uuid) {
     }
 }
 
-// Removed unused debug renderer implementation
-
 /// Logout route - clears authentication cookies and redirects to home
 async fn logout(State(state): State<AppState>, cookies: Cookies) -> impl IntoResponse {
     // End the session

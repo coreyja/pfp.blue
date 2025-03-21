@@ -43,7 +43,7 @@ async fn run_application() -> cja::Result<()> {
     let app_state = initialize_app_state().await?;
 
     // Set up application router
-    let _app_router = routes::routes(app_state.clone());
+    let _ = routes::routes(app_state.clone());
 
     // Spawn application tasks
     info!("Spawning application tasks");
