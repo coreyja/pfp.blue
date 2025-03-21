@@ -56,6 +56,11 @@ impl Button {
             ..Default::default()
         }
     }
+    
+    pub fn variant(mut self, variant: ButtonVariant) -> Self {
+        self.variant = variant;
+        self
+    }
 
     pub fn primary(text: &str) -> Self {
         Self {

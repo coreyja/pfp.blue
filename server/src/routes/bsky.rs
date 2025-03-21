@@ -282,45 +282,120 @@ pub async fn fetch_blob_by_cid(
 }
 
 /// Helper function to handle OAuth error responses
-fn handle_oauth_error(error: &str, error_description: Option<String>, client_id: &str, redirect_uri: &str) -> axum::response::Response {
+fn handle_oauth_error(
+    error: &str,
+    error_description: Option<String>,
+    client_id: &str,
+    redirect_uri: &str,
+) -> axum::response::Response {
     let error_description = error_description.unwrap_or_else(|| "No error description provided".to_string());
     error!("OAuth error: {} - {}", error, error_description);
 
-    maud::html! {
-        h1 { "Authentication Error" }
-        p { "There was an error during authentication:" }
-        p { "Error: " (error) }
-        p { "Description: " (error_description) }
-        p { "Debug Info:" }
-        p { "Client ID: " (client_id) }
-        p { "Redirect URI: " (redirect_uri) }
-        p {
-            a href="/" { "Return to Home" }
+    use crate::components::ui::{
+        badge::{Badge, BadgeColor},
+        button::Button, 
+        heading::Heading,
+    };
+
+    // Create a styled error page
+    let markup = html! {
+        // Add Tailwind CSS from CDN
+        script src="https://unpkg.com/@tailwindcss/browser@4" {}
+
+        // Main container with gradient background
+        div class="min-h-screen bg-gradient-to-br from-blue-100 via-indigo-50 to-purple-100 py-8 px-4 sm:px-6 lg:px-8" {
+            div class="max-w-lg mx-auto bg-white rounded-2xl shadow-xl overflow-hidden" {
+                div class="px-8 py-6" {
+                    (Heading::h1("Authentication Error"))
+                    p class="text-red-600 font-medium mb-4" { "There was an error during authentication:" }
+                    
+                    div class="mb-4" {
+                        p class="text-gray-700" { "Error: " }
+                        (Badge::new(error, BadgeColor::Red).rounded(true))
+                    }
+                    
+                    div class="mb-6" {
+                        p class="text-gray-700" { "Description: " }
+                        p class="text-gray-600 italic" { (error_description) }
+                    }
+                    
+                    details class="mb-6 bg-gray-50 p-3 rounded-lg" {
+                        summary class="cursor-pointer font-medium text-gray-700" { "Debug Information" }
+                        div class="mt-2 space-y-1 text-sm" {
+                            p { "Client ID: " (client_id) }
+                            p { "Redirect URI: " (redirect_uri) }
+                        }
+                    }
+                    
+                    div class="flex justify-center mt-4" {
+                        (Button::primary("Return to Home").href("/"))
+                    }
+                }
+            }
+
+            // Footer credit
+            div class="mt-8 text-center text-gray-500 text-sm" {
+                p { "© 2025 pfp.blue - Bluesky Profile Management" }
+            }
         }
-    }
-    .into_response()
+    };
+
+    markup.into_response()
 }
 
 /// Helper function to handle missing code error
 fn handle_missing_code_error(state_param: Option<&str>, client_id: &str, redirect_uri: &str) -> axum::response::Response {
     error!("No code parameter in callback");
 
-    maud::html! {
-        h1 { "Authentication Error" }
-        p { "There was an error during the authorization process." }
-        p { "The Bluesky server did not provide an authorization code in the callback." }
-        p { "Debug Information:" }
-        p { "State parameter: " (state_param.unwrap_or("None")) }
-        p { "Client ID: " (client_id) }
-        p { "Redirect URI: " (redirect_uri) }
-        p {
-            a href="/" { "Return to Home" }
+    use crate::components::ui::{
+        button::{Button, ButtonVariant, IconPosition},
+        heading::Heading,
+        icon::Icon,
+    };
+
+    // Create a styled error page
+    let markup = html! {
+        // Add Tailwind CSS from CDN
+        script src="https://unpkg.com/@tailwindcss/browser@4" {}
+
+        // Main container with gradient background
+        div class="min-h-screen bg-gradient-to-br from-blue-100 via-indigo-50 to-purple-100 py-8 px-4 sm:px-6 lg:px-8" {
+            div class="max-w-lg mx-auto bg-white rounded-2xl shadow-xl overflow-hidden" {
+                div class="px-8 py-6" {
+                    (Heading::h1("Authentication Error"))
+                    p class="text-red-600 font-medium mb-2" { "There was an error during the authorization process." }
+                    p class="text-gray-700 mb-6" { "The Bluesky server did not provide an authorization code in the callback." }
+                    
+                    details class="mb-6 bg-gray-50 p-3 rounded-lg" {
+                        summary class="cursor-pointer font-medium text-gray-700" { "Debug Information" }
+                        div class="mt-2 space-y-1 text-sm" {
+                            p { "State parameter: " (state_param.unwrap_or("None")) }
+                            p { "Client ID: " (client_id) }
+                            p { "Redirect URI: " (redirect_uri) }
+                        }
+                    }
+                    
+                    div class="flex flex-col sm:flex-row justify-center gap-4 mt-6" {
+                        (Button::primary("Try Again")
+                            .href("/login")
+                            .icon(Icon::login().into_string(), IconPosition::Left))
+                        
+                        (Button::new("Return to Home")
+                            .variant(ButtonVariant::Secondary)
+                            .href("/")
+                            .icon(Icon::home().into_string(), IconPosition::Left))
+                    }
+                }
+            }
+
+            // Footer credit
+            div class="mt-8 text-center text-gray-500 text-sm" {
+                p { "© 2025 pfp.blue - Bluesky Profile Management" }
+            }
         }
-        p {
-            a href="/login" { "Try Again" }
-        }
-    }
-    .into_response()
+    };
+
+    markup.into_response()
 }
 
 /// Helper function to get session ID from state or cookie
@@ -960,74 +1035,91 @@ pub async fn profile(
     }
 
     if tokens.is_empty() {
-        return maud::html! {
+        use crate::components::{
+            form::{Form, InputField},
+            profile::FeatureCard,
+            ui::{
+                button::{Button, ButtonVariant, IconPosition},
+                heading::Heading,
+                icon::Icon,
+            },
+        };
+
+        let form_content = html! {
+            (InputField::new("did")
+                .placeholder("Enter Bluesky handle or DID")
+                .icon(Icon::user())
+                .required(true))
+            
+            (Button::primary("Link Bluesky Account")
+                .icon(Icon::link().into_string(), IconPosition::Left)
+                .button_type("submit")
+                .full_width(true))
+        };
+
+        let markup = html! {
             // Add Tailwind CSS from CDN
             script src="https://unpkg.com/@tailwindcss/browser@4" {}
 
             // Empty state with playful design
             div class="min-h-screen bg-gradient-to-br from-blue-100 via-indigo-50 to-purple-100 py-8 px-4 sm:px-6 lg:px-8" {
-                div class="max-w-md mx-auto bg-white rounded-2xl shadow-xl overflow-hidden text-center p-8" {
-                    // Fun illustration
+                div class="max-w-3xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden text-center p-8" {
+                    // App logo
                     div class="mb-6 flex justify-center" {
-                        (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" width="150" height="150" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-400"><circle cx="12" cy="8" r="5"></circle><path d="M20 21v-2a7 7 0 0 0-14 0v2"></path><line x1="12" y1="8" x2="12" y2="8"></line><path d="M3 20h18a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1H9L3 12v7a1 1 0 0 0 1 1z"></path></svg>"#))
+                        (Icon::app_logo())
                     }
 
-                    h1 class="text-3xl font-bold text-gray-800 mb-4" { "Welcome to Your Profile!" }
-                    p class="text-gray-600 mb-8" { "You don't have any Bluesky accounts linked yet. Let's get started!" }
-
-                    // Playful form
-                    div class="bg-gradient-to-r from-indigo-50 to-blue-50 rounded-xl p-6 border border-dashed border-indigo-200" {
-                        form action="/oauth/bsky/authorize" method="get" class="space-y-4" {
-                            // Fun section header
-                            div class="flex items-center gap-2 mb-2" {
-                                div class="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600" {
-                                    "🚀"
-                                }
-                                h2 class="text-lg font-semibold text-indigo-800" { "Connect Your Bluesky" }
-                            }
-
-                            div class="relative" {
-                                div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none" {
-                                    (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>"#))
-                                }
-                                input type="text" name="did" placeholder="Enter Bluesky handle or DID"
-                                    class="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-gray-900" {}
-                            }
-
-                            button type="submit"
-                                class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center" {
-                                (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>"#))
-                                "Link Bluesky Account"
-                            }
-                        }
+                    (Heading::h1("Welcome to Your Profile!")
+                        .with_classes("text-center"))
+                    p class="text-gray-600 mb-8 text-center" { 
+                        "You don't have any Bluesky accounts linked yet. Let's get started!" 
                     }
 
-                    // Tips section
-                    div class="mt-8 text-left" {
-                        h3 class="text-lg font-semibold text-gray-800 mb-3" { "Why link your Bluesky account?" }
-                        ul class="space-y-2 text-gray-600" {
-                            li class="flex gap-2" {
-                                (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-green-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>"#))
-                                span { "Manage your Bluesky profile with ease" }
-                            }
-                            li class="flex gap-2" {
-                                (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-green-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>"#))
-                                span { "Multiple account support" }
-                            }
-                            li class="flex gap-2" {
-                                (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-green-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>"#))
-                                span { "Seamless authentication" }
-                            }
-                        }
+                    // Auth form in a feature card style
+                    div class="mb-8" {
+                        (Form::new("/oauth/bsky/authorize", "get", form_content)
+                            .extra_classes("bg-gradient-to-r from-indigo-50 to-blue-50 rounded-xl p-6 border border-dashed border-indigo-200"))
+                    }
+
+                    // Features section with cards
+                    (Heading::h3("Why link your Bluesky account?"))
+                    
+                    div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8" {
+                        (FeatureCard::new(
+                            "Profile Management", 
+                            "Manage your Bluesky profile with ease, including custom profile pictures",
+                            "⚙️",
+                            crate::components::profile::feature_card::FeatureCardColor::Blue
+                        ))
+                        
+                        (FeatureCard::new(
+                            "Multiple Accounts", 
+                            "Link and manage multiple Bluesky accounts in one place",
+                            "👥",
+                            crate::components::profile::feature_card::FeatureCardColor::Indigo
+                        ))
+                        
+                        (FeatureCard::new(
+                            "Authentication", 
+                            "Seamless authentication with your Bluesky identity",
+                            "🔐",
+                            crate::components::profile::feature_card::FeatureCardColor::Purple
+                        ))
                     }
 
                     // Footer links
-                    div class="mt-8 pt-4 border-t border-gray-200" {
-                        div class="flex justify-center gap-4" {
-                            a href="/" class="text-indigo-600 hover:text-indigo-800 transition-colors duration-200" { "Back to Home" }
-                            span class="text-gray-300" { "|" }
-                            a href="/login" class="text-indigo-600 hover:text-indigo-800 transition-colors duration-200" { "Try Different Login" }
-                        }
+                    div class="mt-8 pt-4 border-t border-gray-200 flex justify-center gap-4" {
+                        (Button::new("Back to Home")
+                            .variant(ButtonVariant::Link)
+                            .href("/")
+                            .icon(Icon::home().into_string(), IconPosition::Left))
+                            
+                        span class="text-gray-300 self-center" { "|" }
+                        
+                        (Button::new("Try Different Login")
+                            .variant(ButtonVariant::Link)
+                            .href("/login")
+                            .icon(Icon::login().into_string(), IconPosition::Left))
                     }
                 }
 
@@ -1036,7 +1128,9 @@ pub async fn profile(
                     p { "pfp.blue - Your Bluesky Profile Manager" }
                 }
             }
-        }.into_response();
+        };
+
+        return markup.into_response();
     }
 
     // Get session to check for a set primary token
@@ -1152,6 +1246,18 @@ async fn display_profile_multi(
     primary_token: OAuthTokenSet,
     all_tokens: Vec<OAuthTokenSet>,
 ) -> maud::Markup {
+    use crate::components::{
+        form::{Form, InputField, ToggleSwitch},
+        profile::AccountCard,
+        ui::{
+            badge::{Badge, BadgeColor},
+            button::{Button, ButtonSize, IconPosition},
+            heading::Heading,
+            icon::Icon,
+            nav_buttons::{NavButton, NavButtonIcon, NavButtons},
+        },
+    };
+
     // Queue a job to update the handle in the background
     if let Err(err) = crate::jobs::UpdateProfileHandleJob::from_token(&primary_token)
         .enqueue(state.clone(), "display_profile_multi".to_string())
@@ -1234,7 +1340,7 @@ async fn display_profile_multi(
 
                         // Profile info
                         div class="text-center md:text-left" {
-                            h1 class="text-3xl font-bold text-gray-800 mb-1" { (display_name) }
+                            (Heading::h1(&display_name))
                             @if let Some(h) = &handle {
                                 p class="text-lg text-indigo-600 font-semibold mb-2" { "@" (h) }
                             }
@@ -1242,9 +1348,9 @@ async fn display_profile_multi(
 
                             // Playful badges
                             div class="flex flex-wrap justify-center md:justify-start gap-2 mt-2" {
-                                div class="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full" { "Profile" }
-                                div class="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full" { "Bluesky" }
-                                div class="bg-purple-100 text-purple-800 text-xs px-2 py-1 rounded-full" { "pfp.blue" }
+                                (Badge::new("Profile", BadgeColor::Blue).rounded(true))
+                                (Badge::new("Bluesky", BadgeColor::Green).rounded(true))
+                                (Badge::new("pfp.blue", BadgeColor::Purple).rounded(true))
                             }
                         }
                     }
@@ -1258,100 +1364,78 @@ async fn display_profile_multi(
                         }
                     }
 
-                    // Token info card
+                    // Token info card using Heading and Badge components
                     div class="bg-indigo-50 rounded-xl p-4 mb-6" {
-                        h3 class="text-lg font-semibold text-indigo-800 mb-2" { "Authentication Status" }
+                        (Heading::h3("Authentication Status")
+                            .with_color("text-indigo-800"))
+                            
                         div class="grid grid-cols-1 md:grid-cols-2 gap-4" {
                             div class="bg-white rounded-lg p-3 shadow-sm" {
                                 p class="text-sm text-gray-500" { "Token Expires In" }
-                                p class="text-lg font-semibold" { ({
-                                    let now = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
-                                    if primary_token.expires_at > now {
-                                        primary_token.expires_at - now
-                                    } else {
-                                        0
-                                    }
-                                }) " seconds" }
+                                p class="text-lg font-semibold" { 
+                                    ({
+                                        let now = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
+                                        if primary_token.expires_at > now {
+                                            primary_token.expires_at - now
+                                        } else {
+                                            0
+                                        }
+                                    }) " seconds" 
+                                }
                             }
                             div class="bg-white rounded-lg p-3 shadow-sm" {
                                 p class="text-sm text-gray-500" { "Refresh Token" }
                                 @if primary_token.refresh_token.is_some() {
-                                    p class="text-lg font-semibold text-green-600" { "Available ✓" }
+                                    div class="flex items-center mt-1" {
+                                        (Badge::new("Available", BadgeColor::Green).rounded(true))
+                                    }
                                 } @else {
-                                    p class="text-lg font-semibold text-red-600" { "Not Available ✗" }
+                                    div class="flex items-center mt-1" {
+                                        (Badge::new("Not Available", BadgeColor::Red).rounded(true))
+                                    }
                                 }
                             }
                         }
                     }
 
-                    // Linked accounts section
+                    // Linked accounts section using AccountCard component
                     div class="mb-8" {
-                        h3 class="text-xl font-bold text-gray-800 mb-4" { "Linked Bluesky Accounts" }
+                        (Heading::h3("Linked Bluesky Accounts"))
 
                         div class="space-y-3" {
                             @for token in &all_tokens {
-                                div class="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-md transition duration-200 relative overflow-hidden" {
-                                    // Fun decorative element for primary account
-                                    @if token.did == primary_token.did {
-                                        div class="absolute top-0 right-0" {
-                                            div class="bg-green-500 text-white text-xs transform rotate-45 px-8 py-1 translate-x-6 -translate-y-1 shadow-sm" {
-                                                "PRIMARY"
-                                            }
-                                        }
-                                    }
-
-                                    div class="flex flex-col sm:flex-row sm:items-center justify-between" {
-                                        div class="mb-2 sm:mb-0" {
-                                            @if let Some(handle) = &token.handle {
-                                                p class="font-medium text-gray-900 mb-1 truncate max-w-xs" { "@" (handle) }
-                                                p class="text-xs text-gray-500 mb-1 truncate max-w-xs" { (token.did) }
-                                            } @else {
-                                                p class="font-medium text-gray-900 mb-1 truncate max-w-xs" { (token.did) }
-                                            }
-                                            p class="text-sm text-gray-500" { "Expires in: " ({
-                                                let now = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
-                                                if token.expires_at > now {
-                                                    token.expires_at - now
-                                                } else {
-                                                    0
-                                                }
-                                            }) " seconds" }
-                                        }
-
-                                        @if token.did != primary_token.did {
-                                            a href={"/oauth/bsky/set-primary?did=" (token.did)}
-                                              class="text-sm bg-indigo-100 hover:bg-indigo-200 text-indigo-800 px-3 py-1 rounded-full inline-flex items-center transition-colors duration-200" {
-                                                "Set as Primary"
-                                            }
-                                        }
-                                    }
-                                }
+                                (AccountCard::new(&token.did, token.expires_at)
+                                    .handle(token.handle.as_deref().unwrap_or(""))
+                                    .is_primary(token.did == primary_token.did))
                             }
                         }
 
-                        // Add new account form with playful design
+                        // Add new account form using Form, InputField and Button components
                         div class="mt-6 bg-gradient-to-r from-indigo-50 to-blue-50 rounded-xl p-5 border border-dashed border-indigo-200" {
-                            form action="/oauth/bsky/authorize" method="get" class="flex flex-col sm:flex-row gap-2 items-center" {
-                                div class="relative flex-grow" {
-                                    div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none" {
-                                        (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>"#))
+                            (Form::new(
+                                "/oauth/bsky/authorize", 
+                                "get", 
+                                html! {
+                                    div class="flex flex-col sm:flex-row gap-2 items-center" {
+                                        div class="w-full sm:flex-grow" {
+                                            (InputField::new("did")
+                                                .placeholder("Enter Bluesky handle or DID")
+                                                .icon(Icon::user()))
+                                        }
+                                        
+                                        (Button::primary("Link Account")
+                                            .button_type("submit")
+                                            .icon(Icon::plus().into_string(), IconPosition::Left))
                                     }
-                                    input type="text" name="did" placeholder="Enter Bluesky handle or DID"
-                                        class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-gray-900" {}
                                 }
-                                button type="submit"
-                                    class="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center" {
-                                    (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>"#))
-                                    "Link Account"
-                                }
-                            }
+                            ).extra_classes("m-0"))
                         }
                     }
 
                     // Profile data section with improved styling
                     @if let Some(profile_data) = &profile_info.profile_data {
                         div class="mb-8" {
-                            h3 class="text-xl font-bold text-gray-800 mb-4" { "Profile Data" }
+                            (Heading::h3("Profile Data"))
                             details class="bg-gray-50 rounded-lg border border-gray-200" {
                                 summary class="cursor-pointer font-medium text-gray-700 p-4 hover:bg-gray-100" { "View Raw JSON" }
                                 pre class="bg-gray-900 text-gray-100 p-4 rounded-b-lg overflow-x-auto text-sm" {
@@ -1365,7 +1449,7 @@ async fn display_profile_multi(
 
                     // Profile Picture Progress feature
                     div class="mb-8" {
-                        h3 class="text-xl font-bold text-gray-800 mb-4" { "Profile Picture Progress" }
+                        (Heading::h3("Profile Picture Progress"))
                         div class="bg-indigo-50 rounded-xl p-5 border border-indigo-200" {
                             p class="text-gray-700 mb-4" {
                                 "This feature automatically updates your profile picture to show progress from your handle. "
@@ -1390,26 +1474,20 @@ async fn display_profile_multi(
                                 _ => (false, None),
                             };
 
-                            // Toggle switch for enabling/disabling
-                            form action="/profile_progress/toggle" method="post" class="flex items-center justify-between mb-4 p-3 bg-white rounded-lg shadow-sm" {
-                                div {
-                                    p class="font-medium text-gray-900" { "Enable Progress Visualization" }
-                                    p class="text-sm text-gray-500" { "Automatically update your profile picture based on progress in your handle" }
-                                }
-
+                            // Toggle switch for enabling/disabling using our ToggleSwitch component
+                            form action="/profile_progress/toggle" method="post" class="mb-4" {
                                 input type="hidden" name="token_id" value=(primary_token.did) {}
-
-                                label class="relative inline-flex items-center cursor-pointer" {
-                                    @if progress_settings.0 {
-                                        input type="checkbox" name="enabled" value="true" checked class="sr-only peer" {}
-                                    } @else {
-                                        input type="checkbox" name="enabled" value="true" class="sr-only peer" {}
-                                    }
-                                    span class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600" {}
-                                }
-
-                                button type="submit" class="ml-2 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1 rounded text-sm" {
-                                    "Save"
+                                
+                                (ToggleSwitch::new(
+                                    "enabled", 
+                                    "Enable Progress Visualization", 
+                                    progress_settings.0
+                                ).description("Automatically update your profile picture based on progress in your handle"))
+                                
+                                div class="mt-3 flex justify-end" {
+                                    (Button::primary("Save")
+                                        .button_type("submit")
+                                        .size(ButtonSize::Small))
                                 }
                             }
 
@@ -1437,9 +1515,9 @@ async fn display_profile_multi(
                                         // Use current button
                                         @if let Some(cid) = avatar_blob_cid.clone() {
                                             input type="hidden" name="blob_cid" value=(cid) {}
-                                            button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1 rounded" {
-                                                "Use Current Profile Picture"
-                                            }
+                                            (Button::primary("Use Current Profile Picture")
+                                                .button_type("submit")
+                                                .size(ButtonSize::Small))
                                         }
                                     }
                                 }
@@ -1463,21 +1541,14 @@ async fn display_profile_multi(
                         }
                     }
 
-                    // Action buttons footer
-                    div class="flex flex-wrap justify-center gap-3 pt-4 border-t border-gray-200" {
-                        a href="/" class="flex items-center text-gray-700 hover:text-indigo-600 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors duration-200" {
-                            (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7m-7-7v14" /></svg>"#))
-                            "Home"
-                        }
-                        a href="/logout" class="flex items-center text-gray-700 hover:text-indigo-600 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors duration-200" {
-                            (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>"#))
-                            "Logout"
-                        }
-                        a href="/login" class="flex items-center text-gray-700 hover:text-indigo-600 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors duration-200" {
-                            (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" /></svg>"#))
-                            "Switch User"
-                        }
-                    }
+                    // Action buttons footer using our new component
+                    (NavButtons::new()
+                        .add_button(NavButton::new("Home", "/")
+                            .with_icon(NavButtonIcon::Home))
+                        .add_button(NavButton::new("Logout", "/logout")
+                            .with_icon(NavButtonIcon::Logout))
+                        .add_button(NavButton::new("Switch User", "/login")
+                            .with_icon(NavButtonIcon::Login)))
                 }
             }
 

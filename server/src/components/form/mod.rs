@@ -50,8 +50,8 @@ impl InputField {
         self
     }
 
-    pub fn icon(mut self, icon: impl AsRef<str>) -> Self {
-        self.icon = Some(icon.as_ref().to_string());
+    pub fn icon<I: Into<String>>(mut self, icon: I) -> Self {
+        self.icon = Some(icon.into());
         self
     }
 
