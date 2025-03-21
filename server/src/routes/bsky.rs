@@ -191,14 +191,7 @@ pub struct CallbackParams {
     pub error_description: Option<String>,
 }
 
-/// Function to fetch profile data for display only (no authentication/DPoP needed)
-async fn fetch_profile_for_display(
-    did: &str,
-    app_state: &crate::state::AppState,
-) -> cja::Result<serde_json::Value> {
-    // Simply delegate to our api module which handles all the error cases properly
-    crate::api::get_user_profile(did, None, app_state).await
-}
+// Function removed since it's not used anywhere - we use api::get_profile_with_avatar instead
 
 /// Fetch a blob by its CID directly from the user's PDS
 pub async fn fetch_blob_by_cid(

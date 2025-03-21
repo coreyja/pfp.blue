@@ -82,7 +82,9 @@ impl FromRequestParts<AppState> for AuthUser {
 
 /// Extract the optional user from the request if authenticated
 #[derive(Debug, Clone)]
-pub struct OptionalUser(pub Option<User>);
+pub struct OptionalUser {
+    pub user: Option<User>
+}
 
 #[async_trait]
 impl FromRequestParts<AppState> for OptionalUser {
@@ -105,7 +107,7 @@ impl FromRequestParts<AppState> for OptionalUser {
             Some(id) => id,
             None => {
                 // No cookie, return None for user
-                return Ok(OptionalUser(None));
+                return Ok(OptionalUser { user: None });
             }
         };
 
@@ -114,7 +116,7 @@ impl FromRequestParts<AppState> for OptionalUser {
             Ok(Some(session)) => session,
             Ok(None) => {
                 // Invalid session, return None for user
-                return Ok(OptionalUser(None));
+                return Ok(OptionalUser { user: None });
             }
             Err(err) => {
                 error!("Error validating session {}: {:?}", session_id, err);
@@ -124,8 +126,8 @@ impl FromRequestParts<AppState> for OptionalUser {
 
         // Get the user for this session
         match session.get_user(&state.db).await {
-            Ok(Some(user)) => Ok(OptionalUser(Some(user))),
-            Ok(None) => Ok(OptionalUser(None)),
+            Ok(Some(user)) => Ok(OptionalUser { user: Some(user) }),
+            Ok(None) => Ok(OptionalUser { user: None }),
             Err(err) => {
                 error!("Error getting user for session {}: {:?}", session_id, err);
                 return Err(StatusCode::INTERNAL_SERVER_ERROR.into_response());
@@ -232,18 +234,4 @@ pub async fn end_session(pool: &sqlx::PgPool, cookies: &Cookies) -> cja::Result<
     Ok(())
 }
 
-/// Check if a user has an active session
-pub async fn has_active_session(pool: &sqlx::PgPool, user_id: Uuid) -> cja::Result<bool> {
-    let row = sqlx::query!(
-        r#"
-        SELECT COUNT(*) as count 
-        FROM sessions 
-        WHERE user_id = $1 AND is_active = TRUE AND expires_at > NOW()
-        "#,
-        user_id
-    )
-    .fetch_one(pool)
-    .await?;
-
-    Ok(row.count.unwrap_or(0) > 0)
-}
+// Function removed - not used in codebase

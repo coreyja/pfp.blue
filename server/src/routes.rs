@@ -1,4 +1,8 @@
-use crate::{auth::AuthUser, profile_progress::ProfilePictureProgress, state::AppState};
+use crate::{
+    auth::{AuthUser, OptionalUser},
+    profile_progress::ProfilePictureProgress,
+    state::AppState,
+};
 use axum::extract::{Form, State};
 use axum::{
     response::{IntoResponse, Redirect},
@@ -41,7 +45,15 @@ pub fn routes(app_state: AppState) -> axum::Router {
 }
 
 /// Root page handler - displays the homepage
-async fn root_page() -> impl IntoResponse {
+async fn root_page(
+    optional_user: OptionalUser,
+) -> impl IntoResponse {
+    // Use OptionalUser to customize the page based on login status
+    let greeting = match &optional_user.user {
+        Some(user) => format!("Welcome back! User ID: {}", user.user_id),
+        None => "Welcome to pfp.blue!".to_string(),
+    };
+    
     maud::html! {
         // Add Tailwind CSS from CDN
         script src="https://unpkg.com/@tailwindcss/browser@4" {}
@@ -53,6 +65,9 @@ async fn root_page() -> impl IntoResponse {
                 div class="mb-6 flex justify-center" {
                     (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-500"><circle cx="12" cy="8" r="5"></circle><path d="M20 21v-2a7 7 0 0 0-14 0v2"></path><line x1="12" y1="8" x2="12" y2="8"></line><path d="M3 20h18a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1H9L3 12v7a1 1 0 0 0 1 1z"></path></svg>"#))
                 }
+                
+                // Display personalized greeting
+                h2 class="text-xl font-semibold text-indigo-700 mt-2" { (greeting) }
 
                 h1 class="text-4xl font-bold text-gray-800 mb-3" { "pfp.blue" }
                 p class="text-lg text-gray-600 mb-8" { "Your Bluesky Profile Manager" }
@@ -356,16 +371,7 @@ async fn enqueue_profile_picture_update_job(state: &AppState, token_id: Uuid) {
     }
 }
 
-/// Helper for rendering debug output in templates
-#[derive(Debug)]
-struct DebugRenderer<T: std::fmt::Debug>(T);
-
-impl<T: std::fmt::Debug> maud::Render for DebugRenderer<T> {
-    fn render_to(&self, output: &mut String) {
-        let mut escaper = maud::Escaper::new(output);
-        std::fmt::Write::write_fmt(&mut escaper, format_args!("{:?}", self.0)).unwrap();
-    }
-}
+// Removed unused debug renderer implementation
 
 /// Logout route - clears authentication cookies and redirects to home
 async fn logout(State(state): State<AppState>, cookies: Cookies) -> impl IntoResponse {

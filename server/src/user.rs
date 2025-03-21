@@ -118,66 +118,7 @@ impl User {
         }))
     }
 
-    /// Update the user's username
-    pub async fn update_username(&mut self, pool: &PgPool, username: &str) -> cja::Result<()> {
-        sqlx::query!(
-            r#"
-            UPDATE users SET username = $1, updated_at_utc = NOW()
-            WHERE id = $2
-            RETURNING updated_at_utc
-            "#,
-            username,
-            self.user_id
-        )
-        .fetch_one(pool)
-        .await
-        .map_err(|e| {
-            error!(
-                "Failed to update username for user {}: {:?}",
-                self.user_id, e
-            );
-            eyre!("Database error updating username: {}", e)
-        })?;
-
-        self.username = Some(username.to_string());
-        info!("Updated username for user {}: {}", self.user_id, username);
-
-        Ok(())
-    }
-
-    /// Update the user's email
-    pub async fn update_email(&mut self, pool: &PgPool, email: Option<&str>) -> cja::Result<()> {
-        let row = sqlx::query!(
-            r#"
-            UPDATE users SET email = $1, updated_at_utc = NOW()
-            WHERE id = $2
-            RETURNING updated_at_utc
-            "#,
-            email,
-            self.user_id
-        )
-        .fetch_one(pool)
-        .await
-        .map_err(|e| {
-            error!("Failed to update email for user {}: {:?}", self.user_id, e);
-            eyre!("Database error updating email: {}", e)
-        })?;
-
-        self.email = email.map(|e| e.to_string());
-        self.updated_at_utc = row.updated_at_utc;
-
-        info!("Updated email for user {}", self.user_id);
-
-        Ok(())
-    }
-
-    /// Get all of a user's linked OAuth tokens
-    pub async fn get_all_tokens(
-        &self,
-        pool: &PgPool,
-    ) -> cja::Result<Vec<crate::oauth::OAuthTokenSet>> {
-        crate::oauth::db::get_tokens_for_user(pool, self.user_id).await
-    }
+    // Removed unused methods - can be added back when needed
 }
 
 impl Session {
@@ -315,37 +256,7 @@ impl Session {
         Ok(())
     }
 
-    /// Extend the session expiration
-    pub async fn extend_session(&mut self, pool: &PgPool, days: i64) -> cja::Result<()> {
-        let new_expiry = Utc::now() + chrono::Duration::days(days);
-
-        let row = sqlx::query!(
-            r#"
-            UPDATE sessions 
-            SET expires_at = $1, updated_at_utc = NOW()
-            WHERE id = $2
-            RETURNING expires_at, updated_at_utc
-            "#,
-            new_expiry,
-            self.session_id
-        )
-        .fetch_one(pool)
-        .await
-        .map_err(|e| {
-            error!("Failed to extend session {}: {:?}", self.session_id, e);
-            eyre!("Database error extending session: {}", e)
-        })?;
-
-        self.expires_at = row.expires_at;
-        self.updated_at_utc = row.updated_at_utc;
-
-        info!(
-            "Extended session {} to expire at {}",
-            self.session_id, new_expiry
-        );
-
-        Ok(())
-    }
+    // Removed unused method - can be added back when needed
 
     /// Get the primary token for this session
     pub async fn get_primary_token(

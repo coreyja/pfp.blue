@@ -183,32 +183,6 @@ impl ProfilePictureProgress {
         Self::create(pool, token_id, default_enabled, default_original_blob_cid).await
     }
 
-    /// Delete a profile picture progress setting
-    pub async fn delete(self, pool: &PgPool) -> cja::Result<()> {
-        sqlx::query!(
-            r#"
-            DELETE FROM profile_picture_progress
-            WHERE id = $1
-            "#,
-            self.id
-        )
-        .execute(pool)
-        .await
-        .map_err(|e| {
-            error!("Failed to delete profile picture progress: {:?}", e);
-            eyre!("Database error deleting profile picture progress: {}", e)
-        })?;
-
-        info!(
-            "Deleted profile picture progress for token {}",
-            self.token_id
-        );
-
-        Ok(())
-    }
-
-    /// Check if the profile picture progress is ready for an update
-    pub fn is_ready_for_update(&self) -> bool {
-        self.enabled && self.original_blob_cid.is_some()
-    }
+    // Removed these methods as they're not used in the current implementation
+    // We can add them back when needed
 }

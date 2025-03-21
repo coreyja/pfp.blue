@@ -454,10 +454,7 @@ impl OAuthTokenSet {
         }
     }
 
-    pub fn with_user_id(mut self, user_id: uuid::Uuid) -> Self {
-        self.user_id = Some(user_id);
-        self
-    }
+    // Function removed - not used in codebase
 
     /// Copy the handle from another token
     pub fn with_handle_from(mut self, other: &OAuthTokenSet) -> Self {
