@@ -58,11 +58,18 @@ impl Badge {
 impl Render for Badge {
     fn render(&self) -> Markup {
         let color_classes = self.get_color_classes();
-        let rounded = if self.rounded { "rounded-full" } else { "rounded" };
+        let rounded = if self.rounded {
+            "rounded-full"
+        } else {
+            "rounded"
+        };
         let extra_classes = self.extra_classes.as_deref().unwrap_or("");
-        
-        let classes = format!("{} text-xs font-medium px-2 py-1 {} {}", color_classes, rounded, extra_classes);
-        
+
+        let classes = format!(
+            "{} text-xs font-medium px-2 py-1 {} {}",
+            color_classes, rounded, extra_classes
+        );
+
         html! {
             span class=(classes) { (self.text) }
         }

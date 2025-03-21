@@ -24,7 +24,7 @@ impl FeatureCard {
             color,
         }
     }
-    
+
     fn get_background_color(&self) -> &'static str {
         match self.color {
             FeatureCardColor::Blue => "bg-blue-50",
@@ -33,7 +33,7 @@ impl FeatureCard {
             FeatureCardColor::Pink => "bg-pink-50",
         }
     }
-    
+
     fn get_icon_bg_color(&self) -> &'static str {
         match self.color {
             FeatureCardColor::Blue => "bg-blue-100",
@@ -42,7 +42,7 @@ impl FeatureCard {
             FeatureCardColor::Pink => "bg-pink-100",
         }
     }
-    
+
     fn get_title_color(&self) -> &'static str {
         match self.color {
             FeatureCardColor::Blue => "text-blue-800",
@@ -51,7 +51,7 @@ impl FeatureCard {
             FeatureCardColor::Pink => "text-pink-800",
         }
     }
-    
+
     fn get_icon_color(&self) -> &'static str {
         match self.color {
             FeatureCardColor::Blue => "text-blue-600",
@@ -68,7 +68,7 @@ impl Render for FeatureCard {
         let icon_bg = self.get_icon_bg_color();
         let title_color = self.get_title_color();
         let icon_color = self.get_icon_color();
-        
+
         html! {
             div class={(bg_color) " p-4 rounded-lg text-left"} {
                 div class="flex items-center gap-2 mb-2" {

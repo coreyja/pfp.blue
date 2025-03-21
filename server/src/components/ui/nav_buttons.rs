@@ -1,6 +1,6 @@
-use maud::{html, Markup, Render};
 use super::button::{Button, ButtonVariant, IconPosition};
 use super::icon::Icon;
+use maud::{html, Markup, Render};
 
 // Add Default implementation to fix clippy warning
 #[derive(Default)]
@@ -91,8 +91,11 @@ impl NavButton {
 
 impl Render for NavButtons {
     fn render(&self) -> Markup {
-        let classes = self.container_classes.as_deref().unwrap_or("flex flex-wrap justify-center gap-3 pt-4 border-t border-gray-200");
-        
+        let classes = self
+            .container_classes
+            .as_deref()
+            .unwrap_or("flex flex-wrap justify-center gap-3 pt-4 border-t border-gray-200");
+
         html! {
             div class=(classes) {
                 @for button in &self.items {
@@ -104,21 +107,21 @@ impl Render for NavButtons {
 }
 
 fn render_nav_button(button: &NavButton) -> Markup {
-    let variant = if button.is_active { 
-        ButtonVariant::Primary 
-    } else { 
-        ButtonVariant::Link 
+    let variant = if button.is_active {
+        ButtonVariant::Primary
+    } else {
+        ButtonVariant::Link
     };
-    
+
     let mut btn = Button::new(&button.text)
         .variant(variant)
         .href(&button.href);
-    
+
     // Fix redundant pattern matching
     if button.icon_type.is_some() {
         btn = btn.icon(button.get_icon_svg(), IconPosition::Left);
     }
-    
+
     html! {
         (btn)
     }

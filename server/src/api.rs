@@ -58,7 +58,10 @@ pub fn extract_profile_info(profile_data: &serde_json::Value) -> ProfileDataPara
         if let Some(avatar) = value.get("avatar") {
             // Get blob CID
             let cid = if let Some(ref_obj) = avatar.get("ref") {
-                ref_obj.get("$link").and_then(|l| l.as_str()).map(|link| link.to_string())
+                ref_obj
+                    .get("$link")
+                    .and_then(|l| l.as_str())
+                    .map(|link| link.to_string())
             } else {
                 None
             };

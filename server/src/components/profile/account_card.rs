@@ -30,13 +30,13 @@ impl AccountCard {
         self.is_primary = is_primary;
         self
     }
-    
+
     fn get_expires_in_seconds(&self) -> u64 {
         let now = SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        
+
         if self.expires_at > now {
             self.expires_at - now
         } else {

@@ -45,33 +45,31 @@ pub fn routes(app_state: AppState) -> axum::Router {
 }
 
 /// Root page handler - displays the homepage
-async fn root_page(
-    optional_user: OptionalUser,
-) -> impl IntoResponse {
-    use maud::Render;
+async fn root_page(optional_user: OptionalUser) -> impl IntoResponse {
     use crate::components::{
         layout::{Card, Page},
-        profile::{feature_card::{FeatureCard, FeatureCardColor}},
+        profile::feature_card::{FeatureCard, FeatureCardColor},
         ui::{
             button::{Button, ButtonSize},
             heading::Heading,
             icon::Icon,
         },
     };
-    
+    use maud::Render;
+
     // Use OptionalUser to customize the page based on login status
     let greeting = match &optional_user.user {
         Some(user) => format!("Welcome back! User ID: {}", user.user_id),
         None => "Welcome to pfp.blue!".to_string(),
     };
-    
+
     let content = maud::html! {
         div class="text-center p-8" {
             // Logo/icon for the app
             div class="mb-6 flex justify-center" {
                 (Icon::app_logo())
             }
-            
+
             // Display personalized greeting
             h2 class="text-xl font-semibold text-indigo-700 mt-2" { (greeting) }
 
@@ -99,30 +97,30 @@ async fn root_page(
 
                 div class="grid grid-cols-1 md:grid-cols-2 gap-4" {
                     (FeatureCard::new(
-                        "Secure Login", 
-                        "Authenticate securely with your Bluesky account", 
-                        "🔐", 
+                        "Secure Login",
+                        "Authenticate securely with your Bluesky account",
+                        "🔐",
                         FeatureCardColor::Blue
                     ).render())
 
                     (FeatureCard::new(
-                        "Profile Management", 
-                        "Manage your Bluesky profile with ease", 
-                        "👤", 
+                        "Profile Management",
+                        "Manage your Bluesky profile with ease",
+                        "👤",
                         FeatureCardColor::Indigo
                     ).render())
 
                     (FeatureCard::new(
-                        "Multiple Accounts", 
-                        "Link and manage multiple Bluesky accounts", 
-                        "🔄", 
+                        "Multiple Accounts",
+                        "Link and manage multiple Bluesky accounts",
+                        "🔄",
                         FeatureCardColor::Purple
                     ).render())
 
                     (FeatureCard::new(
-                        "Easy Setup", 
-                        "Get started quickly with a simple setup process", 
-                        "🚀", 
+                        "Easy Setup",
+                        "Get started quickly with a simple setup process",
+                        "🚀",
                         FeatureCardColor::Pink
                     ).render())
                 }
@@ -139,17 +137,17 @@ async fn root_page(
 
 /// Login page handler - displays the login form
 async fn login_page(State(state): State<AppState>) -> impl IntoResponse {
-    use maud::Render;
     use crate::components::{
+        form::{Form, InputField},
         layout::{Card, ContentSection, CurvedHeader, Page},
         ui::{
             button::{Button, ButtonSize, IconPosition},
             heading::Heading,
             icon::Icon,
         },
-        form::{Form, InputField},
     };
-    
+    use maud::Render;
+
     let login_form = maud::html! {
         // Title and intro
         (Heading::h1("Welcome to pfp.blue")
@@ -170,8 +168,8 @@ async fn login_page(State(state): State<AppState>) -> impl IntoResponse {
             }
 
             // Description
-            p class="text-gray-600 mb-6" { 
-                "Enter your Bluesky handle (e.g., @username.bsky.social) or DID (e.g., did:plc:...) to connect your account." 
+            p class="text-gray-600 mb-6" {
+                "Enter your Bluesky handle (e.g., @username.bsky.social) or DID (e.g., did:plc:...) to connect your account."
             }
 
             (Form::new("/oauth/bsky/authorize", "get", maud::html! {
@@ -180,7 +178,7 @@ async fn login_page(State(state): State<AppState>) -> impl IntoResponse {
                     .icon(Icon::user().into_string())
                     .required(true)
                     .render())
-                
+
                 (InputField::new("state")
                     .value("from_login_page")
                     .hidden(true)
@@ -202,7 +200,7 @@ async fn login_page(State(state): State<AppState>) -> impl IntoResponse {
             }
         }
     };
-    
+
     // Debug info
     let debug_info = maud::html! {
         details class="mt-8 mx-auto bg-white/70 rounded-lg shadow-sm p-4 text-sm text-gray-600" {
@@ -215,20 +213,20 @@ async fn login_page(State(state): State<AppState>) -> impl IntoResponse {
             }
         }
     };
-    
+
     let card_content = maud::html! {
         // Header with curved bottom
         (CurvedHeader::new("h-32").render())
-        
+
         // Login content
         (ContentSection::new(login_form).render())
     };
-    
+
     let content = maud::html! {
         (Card::new(card_content).with_max_width("max-w-md").render())
         (debug_info)
     };
-    
+
     Page {
         title: "Login - pfp.blue".to_string(),
         content: Box::new(content),

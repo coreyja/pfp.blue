@@ -83,7 +83,7 @@ impl FromRequestParts<AppState> for AuthUser {
 /// Extract the optional user from the request if authenticated
 #[derive(Debug, Clone)]
 pub struct OptionalUser {
-    pub user: Option<User>
+    pub user: Option<User>,
 }
 
 #[async_trait]

@@ -132,7 +132,7 @@ impl Form {
 impl Render for Form {
     fn render(&self) -> Markup {
         let extra_classes = self.extra_classes.as_deref().unwrap_or("");
-        
+
         html! {
             form action=(self.action) method=(self.method) class={"space-y-4 " (extra_classes)} {
                 (self.content.render())

@@ -1,10 +1,10 @@
 use base64ct::{Base64UrlUnpadded, Encoding};
+use cja::jobs::Job;
 use color_eyre::eyre::eyre;
 use jsonwebtoken::Algorithm;
 use p256::{ecdsa::VerifyingKey, pkcs8::DecodePublicKey, EncodedPoint, PublicKey};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
-use cja::jobs::Job;
 
 use crate::state::BlueskyOAuthConfig;
 

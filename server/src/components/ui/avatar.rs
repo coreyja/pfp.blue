@@ -41,8 +41,12 @@ impl Avatar {
 
 impl Render for Avatar {
     fn render(&self) -> Markup {
-        let border_class = if self.border { "border-4 border-white shadow-lg" } else { "" };
-        
+        let border_class = if self.border {
+            "border-4 border-white shadow-lg"
+        } else {
+            ""
+        };
+
         html! {
             div class={"rounded-full overflow-hidden " (self.size) " " (border_class)} {
                 @if let Some(src) = &self.src {

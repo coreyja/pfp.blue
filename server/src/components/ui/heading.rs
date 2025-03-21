@@ -67,7 +67,7 @@ impl Render for Heading {
         let default_classes = self.default_classes_for_level();
         let color_class = self.color.as_deref().unwrap_or("text-gray-800");
         let additional_classes = self.classes.as_deref().unwrap_or("");
-        
+
         let classes = format!("{} {} {}", default_classes, color_class, additional_classes);
 
         match self.level {

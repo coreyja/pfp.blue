@@ -288,18 +288,19 @@ fn handle_oauth_error(
     client_id: &str,
     redirect_uri: &str,
 ) -> axum::response::Response {
-    let error_description = error_description.unwrap_or_else(|| "No error description provided".to_string());
+    let error_description =
+        error_description.unwrap_or_else(|| "No error description provided".to_string());
     error!("OAuth error: {} - {}", error, error_description);
 
-    use maud::Render;
     use crate::components::{
         layout::Page,
         ui::{
             badge::{Badge, BadgeColor},
-            button::Button, 
+            button::Button,
             heading::Heading,
         },
     };
+    use maud::Render;
 
     // Create error page content
     let content = html! {
@@ -307,17 +308,17 @@ fn handle_oauth_error(
             div class="px-8 py-6" {
                 (Heading::h1("Authentication Error"))
                 p class="text-red-600 font-medium mb-4" { "There was an error during authentication:" }
-                
+
                 div class="mb-4" {
                     p class="text-gray-700" { "Error: " }
                     (Badge::new(error, BadgeColor::Red).rounded(true))
                 }
-                
+
                 div class="mb-6" {
                     p class="text-gray-700" { "Description: " }
                     p class="text-gray-600 italic" { (error_description) }
                 }
-                
+
                 details class="mb-6 bg-gray-50 p-3 rounded-lg" {
                     summary class="cursor-pointer font-medium text-gray-700" { "Debug Information" }
                     div class="mt-2 space-y-1 text-sm" {
@@ -325,7 +326,7 @@ fn handle_oauth_error(
                         p { "Redirect URI: " (redirect_uri) }
                     }
                 }
-                
+
                 div class="flex justify-center mt-4" {
                     (Button::primary("Return to Home").href("/"))
                 }
@@ -343,10 +344,13 @@ fn handle_oauth_error(
 }
 
 /// Helper function to handle missing code error
-fn handle_missing_code_error(state_param: Option<&str>, client_id: &str, redirect_uri: &str) -> axum::response::Response {
+fn handle_missing_code_error(
+    state_param: Option<&str>,
+    client_id: &str,
+    redirect_uri: &str,
+) -> axum::response::Response {
     error!("No code parameter in callback");
 
-    use maud::Render;
     use crate::components::{
         layout::Page,
         ui::{
@@ -355,6 +359,7 @@ fn handle_missing_code_error(state_param: Option<&str>, client_id: &str, redirec
             icon::Icon,
         },
     };
+    use maud::Render;
 
     // Create error page content
     let content = html! {
@@ -363,7 +368,7 @@ fn handle_missing_code_error(state_param: Option<&str>, client_id: &str, redirec
                 (Heading::h1("Authentication Error"))
                 p class="text-red-600 font-medium mb-2" { "There was an error during the authorization process." }
                 p class="text-gray-700 mb-6" { "The Bluesky server did not provide an authorization code in the callback." }
-                
+
                 details class="mb-6 bg-gray-50 p-3 rounded-lg" {
                     summary class="cursor-pointer font-medium text-gray-700" { "Debug Information" }
                     div class="mt-2 space-y-1 text-sm" {
@@ -372,12 +377,12 @@ fn handle_missing_code_error(state_param: Option<&str>, client_id: &str, redirec
                         p { "Redirect URI: " (redirect_uri) }
                     }
                 }
-                
+
                 div class="flex flex-col sm:flex-row justify-center gap-4 mt-6" {
                     (Button::primary("Try Again")
                         .href("/login")
                         .icon(Icon::login().into_string(), IconPosition::Left))
-                    
+
                     (Button::new("Return to Home")
                         .variant(ButtonVariant::Secondary)
                         .href("/")
@@ -398,9 +403,9 @@ fn handle_missing_code_error(state_param: Option<&str>, client_id: &str, redirec
 
 /// Helper function to get session ID from state or cookie
 async fn get_session_id_and_data(
-    state_param: Option<&str>, 
+    state_param: Option<&str>,
     cookies: &Cookies,
-    db_pool: &sqlx::PgPool
+    db_pool: &sqlx::PgPool,
 ) -> Result<(Uuid, OAuthSession), (StatusCode, String)> {
     // Get the session ID from the state parameter or the cookie
     let session_id = match state_param
@@ -490,9 +495,12 @@ async fn exchange_auth_code_for_token(
                     || last_error.as_ref().unwrap().contains("nonce mismatch")
                 {
                     // Try to extract the nonce from the error message
-                    if let Some(nonce) = extract_dpop_nonce_from_error(last_error.as_ref().unwrap()) {
+                    if let Some(nonce) = extract_dpop_nonce_from_error(last_error.as_ref().unwrap())
+                    {
                         // Save the new nonce in the database for this session
-                        if let Err(e) = oauth::db::update_session_nonce(db_pool, session_id, &nonce).await {
+                        if let Err(e) =
+                            oauth::db::update_session_nonce(db_pool, session_id, &nonce).await
+                        {
                             error!("Failed to update session nonce: {:?}", e);
                         } else {
                             // Continue to retry with the new nonce
@@ -513,8 +521,7 @@ async fn exchange_auth_code_for_token(
     match token_response {
         Some(token) => Ok(token),
         None => {
-            let error_msg = last_error
-                .unwrap_or_else(|| "Unknown error".to_string());
+            let error_msg = last_error.unwrap_or_else(|| "Unknown error".to_string());
             error!("Token exchange failed: {:?}", error_msg);
             Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -549,7 +556,7 @@ async fn get_or_create_user_id_for_token(
         // We already have a linked user from the existing session
         return Ok(user_id);
     }
-    
+
     // We need to find or create a user for this token
     match crate::user::User::get_by_did(db_pool, did).await {
         Ok(Some(user)) => Ok(user.user_id),
@@ -559,13 +566,19 @@ async fn get_or_create_user_id_for_token(
                 Ok(user) => Ok(user.user_id),
                 Err(err) => {
                     error!("Failed to create user: {:?}", err);
-                    Err((StatusCode::INTERNAL_SERVER_ERROR, "Failed to create user".to_string()))
+                    Err((
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Failed to create user".to_string(),
+                    ))
                 }
             }
         }
         Err(err) => {
             error!("Failed to find user: {:?}", err);
-            Err((StatusCode::INTERNAL_SERVER_ERROR, "Database error".to_string()))
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Database error".to_string(),
+            ))
         }
     }
 }
@@ -604,11 +617,8 @@ async fn ensure_user_session(
         };
 
         if let Err(err) = crate::auth::create_session_and_set_cookie(
-            db_pool,
-            cookies,
-            user_id,
-            None, // User agent
-            None, // IP address
+            db_pool, cookies, user_id, None,     // User agent
+            None,     // IP address
             token_id, // Set this token as primary
         )
         .await
@@ -690,16 +700,13 @@ pub async fn callback(
     info!("Received code: {}, state: {:?}", code, params.state);
 
     // Get the session ID and data
-    let (session_id, session) = match get_session_id_and_data(
-        params.state.as_deref(),
-        &cookies,
-        &state.db
-    ).await {
-        Ok(result) => result,
-        Err((status, message)) => {
-            return (status, message).into_response();
-        }
-    };
+    let (session_id, session) =
+        match get_session_id_and_data(params.state.as_deref(), &cookies, &state.db).await {
+            Ok(result) => result,
+            Err((status, message)) => {
+                return (status, message).into_response();
+            }
+        };
 
     // Exchange the authorization code for an access token
     let token_response = match exchange_auth_code_for_token(
@@ -709,8 +716,10 @@ pub async fn callback(
         &code,
         &client_id,
         &redirect_uri,
-        &state.db
-    ).await {
+        &state.db,
+    )
+    .await
+    {
         Ok(token) => token,
         Err((status, message)) => {
             return (status, message).into_response();
@@ -771,7 +780,9 @@ pub async fn callback(
     };
 
     // Ensure we have a user session
-    if let Err((status, message)) = ensure_user_session(&cookies, &state.db, user_id, &token_set).await {
+    if let Err((status, message)) =
+        ensure_user_session(&cookies, &state.db, user_id, &token_set).await
+    {
         return (status, message).into_response();
     }
 
@@ -1033,7 +1044,6 @@ pub async fn profile(
     }
 
     if tokens.is_empty() {
-        use maud::Render;
         use crate::components::{
             form::{Form, InputField},
             layout::Page,
@@ -1044,13 +1054,14 @@ pub async fn profile(
                 icon::Icon,
             },
         };
+        use maud::Render;
 
         let form_content = html! {
             (InputField::new("did")
                 .placeholder("Enter Bluesky handle or DID")
                 .icon(Icon::user())
                 .required(true))
-            
+
             (Button::primary("Link Bluesky Account")
                 .icon(Icon::link().into_string(), IconPosition::Left)
                 .button_type("submit")
@@ -1066,8 +1077,8 @@ pub async fn profile(
 
                 (Heading::h1("Welcome to Your Profile!")
                     .with_classes("text-center"))
-                p class="text-gray-600 mb-8 text-center" { 
-                    "You don't have any Bluesky accounts linked yet. Let's get started!" 
+                p class="text-gray-600 mb-8 text-center" {
+                    "You don't have any Bluesky accounts linked yet. Let's get started!"
                 }
 
                 // Auth form in a feature card style
@@ -1078,24 +1089,24 @@ pub async fn profile(
 
                 // Features section with cards
                 (Heading::h3("Why link your Bluesky account?"))
-                
+
                 div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8" {
                     (FeatureCard::new(
-                        "Profile Management", 
+                        "Profile Management",
                         "Manage your Bluesky profile with ease, including custom profile pictures",
                         "⚙️",
                         crate::components::profile::feature_card::FeatureCardColor::Blue
                     ))
-                    
+
                     (FeatureCard::new(
-                        "Multiple Accounts", 
+                        "Multiple Accounts",
                         "Link and manage multiple Bluesky accounts in one place",
                         "👥",
                         crate::components::profile::feature_card::FeatureCardColor::Indigo
                     ))
-                    
+
                     (FeatureCard::new(
-                        "Authentication", 
+                        "Authentication",
                         "Seamless authentication with your Bluesky identity",
                         "🔐",
                         crate::components::profile::feature_card::FeatureCardColor::Purple
@@ -1108,9 +1119,9 @@ pub async fn profile(
                         .variant(ButtonVariant::Link)
                         .href("/")
                         .icon(Icon::home().into_string(), IconPosition::Left))
-                        
+
                     span class="text-gray-300 self-center" { "|" }
-                    
+
                     (Button::new("Try Different Login")
                         .variant(ButtonVariant::Link)
                         .href("/login")
@@ -1240,7 +1251,6 @@ async fn display_profile_multi(
     primary_token: OAuthTokenSet,
     all_tokens: Vec<OAuthTokenSet>,
 ) -> maud::Markup {
-    use maud::Render;
     use crate::components::{
         form::{Form, InputField, ToggleSwitch},
         layout::Page,
@@ -1253,6 +1263,7 @@ async fn display_profile_multi(
             nav_buttons::{NavButton, NavButtonIcon, NavButtons},
         },
     };
+    use maud::Render;
 
     // Queue a job to update the handle in the background
     if let Err(err) = crate::jobs::UpdateProfileHandleJob::from_token(&primary_token)
@@ -1289,11 +1300,13 @@ async fn display_profile_multi(
 
     // Encode avatar as base64 if available
     let avatar_base64 = if let Some(avatar) = &profile_info.avatar {
-        avatar.data.as_ref().map(|data| format!(
+        avatar.data.as_ref().map(|data| {
+            format!(
                 "data:{};base64,{}",
                 avatar.mime_type,
                 base64::Engine::encode(&base64::engine::general_purpose::STANDARD, data)
-            ))
+            )
+        })
     } else {
         None
     };
@@ -1359,11 +1372,11 @@ async fn display_profile_multi(
                 div class="bg-indigo-50 rounded-xl p-4 mb-6" {
                     (Heading::h3("Authentication Status")
                         .with_color("text-indigo-800"))
-                        
+
                     div class="grid grid-cols-1 md:grid-cols-2 gap-4" {
                         div class="bg-white rounded-lg p-3 shadow-sm" {
                             p class="text-sm text-gray-500" { "Token Expires In" }
-                            p class="text-lg font-semibold" { 
+                            p class="text-lg font-semibold" {
                                 ({
                                     let now = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
                                     if primary_token.expires_at > now {
@@ -1371,7 +1384,7 @@ async fn display_profile_multi(
                                     } else {
                                         0
                                     }
-                                }) " seconds" 
+                                }) " seconds"
                             }
                         }
                         div class="bg-white rounded-lg p-3 shadow-sm" {
@@ -1404,8 +1417,8 @@ async fn display_profile_multi(
                     // Add new account form using Form, InputField and Button components
                     div class="mt-6 bg-gradient-to-r from-indigo-50 to-blue-50 rounded-xl p-5 border border-dashed border-indigo-200" {
                         (Form::new(
-                            "/oauth/bsky/authorize", 
-                            "get", 
+                            "/oauth/bsky/authorize",
+                            "get",
                             html! {
                                 div class="flex flex-col sm:flex-row gap-2 items-center" {
                                     div class="w-full sm:flex-grow" {
@@ -1413,7 +1426,7 @@ async fn display_profile_multi(
                                             .placeholder("Enter Bluesky handle or DID")
                                             .icon(Icon::user()))
                                     }
-                                    
+
                                     (Button::primary("Link Account")
                                         .button_type("submit")
                                         .icon(Icon::plus().into_string(), IconPosition::Left))
@@ -1468,13 +1481,13 @@ async fn display_profile_multi(
                         // Toggle switch for enabling/disabling using our ToggleSwitch component
                         form action="/profile_progress/toggle" method="post" class="mb-4" {
                             input type="hidden" name="token_id" value=(primary_token.did) {}
-                            
+
                             (ToggleSwitch::new(
-                                "enabled", 
-                                "Enable Progress Visualization", 
+                                "enabled",
+                                "Enable Progress Visualization",
                                 progress_settings.0
                             ).description("Automatically update your profile picture based on progress in your handle"))
-                            
+
                             div class="mt-3 flex justify-end" {
                                 (Button::primary("Save")
                                     .button_type("submit")

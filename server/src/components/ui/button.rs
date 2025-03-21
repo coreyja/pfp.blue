@@ -57,7 +57,7 @@ impl Button {
             ..Default::default()
         }
     }
-    
+
     pub fn variant(mut self, variant: ButtonVariant) -> Self {
         self.variant = variant;
         self
@@ -153,17 +153,17 @@ impl Render for Button {
         let size_classes = self.get_size_classes();
         let width_class = if self.full_width { "w-full" } else { "" };
         let extra_classes = self.extra_classes.as_deref().unwrap_or("");
-        
+
         let base_classes = format!(
             "{} {} {} font-medium rounded-lg transition-colors duration-200 flex items-center justify-center {} {}",
-            variant_classes, size_classes, width_class, 
+            variant_classes, size_classes, width_class,
             if self.variant == ButtonVariant::Link { "" } else { "shadow-sm" },
             extra_classes
         );
 
         let icon_markup = match &self.icon {
             Some(icon) => html! { (maud::PreEscaped(icon)) },
-            None => html! {}
+            None => html! {},
         };
 
         if let Some(href) = &self.href {
@@ -172,9 +172,9 @@ impl Render for Button {
                     @if self.icon_position == IconPosition::Left && self.icon.is_some() {
                         span class="mr-2" { (icon_markup) }
                     }
-                    
+
                     (self.text)
-                    
+
                     @if self.icon_position == IconPosition::Right && self.icon.is_some() {
                         span class="ml-2" { (icon_markup) }
                     }
@@ -182,15 +182,15 @@ impl Render for Button {
             }
         } else {
             let button_type = self.button_type.as_deref().unwrap_or("button");
-            
+
             html! {
                 button type=(button_type) class=(base_classes) {
                     @if self.icon_position == IconPosition::Left && self.icon.is_some() {
                         span class="mr-2" { (icon_markup) }
                     }
-                    
+
                     (self.text)
-                    
+
                     @if self.icon_position == IconPosition::Right && self.icon.is_some() {
                         span class="ml-2" { (icon_markup) }
                     }
