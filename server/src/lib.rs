@@ -1,5 +1,6 @@
 pub mod api;
 pub mod auth;
+pub mod components;
 pub mod cron;
 pub mod did;
 pub mod jobs;
