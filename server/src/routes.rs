@@ -263,8 +263,7 @@ async fn toggle_profile_progress(
 
     // Get or create the profile progress settings
     let result =
-        ProfilePictureProgress::get_or_create(&state.db, token_id, params.enabled.is_some(), None)
-            .await;
+        ProfilePictureProgress::get_or_create(&state.db, token_id, params.enabled.is_some()).await;
 
     match result {
         Ok(mut settings) => {
@@ -353,7 +352,6 @@ async fn set_original_profile_picture(
     // Get or create profile progress settings (don't store the blob CID anymore)
     let result = ProfilePictureProgress::get_or_create(
         &state.db, token_id, true, // Enable when setting an original profile picture
-        None, // Don't store the blob CID in DB anymore
     )
     .await;
 
