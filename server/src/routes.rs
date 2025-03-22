@@ -323,7 +323,7 @@ async fn set_original_profile_picture(
     )
     .fetch_optional(&state.db)
     .await;
-    
+
     let token = match token_result {
         Ok(Some(row)) => {
             // Create OAuthTokenSet from the database row
@@ -339,11 +339,11 @@ async fn set_original_profile_picture(
                 dpop_jkt: row.dpop_jkt.clone(),
                 user_id: Some(row.user_id),
             }
-        },
+        }
         Ok(None) => {
             error!("Token not found: {}", token_id);
             return Redirect::to("/me").into_response();
-        },
+        }
         Err(e) => {
             error!("Database error when fetching token: {:?}", e);
             return Redirect::to("/me").into_response();
@@ -352,9 +352,7 @@ async fn set_original_profile_picture(
 
     // Get or create profile progress settings (don't store the blob CID anymore)
     let result = ProfilePictureProgress::get_or_create(
-        &state.db,
-        token_id,
-        true, // Enable when setting an original profile picture
+        &state.db, token_id, true, // Enable when setting an original profile picture
         None, // Don't store the blob CID in DB anymore
     )
     .await;
@@ -362,37 +360,47 @@ async fn set_original_profile_picture(
     match result {
         Ok(_settings) => {
             // Fetch the original blob to get its contents
-            match crate::routes::bsky::fetch_blob_by_cid(&token.did, &params.blob_cid, &state).await {
+            match crate::routes::bsky::fetch_blob_by_cid(&token.did, &params.blob_cid, &state).await
+            {
                 Ok(blob_data) => {
                     // Upload the blob to get a proper blob object
                     match crate::jobs::upload_image_to_bluesky(&state, &token, &blob_data).await {
                         Ok(blob_object) => {
                             // Save the blob object to our custom PDS collection
-                            match crate::jobs::save_original_profile_picture(&state, &token, blob_object).await {
+                            match crate::jobs::save_original_profile_picture(
+                                &state,
+                                &token,
+                                blob_object,
+                            )
+                            .await
+                            {
                                 Ok(_) => {
                                     info!(
                                         "Saved original profile picture to PDS collection for DID {}",
                                         token.did
                                     );
-                                    
+
                                     // Enqueue a job to update the profile picture
                                     enqueue_profile_picture_update_job(&state, token_id).await;
-                                },
+                                }
                                 Err(err) => {
-                                    error!("Failed to save original profile picture to PDS: {:?}", err);
+                                    error!(
+                                        "Failed to save original profile picture to PDS: {:?}",
+                                        err
+                                    );
                                 }
                             }
-                        },
+                        }
                         Err(err) => {
                             error!("Failed to upload original profile picture blob: {:?}", err);
                         }
                     }
-                },
+                }
                 Err(err) => {
                     error!("Failed to fetch blob data: {:?}", err);
                 }
             }
-        },
+        }
         Err(err) => {
             error!("Failed to get/create profile progress settings: {:?}", err);
         }

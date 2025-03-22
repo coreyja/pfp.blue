@@ -528,20 +528,22 @@ impl Job<AppState> for UpdateProfilePictureProgressJob {
                     debug!("Using legacy original_blob_cid from DB: {}", cid);
 
                     // Fetch the blob image
-                    let blob_data = match crate::routes::bsky::fetch_blob_by_cid(
-                        &token.did, &cid, &app_state,
-                    )
-                    .await
-                    {
-                        Ok(data) => data,
-                        Err(err) => {
-                            error!(
+                    let blob_data =
+                        match crate::routes::bsky::fetch_blob_by_cid(&token.did, &cid, &app_state)
+                            .await
+                        {
+                            Ok(data) => data,
+                            Err(err) => {
+                                error!(
                                 "Failed to fetch original profile picture from legacy CID: {:?}",
                                 err
                             );
-                            return Err(eyre!("Failed to fetch original profile picture: {}", err));
-                        }
-                    };
+                                return Err(eyre!(
+                                    "Failed to fetch original profile picture: {}",
+                                    err
+                                ));
+                            }
+                        };
 
                     // Upload the blob to get the blob object
                     match upload_image_to_bluesky(&app_state, &token, &blob_data).await {
