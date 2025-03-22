@@ -4,7 +4,9 @@ use cja::{
 };
 use tracing::info;
 
+mod api;
 mod auth;
+mod components;
 mod cron;
 mod did;
 mod jobs;
@@ -17,51 +19,133 @@ mod user;
 use state::AppState;
 
 fn main() -> color_eyre::Result<()> {
+    // Initialize Sentry for error tracking
     let _sentry_guard = setup_sentry();
 
+    // Create and run the tokio runtime
     tokio::runtime::Builder::new_multi_thread()
         .worker_threads(4)
         .enable_all()
         .build()?
-        .block_on(async { _main().await })
+        .block_on(async { run_application().await })
 }
 
-async fn _main() -> cja::Result<()> {
+async fn run_application() -> cja::Result<()> {
+    // Initialize tracing
     setup_tracing("domains")?;
 
+    // Initialize application state
     println!("\n========== 🔑 PFP.BLUE STARTING ==========");
     println!("Verifying OAuth keys...");
 
-    let app_state = match AppState::from_env().await {
-        Ok(state) => {
-            println!("✅ OAuth keys verified successfully!\n");
-            state
-        }
-        Err(e) => {
-            eprintln!("\n❌ ERROR: Failed to initialize app state: {}", e);
-            eprintln!("Please check your OAuth key configuration. Keys should be in PEM format with proper newlines.");
-            eprintln!("You can run the setup_keys.sh script to generate new keys.\n");
-            return Err(e);
-        }
-    };
+    let app_state = AppState::from_env().await?;
 
-    let app_router = routes::routes(app_state.clone());
-    info!("Spawning Tasks");
-    let mut futures = vec![tokio::spawn(run_server(app_router))];
-    if std::env::var("JOBS_DISABLED").unwrap_or_else(|_| "false".to_string()) != "true" {
+    // Spawn application tasks
+    info!("Spawning application tasks");
+    let futures = spawn_application_tasks(app_state).await?;
+
+    // Wait for all tasks to complete
+    futures::future::try_join_all(futures).await?;
+
+    Ok(())
+}
+
+/// Spawn all application background tasks
+async fn spawn_application_tasks(
+    app_state: AppState,
+) -> cja::Result<Vec<tokio::task::JoinHandle<cja::Result<()>>>> {
+    let mut futures = vec![];
+
+    if is_feature_enabled("SERVER") {
+        info!("Server Enabled");
+        futures.push(tokio::spawn(run_server(routes::routes(app_state.clone()))));
+    } else {
+        info!("Server Disabled");
+    }
+
+    // Initialize job worker if enabled
+    if is_feature_enabled("JOBS") {
         info!("Jobs Enabled");
         futures.push(tokio::spawn(cja::jobs::worker::job_worker(
             app_state.clone(),
             jobs::Jobs,
         )));
+    } else {
+        info!("Jobs Disabled");
     }
-    if std::env::var("CRON_DISABLED").unwrap_or_else(|_| "false".to_string()) != "true" {
+
+    // Initialize cron worker if enabled
+    if is_feature_enabled("CRON") {
         info!("Cron Enabled");
         futures.push(tokio::spawn(cron::run_cron(app_state.clone())));
+    } else {
+        info!("Cron Disabled");
     }
-    info!("Tasks Spawned");
 
-    futures::future::try_join_all(futures).await?;
+    info!("All application tasks spawned successfully");
+    Ok(futures)
+}
 
-    Ok(())
+/// Check if a feature is enabled based on environment variables
+fn is_feature_enabled(feature: &str) -> bool {
+    std::env::var(format!("{}_DISABLED", feature)).unwrap_or_else(|_| "false".to_string()) != "true"
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::env;
+
+    #[test]
+    fn test_is_feature_enabled_when_env_var_not_set() -> cja::Result<()> {
+        // Ensure the environment variable is not set
+        env::remove_var("TEST_FEATURE_DISABLED");
+
+        // Feature should be enabled when env var is not set
+        assert!(is_feature_enabled("TEST_FEATURE"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_is_feature_enabled_when_env_var_is_false() -> cja::Result<()> {
+        // Set the environment variable to "false"
+        env::set_var("TEST_FEATURE_DISABLED", "false");
+
+        // Feature should be enabled when env var is "false"
+        assert!(is_feature_enabled("TEST_FEATURE"));
+
+        // Clean up
+        env::remove_var("TEST_FEATURE_DISABLED");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_is_feature_disabled_when_env_var_is_true() -> cja::Result<()> {
+        // Set the environment variable to "true"
+        env::set_var("TEST_FEATURE_DISABLED", "true");
+
+        // Feature should be disabled when env var is "true"
+        assert!(!is_feature_enabled("TEST_FEATURE"));
+
+        // Clean up
+        env::remove_var("TEST_FEATURE_DISABLED");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_is_feature_enabled_with_other_values() -> cja::Result<()> {
+        // Set the environment variable to something other than "true"
+        env::set_var("TEST_FEATURE_DISABLED", "yes");
+
+        // Feature should be enabled when env var is not exactly "true"
+        assert!(is_feature_enabled("TEST_FEATURE"));
+
+        // Clean up
+        env::remove_var("TEST_FEATURE_DISABLED");
+
+        Ok(())
+    }
 }

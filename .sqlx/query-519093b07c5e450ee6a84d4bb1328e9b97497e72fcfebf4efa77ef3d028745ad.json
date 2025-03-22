@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT did, access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id, display_name, handle\n            FROM oauth_tokens\n            WHERE user_id = $1\n            ORDER BY updated_at_utc DESC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "did",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "access_token",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "token_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "expires_at",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "refresh_token",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "scope",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "dpop_jkt",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 8,
+        "name": "display_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "handle",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "519093b07c5e450ee6a84d4bb1328e9b97497e72fcfebf4efa77ef3d028745ad"
+}

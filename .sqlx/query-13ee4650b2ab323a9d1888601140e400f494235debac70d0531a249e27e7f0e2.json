@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT data FROM oauth_sessions WHERE session_id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "data",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "13ee4650b2ab323a9d1888601140e400f494235debac70d0531a249e27e7f0e2"
+}

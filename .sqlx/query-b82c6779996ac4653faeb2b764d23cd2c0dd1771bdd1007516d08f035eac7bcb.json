@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT uuid_id FROM oauth_tokens\n        WHERE did = $1 AND user_id = $2\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "uuid_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b82c6779996ac4653faeb2b764d23cd2c0dd1771bdd1007516d08f035eac7bcb"
+}

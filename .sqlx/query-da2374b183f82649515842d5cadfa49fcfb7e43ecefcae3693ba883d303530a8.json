@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT uuid_id FROM oauth_tokens WHERE did = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "uuid_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "da2374b183f82649515842d5cadfa49fcfb7e43ecefcae3693ba883d303530a8"
+}

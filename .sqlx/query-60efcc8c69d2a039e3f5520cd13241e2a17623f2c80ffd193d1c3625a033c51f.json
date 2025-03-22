@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            INSERT INTO profile_picture_progress (token_id, enabled, original_blob_cid)\n            VALUES ($1, $2, $3)\n            RETURNING id, token_id, enabled, original_blob_cid, created_at_utc, updated_at_utc\n            ",
+  "query": "\n            SELECT u.id, u.username, u.email, u.is_admin, u.created_at_utc, u.updated_at_utc FROM users u\n            JOIN oauth_tokens ot ON u.id = ot.user_id\n            WHERE ot.did = $1\n            LIMIT 1\n            ",
   "describe": {
     "columns": [
       {
@@ -10,18 +10,18 @@
       },
       {
         "ordinal": 1,
-        "name": "token_id",
-        "type_info": "Uuid"
+        "name": "username",
+        "type_info": "Text"
       },
       {
         "ordinal": 2,
-        "name": "enabled",
-        "type_info": "Bool"
+        "name": "email",
+        "type_info": "Text"
       },
       {
         "ordinal": 3,
-        "name": "original_blob_cid",
-        "type_info": "Text"
+        "name": "is_admin",
+        "type_info": "Bool"
       },
       {
         "ordinal": 4,
@@ -36,19 +36,17 @@
     ],
     "parameters": {
       "Left": [
-        "Uuid",
-        "Bool",
         "Text"
       ]
     },
     "nullable": [
       false,
-      false,
-      false,
       true,
+      true,
+      false,
       false,
       false
     ]
   },
-  "hash": "fee4419806ee6eafb2780ae77ca4bfec0f3e66ad23a32d52acc34c44e1f481d7"
+  "hash": "60efcc8c69d2a039e3f5520cd13241e2a17623f2c80ffd193d1c3625a033c51f"
 }
