@@ -1195,26 +1195,123 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_extract_progress_from_handle() {
-        // Test fraction format
-        let result = extract_progress_from_handle("user.bsky.app 3/4");
-        assert_eq!(result, Some((3.0, 4.0)));
+    fn test_extract_progress_from_handle_basic_fractions() {
+        // Test fraction format - basic cases
+        assert_eq!(
+            extract_progress_from_handle("user.bsky.app 3/4"),
+            Some((3.0, 4.0))
+        );
+        assert_eq!(
+            extract_progress_from_handle("42/100 progress"),
+            Some((42.0, 100.0))
+        );
+        assert_eq!(extract_progress_from_handle("1/2"), Some((1.0, 2.0)));
+        assert_eq!(
+            extract_progress_from_handle("user123 1/1"),
+            Some((1.0, 1.0))
+        );
+    }
 
-        let result = extract_progress_from_handle("42/100 progress");
-        assert_eq!(result, Some((42.0, 100.0)));
+    #[test]
+    fn test_extract_progress_from_handle_edge_fractions() {
+        // Test fraction format - edge cases
+        assert_eq!(extract_progress_from_handle("0/1"), Some((0.0, 1.0)));
+        assert_eq!(extract_progress_from_handle("0/100"), Some((0.0, 100.0)));
+        assert_eq!(
+            extract_progress_from_handle("100/100"),
+            Some((100.0, 100.0))
+        );
+        assert_eq!(
+            extract_progress_from_handle("user 5/999"),
+            Some((5.0, 999.0))
+        );
+        assert_eq!(
+            extract_progress_from_handle("999/1000 almost there!"),
+            Some((999.0, 1000.0))
+        );
+        assert_eq!(
+            extract_progress_from_handle("prefix 50/200 suffix"),
+            Some((50.0, 200.0))
+        );
+    }
 
-        // Test percentage format
-        let result = extract_progress_from_handle("user.bsky.app 75%");
-        assert_eq!(result, Some((75.0, 100.0)));
+    #[test]
+    fn test_extract_progress_from_handle_whole_percentages() {
+        // Test percentage format - whole numbers
+        assert_eq!(
+            extract_progress_from_handle("user.bsky.app 75%"),
+            Some((75.0, 100.0))
+        );
+        assert_eq!(extract_progress_from_handle("0%"), Some((0.0, 100.0)));
+        assert_eq!(extract_progress_from_handle("100%"), Some((100.0, 100.0)));
+        assert_eq!(
+            extract_progress_from_handle("50% complete"),
+            Some((50.0, 100.0))
+        );
+        assert_eq!(
+            extract_progress_from_handle("user 25% done"),
+            Some((25.0, 100.0))
+        );
+    }
 
-        let result = extract_progress_from_handle("33.5% complete");
-        assert_eq!(result, Some((33.5, 100.0)));
+    #[test]
+    fn test_extract_progress_from_handle_decimal_percentages() {
+        // Test percentage format - decimal values
+        assert_eq!(
+            extract_progress_from_handle("33.5% complete"),
+            Some((33.5, 100.0))
+        );
+        assert_eq!(extract_progress_from_handle("0.5%"), Some((0.5, 100.0)));
+        assert_eq!(
+            extract_progress_from_handle("99.9% loaded"),
+            Some((99.9, 100.0))
+        );
+        assert_eq!(
+            extract_progress_from_handle("user.bsky.social 66.67%"),
+            Some((66.67, 100.0))
+        );
+    }
 
-        // Test invalid inputs
-        let result = extract_progress_from_handle("user.bsky.app");
-        assert_eq!(result, None);
+    #[test]
+    fn test_extract_progress_from_handle_invalid_inputs() {
+        // Test invalid or non-matching inputs
+        assert_eq!(extract_progress_from_handle("user.bsky.app"), None);
+        assert_eq!(extract_progress_from_handle(""), None);
+        assert_eq!(extract_progress_from_handle("no numbers here"), None);
+    }
 
-        let result = extract_progress_from_handle("0/0"); // Division by zero
-        assert_eq!(result, None);
+    #[test]
+    fn test_extract_progress_from_handle_malformed_formats() {
+        // Test malformed fraction and percentage formats
+        assert_eq!(extract_progress_from_handle("50 / 100"), None); // Spaces between numbers and slash
+        assert_eq!(extract_progress_from_handle("50/ 100"), None); // Space after slash
+        assert_eq!(extract_progress_from_handle("50 %"), None); // Space before percent
+        assert_eq!(extract_progress_from_handle("abc/xyz"), None); // Non-numeric values
+    }
+
+    #[test]
+    fn test_extract_progress_from_handle_invalid_numbers() {
+        // Test invalid numeric inputs
+        assert_eq!(extract_progress_from_handle("0/0"), None); // Division by zero
+        assert_eq!(extract_progress_from_handle("-1/5"), None); // Negative numerator
+        assert_eq!(extract_progress_from_handle("5/-10"), None); // Negative denominator
+        assert_eq!(extract_progress_from_handle("-50%"), None); // Negative percentage
+    }
+
+    #[test]
+    fn test_extract_progress_from_handle_multiple_matches() {
+        // Test cases with multiple matches - should pick the first match
+        assert_eq!(
+            extract_progress_from_handle("25/50 and 75%"),
+            Some((25.0, 50.0))
+        );
+        assert_eq!(
+            extract_progress_from_handle("30% and 1/3"),
+            Some((30.0, 100.0))
+        );
+        assert_eq!(
+            extract_progress_from_handle("1/4 progress and 2/8 again"),
+            Some((1.0, 4.0))
+        );
     }
 }
