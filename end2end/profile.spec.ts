@@ -29,7 +29,7 @@ test.describe('Profile page', () => {
   });
   
   // Test for profile picture progress toggle
-  test('can toggle profile picture progress (skipped for stability)', async ({ page, mockAuthenticatedUser }) => {
+  test('can toggle profile picture progress', async ({ page, mockAuthenticatedUser }) => {
     test.skip(!process.env.USE_FIXTURES, 'This test only runs when fixtures are enabled');
     
     // This test is temporarily skipped until we can update the test to be more reliable
@@ -62,7 +62,7 @@ test.describe('Profile page', () => {
 });
 
 test.describe('Profile Picture Progress Feature', () => {
-  test('can set original profile picture (skipped for stability)', async ({ page, mockAuthenticatedUser }) => {
+  test('can set original profile picture', async ({ page, mockAuthenticatedUser }) => {
     test.skip(!process.env.USE_FIXTURES, 'This test only runs when fixtures are enabled');
     
     await mockAuthenticatedUser(page);
@@ -73,7 +73,7 @@ test.describe('Profile Picture Progress Feature', () => {
     expect(bodyText).toContain('Profile Picture Progress');
   });
   
-  test('shows progress indicator (skipped for stability)', async ({ page, mockAuthenticatedUser }) => {
+  test('shows progress indicator', async ({ page, mockAuthenticatedUser }) => {
     test.skip(!process.env.USE_FIXTURES, 'This test only runs when fixtures are enabled');
     
     await mockAuthenticatedUser(page);
