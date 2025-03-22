@@ -14,6 +14,8 @@ pub struct User {
     pub username: Option<String>,
     /// Optional email
     pub email: Option<String>,
+    /// Whether this user has admin privileges
+    pub is_admin: bool,
     /// When the user was created
     pub created_at_utc: DateTime<Utc>,
     /// When the user was last updated
@@ -49,7 +51,7 @@ impl User {
     pub async fn get_by_id(pool: &PgPool, user_id: Uuid) -> cja::Result<Option<User>> {
         let row = sqlx::query!(
             r#"
-            SELECT id, username, email, created_at_utc, updated_at_utc 
+            SELECT id, username, email, is_admin, created_at_utc, updated_at_utc 
             FROM users WHERE id = $1
             "#,
             user_id
@@ -61,6 +63,7 @@ impl User {
             user_id: r.id,
             username: r.username,
             email: r.email,
+            is_admin: r.is_admin,
             created_at_utc: r.created_at_utc,
             updated_at_utc: r.updated_at_utc,
         }))
@@ -74,9 +77,9 @@ impl User {
     ) -> cja::Result<User> {
         let row = sqlx::query!(
             r#"
-            INSERT INTO users (username, email)
-            VALUES ($1, $2)
-            RETURNING id, username, email, created_at_utc, updated_at_utc
+            INSERT INTO users (username, email, is_admin)
+            VALUES ($1, $2, false)
+            RETURNING id, username, email, is_admin, created_at_utc, updated_at_utc
             "#,
             username,
             email
@@ -90,16 +93,20 @@ impl User {
             user_id: row.id,
             username: row.username,
             email: row.email,
+            is_admin: row.is_admin,
             created_at_utc: row.created_at_utc,
             updated_at_utc: row.updated_at_utc,
         })
     }
+    
+    // The set_admin_status and make_admin_by_did functions have been removed 
+    // since we'll be updating the database manually
 
     /// Get a user by the DID of one of their OAuth tokens
     pub async fn get_by_did(pool: &PgPool, did: &str) -> cja::Result<Option<User>> {
         let row = sqlx::query!(
             r#"
-            SELECT u.id, u.username, u.email, u.created_at_utc, u.updated_at_utc FROM users u
+            SELECT u.id, u.username, u.email, u.is_admin, u.created_at_utc, u.updated_at_utc FROM users u
             JOIN oauth_tokens ot ON u.id = ot.user_id
             WHERE ot.did = $1
             LIMIT 1
@@ -113,6 +120,7 @@ impl User {
             user_id: r.id,
             username: r.username,
             email: r.email,
+            is_admin: r.is_admin,
             created_at_utc: r.created_at_utc,
             updated_at_utc: r.updated_at_utc,
         }))

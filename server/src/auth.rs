@@ -80,6 +80,35 @@ impl FromRequestParts<AppState> for AuthUser {
     }
 }
 
+/// Extract an authenticated admin user from the request
+/// Requires both authentication and admin privileges
+#[derive(Debug, Clone)]
+pub struct AdminUser(pub User);
+
+#[async_trait]
+impl FromRequestParts<AppState> for AdminUser {
+    type Rejection = Response;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        // First, extract regular authenticated user
+        let auth_user = match AuthUser::from_request_parts(parts, state).await {
+            Ok(user) => user,
+            Err(rejection) => return Err(rejection),
+        };
+        
+        // Check if user has admin privileges
+        if !auth_user.0.is_admin {
+            error!("User {} attempted to access admin area without admin privileges", auth_user.0.user_id);
+            return Err(StatusCode::FORBIDDEN.into_response());
+        }
+        
+        Ok(AdminUser(auth_user.0))
+    }
+}
+
 /// Extract the optional user from the request if authenticated
 #[derive(Debug, Clone)]
 pub struct OptionalUser {

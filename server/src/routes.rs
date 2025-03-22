@@ -1,5 +1,5 @@
 use crate::{
-    auth::{AuthUser, OptionalUser},
+    auth::{AdminUser, AuthUser, OptionalUser},
     profile_progress::ProfilePictureProgress,
     state::AppState,
 };
@@ -11,6 +11,7 @@ use axum::{
 use cja::jobs::Job as _;
 use color_eyre::eyre::eyre;
 use serde::Deserialize;
+use std::collections::HashMap;
 use tower_cookies::{Cookie, Cookies};
 use tracing::{error, info};
 use uuid::Uuid;
@@ -39,6 +40,10 @@ pub fn routes(app_state: AppState) -> axum::Router {
         .route("/oauth/bsky/token", get(bsky::get_token))
         .route("/oauth/bsky/revoke", get(bsky::revoke_token))
         .route("/oauth/bsky/set-primary", get(bsky::set_primary_account))
+        // Admin routes
+        .route("/_", get(admin_panel))
+        .route("/_/job/enqueue", post(admin_enqueue_job))
+        .route("/_/job/run", post(admin_run_job))
         // Add trace layer for debugging
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(app_state)
@@ -405,4 +410,246 @@ async fn logout(State(state): State<AppState>, cookies: Cookies) -> impl IntoRes
     // Redirect to home page
     info!("User logged out successfully");
     Redirect::to("/")
+}
+
+/// Admin panel page - shows available jobs and provides a UI to run them
+async fn admin_panel(AdminUser(user): AdminUser, State(_state): State<AppState>) -> impl IntoResponse {
+    use crate::components::{
+        layout::Page,
+        ui::heading::Heading,
+    };
+    use maud::{html, Render};
+
+    let available_jobs = crate::jobs::get_available_jobs();
+
+    let jobs_html = html! {
+        div class="space-y-6" {
+            @for job_name in available_jobs {
+                div class="bg-white rounded-lg shadow-sm p-4 border border-gray-200" {
+                    h3 class="text-lg font-medium text-gray-800 mb-2" { (job_name) }
+                    
+                    // Parameters form
+                    form action="/_/job/enqueue" method="post" class="mb-4" {
+                        input type="hidden" name="job_name" value=(job_name);
+                        
+                        // Display parameter inputs based on job type
+                        @let params = crate::jobs::get_job_params(job_name);
+                        @if !params.is_empty() {
+                            div class="space-y-3 mb-4" {
+                                @for (param_name, description, required) in params {
+                                    div class="flex flex-col" {
+                                        label for=(format!("{}-{}", job_name, param_name)) class="text-sm font-medium text-gray-700 mb-1" {
+                                            (param_name)
+                                            @if required {
+                                                span class="text-red-500" { " *" }
+                                            }
+                                        }
+                                        input 
+                                            type="text" 
+                                            id=(format!("{}-{}", job_name, param_name))
+                                            name=(param_name)
+                                            class="border rounded-md px-3 py-2 text-sm"
+                                            placeholder=(description)
+                                            required=(required);
+                                    }
+                                }
+                            }
+                        } @else {
+                            p class="text-sm text-gray-500 italic mb-4" { "This job does not require any parameters." }
+                        }
+                        
+                        // Submit buttons
+                        div class="flex space-x-2" {
+                            button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm" { "Enqueue Job" }
+                            button type="submit" formaction="/_/job/run" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded text-sm" { "Run Now" }
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    let content = html! {
+        div class="p-6 max-w-4xl mx-auto" {
+            (Heading::h1("Admin Panel").render())
+            
+            p class="text-gray-600 mb-6" { 
+                "Hello, Administrator! "
+                @if let Some(username) = &user.username {
+                    "(" (username) ")"
+                }
+            }
+            
+            (Heading::h2("Available Jobs").render())
+            (jobs_html)
+        }
+    };
+
+    Page {
+        title: "Admin Panel - pfp.blue".to_string(),
+        content: Box::new(content),
+    }
+    .render()
+}
+
+/// Input parameters for job operations
+#[derive(Debug, Deserialize)]
+struct JobParams {
+    job_name: String,
+    #[serde(flatten)]
+    args: HashMap<String, String>,
+}
+
+/// Handler for enqueueing a job
+async fn admin_enqueue_job(
+    AdminUser(_): AdminUser,
+    State(state): State<AppState>,
+    Form(params): Form<JobParams>,
+) -> impl IntoResponse {
+    use crate::components::layout::Page;
+    use maud::{html, Render};
+
+    let mut args = params.args.clone();
+    // Remove the job_name key if it somehow got into the args
+    args.remove("job_name");
+
+    // Create the job from the provided parameters
+    let job_result = crate::jobs::create_job_from_name_and_args(&params.job_name, args);
+    
+    let job = match job_result {
+        Ok(job) => job,
+        Err(error) => {
+            error!("Failed to create job {}: {}", params.job_name, error);
+            let content = html! {
+                div class="p-6 max-w-4xl mx-auto" {
+                    h1 class="text-2xl font-bold text-red-600 mb-4" { "Error Creating Job" }
+                    p class="text-gray-700 mb-4" { "Failed to create job: " (error) }
+                    a href="/_" class="text-blue-600 hover:underline" { "Back to Admin Panel" }
+                }
+            };
+            
+            return Page {
+                title: "Job Error - pfp.blue".to_string(),
+                content: Box::new(content),
+            }
+            .render();
+        }
+    };
+    
+    // Enqueue the job
+    let result = job.enqueue(state).await;
+    
+    match result {
+        Ok(_) => {
+            info!("Successfully enqueued job {}", job.name());
+            
+            let content = html! {
+                div class="p-6 max-w-4xl mx-auto" {
+                    h1 class="text-2xl font-bold text-green-600 mb-4" { "Job Enqueued Successfully" }
+                    p class="text-gray-700 mb-4" { "Job " b { (job.name()) } " has been enqueued for background processing." }
+                    a href="/_" class="text-blue-600 hover:underline" { "Back to Admin Panel" }
+                }
+            };
+            
+            Page {
+                title: "Job Enqueued - pfp.blue".to_string(),
+                content: Box::new(content),
+            }
+            .render()
+        }
+        Err(err) => {
+            error!("Failed to enqueue job {}: {:?}", job.name(), err);
+            
+            let content = html! {
+                div class="p-6 max-w-4xl mx-auto" {
+                    h1 class="text-2xl font-bold text-red-600 mb-4" { "Error Enqueueing Job" }
+                    p class="text-gray-700 mb-4" { "Failed to enqueue job: " (err.to_string()) }
+                    a href="/_" class="text-blue-600 hover:underline" { "Back to Admin Panel" }
+                }
+            };
+            
+            Page {
+                title: "Job Error - pfp.blue".to_string(),
+                content: Box::new(content),
+            }
+            .render()
+        }
+    }
+}
+
+/// Handler for running a job immediately
+async fn admin_run_job(
+    AdminUser(_): AdminUser,
+    State(state): State<AppState>,
+    Form(params): Form<JobParams>,
+) -> impl IntoResponse {
+    use crate::components::layout::Page;
+    use maud::{html, Render};
+
+    let mut args = params.args.clone();
+    // Remove the job_name key if it somehow got into the args
+    args.remove("job_name");
+
+    // Create the job from the provided parameters
+    let job_result = crate::jobs::create_job_from_name_and_args(&params.job_name, args);
+    
+    let job = match job_result {
+        Ok(job) => job,
+        Err(error) => {
+            error!("Failed to create job {}: {}", params.job_name, error);
+            let content = html! {
+                div class="p-6 max-w-4xl mx-auto" {
+                    h1 class="text-2xl font-bold text-red-600 mb-4" { "Error Creating Job" }
+                    p class="text-gray-700 mb-4" { "Failed to create job: " (error) }
+                    a href="/_" class="text-blue-600 hover:underline" { "Back to Admin Panel" }
+                }
+            };
+            
+            return Page {
+                title: "Job Error - pfp.blue".to_string(),
+                content: Box::new(content),
+            }
+            .render();
+        }
+    };
+    
+    // Run the job immediately
+    let result = job.run(state.clone()).await;
+    
+    match result {
+        Ok(_) => {
+            info!("Successfully ran job {}", job.name());
+            
+            let content = html! {
+                div class="p-6 max-w-4xl mx-auto" {
+                    h1 class="text-2xl font-bold text-green-600 mb-4" { "Job Completed Successfully" }
+                    p class="text-gray-700 mb-4" { "Job " b { (job.name()) } " has been executed successfully." }
+                    a href="/_" class="text-blue-600 hover:underline" { "Back to Admin Panel" }
+                }
+            };
+            
+            Page {
+                title: "Job Completed - pfp.blue".to_string(),
+                content: Box::new(content),
+            }
+            .render()
+        }
+        Err(err) => {
+            error!("Failed to run job {}: {:?}", job.name(), err);
+            
+            let content = html! {
+                div class="p-6 max-w-4xl mx-auto" {
+                    h1 class="text-2xl font-bold text-red-600 mb-4" { "Error Running Job" }
+                    p class="text-gray-700 mb-4" { "Failed to run job: " (err.to_string()) }
+                    a href="/_" class="text-blue-600 hover:underline" { "Back to Admin Panel" }
+                }
+            };
+            
+            Page {
+                title: "Job Error - pfp.blue".to_string(),
+                content: Box::new(content),
+            }
+            .render()
+        }
+    }
 }
