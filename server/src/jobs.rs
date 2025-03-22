@@ -1241,7 +1241,7 @@ pub async fn get_original_profile_picture(
         "Original profile picture record exists but has no avatar for DID: {}",
         token.did
     );
-    return Err(eyre!("No original profile picture record found"));
+    Err(eyre!("No original profile picture record found"))
 }
 
 /// Helper function to find PDS endpoint for a user
