@@ -526,40 +526,58 @@ impl Job<AppState> for UpdateProfilePictureProgressJob {
                 if let Some(cid) = progress.original_blob_cid {
                     // Fetch the original profile picture from the old CID
                     debug!("Using legacy original_blob_cid from DB: {}", cid);
-                    
+
                     // Fetch the blob image
                     let blob_data = match crate::routes::bsky::fetch_blob_by_cid(
-                        &token.did,
-                        &cid,
-                        &app_state,
-                    ).await {
+                        &token.did, &cid, &app_state,
+                    )
+                    .await
+                    {
                         Ok(data) => data,
                         Err(err) => {
-                            error!("Failed to fetch original profile picture from legacy CID: {:?}", err);
+                            error!(
+                                "Failed to fetch original profile picture from legacy CID: {:?}",
+                                err
+                            );
                             return Err(eyre!("Failed to fetch original profile picture: {}", err));
                         }
                     };
-                    
+
                     // Upload the blob to get the blob object
                     match upload_image_to_bluesky(&app_state, &token, &blob_data).await {
                         Ok(blob_object) => {
                             // Save to our custom collection for future use
-                            if let Err(err) = save_original_profile_picture(&app_state, &token, blob_object.clone()).await {
+                            if let Err(err) = save_original_profile_picture(
+                                &app_state,
+                                &token,
+                                blob_object.clone(),
+                            )
+                            .await
+                            {
                                 error!("Failed to save original profile picture to custom collection: {:?}", err);
                                 // Continue anyway, we have the blob object already
                             }
                             blob_object
-                        },
+                        }
                         Err(err) => {
-                            error!("Failed to upload original profile picture for migration: {:?}", err);
-                            return Err(eyre!("Failed to upload original profile picture for migration: {}", err));
+                            error!(
+                                "Failed to upload original profile picture for migration: {:?}",
+                                err
+                            );
+                            return Err(eyre!(
+                                "Failed to upload original profile picture for migration: {}",
+                                err
+                            ));
                         }
                     }
                 } else {
-                    error!("No original profile picture found for token ID {}", self.token_id);
+                    error!(
+                        "No original profile picture found for token ID {}",
+                        self.token_id
+                    );
                     return Err(eyre!("No original profile picture found"));
                 }
-            },
+            }
             Err(err) => {
                 error!("Failed to check for original profile picture: {:?}", err);
                 return Err(err);
@@ -1078,7 +1096,7 @@ pub async fn save_original_profile_picture(
     // Create the request body
     let put_body = serde_json::json!({
         "repo": token.did,
-        "collection": "blue.pfp.unmodified_pfp", 
+        "collection": "blue.pfp.unmodifiedPfp",
         "rkey": "self",
         "record": record
     });
@@ -1135,7 +1153,10 @@ pub async fn save_original_profile_picture(
             .await
             .unwrap_or_else(|_| "Failed to read error response".to_string());
 
-        error!("Failed to save original profile picture: {} - {}", status, error_text);
+        error!(
+            "Failed to save original profile picture: {} - {}",
+            status, error_text
+        );
         return Err(eyre!(
             "Failed to save original profile picture: {} - {}",
             status,
@@ -1152,8 +1173,8 @@ pub async fn save_original_profile_picture(
 
 /// Get the original profile picture blob from our custom PDS collection
 pub async fn get_original_profile_picture(
-    app_state: &AppState, 
-    token: &OAuthTokenSet
+    app_state: &AppState,
+    token: &OAuthTokenSet,
 ) -> cja::Result<Option<serde_json::Value>> {
     use color_eyre::eyre::eyre;
     use tracing::{error, info};
@@ -1184,7 +1205,7 @@ pub async fn get_original_profile_picture(
         .get(&get_record_url)
         .query(&[
             ("repo", &token.did),
-            ("collection", &String::from("blue.pfp.unmodified_pfp")),
+            ("collection", &String::from("blue.pfp.unmodifiedPfp")),
             ("rkey", &String::from("self")),
         ])
         .header("Authorization", format!("DPoP {}", token.access_token))
@@ -1218,7 +1239,7 @@ pub async fn get_original_profile_picture(
                     .get(&get_record_url)
                     .query(&[
                         ("repo", &token.did),
-                        ("collection", &String::from("blue.pfp.unmodified_pfp")),
+                        ("collection", &String::from("blue.pfp.unmodifiedPfp")),
                         ("rkey", &String::from("self")),
                     ])
                     .header("Authorization", format!("DPoP {}", token.access_token))
@@ -1234,7 +1255,10 @@ pub async fn get_original_profile_picture(
 
     // If record doesn't exist, return None (not an error)
     if get_response.status() == reqwest::StatusCode::NOT_FOUND {
-        info!("No original profile picture record found for DID: {}", token.did);
+        info!(
+            "No original profile picture record found for DID: {}",
+            token.did
+        );
         return Ok(None);
     }
 
@@ -1245,7 +1269,10 @@ pub async fn get_original_profile_picture(
             .await
             .unwrap_or_else(|_| "Failed to read error response".to_string());
 
-        error!("Failed to get original profile picture: {} - {}", status, error_text);
+        error!(
+            "Failed to get original profile picture: {} - {}",
+            status, error_text
+        );
         return Err(eyre!(
             "Failed to get original profile picture: {} - {}",
             status,
@@ -1259,13 +1286,19 @@ pub async fn get_original_profile_picture(
     // Extract the avatar blob from the record
     if let Some(value) = record_data.get("value") {
         if let Some(avatar) = value.get("avatar") {
-            info!("Found original profile picture record for DID: {}", token.did);
+            info!(
+                "Found original profile picture record for DID: {}",
+                token.did
+            );
             return Ok(Some(avatar.clone()));
         }
     }
 
     // No avatar found in the record
-    info!("Original profile picture record exists but has no avatar for DID: {}", token.did);
+    info!(
+        "Original profile picture record exists but has no avatar for DID: {}",
+        token.did
+    );
     Ok(None)
 }
 
