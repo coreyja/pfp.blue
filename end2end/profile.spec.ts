@@ -29,7 +29,7 @@ test.describe('Profile page', () => {
   });
   
   // Test for profile picture progress toggle
-  test.skip('can toggle profile picture progress (skipped for stability)', async ({ page, mockAuthenticatedUser }) => {
+  test('can toggle profile picture progress (skipped for stability)', async ({ page, mockAuthenticatedUser }) => {
     test.skip(!process.env.USE_FIXTURES, 'This test only runs when fixtures are enabled');
     
     // This test is temporarily skipped until we can update the test to be more reliable
@@ -47,7 +47,7 @@ test.describe('Profile page', () => {
   });
   
   // We can add back the multiple accounts test later when we have fixture support for it
-  test.skip('shows all linked accounts when multiple accounts are connected', async ({ page, mockAuthenticatedUser }) => {
+  test('shows all linked accounts when multiple accounts are connected', async ({ page, mockAuthenticatedUser }) => {
     test.skip(!process.env.USE_FIXTURES, 'This test only runs when fixtures are enabled');
     
     await mockAuthenticatedUser(page);
@@ -62,8 +62,7 @@ test.describe('Profile page', () => {
 });
 
 test.describe('Profile Picture Progress Feature', () => {
-  // Skipping these tests for stability since the exact UI elements may change
-  test.skip('can set original profile picture (skipped for stability)', async ({ page, mockAuthenticatedUser }) => {
+  test('can set original profile picture (skipped for stability)', async ({ page, mockAuthenticatedUser }) => {
     test.skip(!process.env.USE_FIXTURES, 'This test only runs when fixtures are enabled');
     
     await mockAuthenticatedUser(page);
@@ -74,7 +73,7 @@ test.describe('Profile Picture Progress Feature', () => {
     expect(bodyText).toContain('Profile Picture Progress');
   });
   
-  test.skip('shows progress indicator (skipped for stability)', async ({ page, mockAuthenticatedUser }) => {
+  test('shows progress indicator (skipped for stability)', async ({ page, mockAuthenticatedUser }) => {
     test.skip(!process.env.USE_FIXTURES, 'This test only runs when fixtures are enabled');
     
     await mockAuthenticatedUser(page);
