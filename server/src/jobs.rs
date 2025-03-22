@@ -139,7 +139,7 @@ impl Job<AppState> for NoopJob {
     }
 }
 
-/// Job to update a user's profile handle in the database
+/// Job to update a user's profile display name in the database
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct UpdateProfileHandleJob {
     /// The DID of the user - only thing we need to look up the token in the DB
@@ -338,10 +338,10 @@ impl Job<AppState> for UpdateProfileHandleJob {
             }
         };
 
-        // Extract the handle from the profile data
-        let extracted_handle = if let Some(value) = profile_data.get("value") {
-            if let Some(handle_val) = value.get("handle") {
-                handle_val.as_str().map(|s| s.to_string())
+        // Extract the display name from the profile data
+        let extracted_display_name = if let Some(value) = profile_data.get("value") {
+            if let Some(display_name_val) = value.get("displayName") {
+                display_name_val.as_str().map(|s| s.to_string())
             } else {
                 None
             }
@@ -349,35 +349,35 @@ impl Job<AppState> for UpdateProfileHandleJob {
             None
         };
 
-        // If we found a handle in the profile, make sure it's updated in the database
-        if let Some(handle_str) = extracted_handle {
-            // Check if handle is different than what we have saved
-            let should_update = match &token.handle {
-                Some(current_handle) => current_handle != &handle_str,
-                None => true, // No handle stored yet, need to update
+        // If we found a display name in the profile, make sure it's updated in the database
+        if let Some(display_name_str) = extracted_display_name {
+            // Check if display name is different than what we have saved
+            let should_update = match &token.display_name {
+                Some(current_display_name) => current_display_name != &display_name_str,
+                None => true, // No display name stored yet, need to update
             };
 
             if should_update {
-                // Update the handle in the database
-                match crate::oauth::db::update_token_handle(&app_state.db, &self.did, &handle_str)
+                // Update the display name in the database
+                match crate::oauth::db::update_token_display_name(&app_state.db, &self.did, &display_name_str)
                     .await
                 {
                     Ok(_) => {
-                        info!("Updated handle for DID {}: {}", self.did, handle_str);
+                        info!("Updated display name for DID {}: {}", self.did, display_name_str);
                     }
                     Err(err) => {
-                        error!("Failed to update handle in database: {:?}", err);
+                        error!("Failed to update display name in database: {:?}", err);
                         return Err(err);
                     }
                 }
             } else {
                 debug!(
-                    "Handle for DID {} already up to date: {}",
-                    self.did, handle_str
+                    "Display name for DID {} already up to date: {}",
+                    self.did, display_name_str
                 );
             }
         } else {
-            debug!("No handle found in profile data for DID: {}", self.did);
+            debug!("No display name found in profile data for DID: {}", self.did);
         }
 
         Ok(())
@@ -471,12 +471,12 @@ impl Job<AppState> for UpdateProfilePictureProgressJob {
             }
         };
 
-        // Extract progress fraction or percentage from handle
-        let (numerator, denominator) = match &token.handle {
-            Some(handle) => extract_progress_from_handle(handle).unwrap_or((0.0, 1.0)),
+        // Extract progress fraction or percentage from display_name
+        let (numerator, denominator) = match &token.display_name {
+            Some(display_name) => extract_progress_from_display_name(display_name).unwrap_or((0.0, 1.0)),
             None => {
                 debug!(
-                    "No handle found for token ID {}, defaulting to 0%",
+                    "No display name found for token ID {}, defaulting to 0%",
                     self.token_id
                 );
                 (0.0, 1.0)
@@ -553,14 +553,14 @@ impl Job<AppState> for UpdateProfilePictureProgressJob {
     }
 }
 
-/// Extract progress from handle
+/// Extract progress from display name
 /// Supports formats like "X/Y" or "X%" or "X.Y%"
-fn extract_progress_from_handle(handle: &str) -> Option<(f64, f64)> {
+fn extract_progress_from_display_name(display_name: &str) -> Option<(f64, f64)> {
     use regex::Regex;
 
     // Try to match X/Y format
     let fraction_re = Regex::new(r"(\d+)/(\d+)").unwrap();
-    if let Some(captures) = fraction_re.captures(handle) {
+    if let Some(captures) = fraction_re.captures(display_name) {
         if let (Ok(numerator), Ok(denominator)) =
             (captures[1].parse::<f64>(), captures[2].parse::<f64>())
         {
@@ -572,7 +572,7 @@ fn extract_progress_from_handle(handle: &str) -> Option<(f64, f64)> {
 
     // Try to match X% or X.Y% format
     let percentage_re = Regex::new(r"(\d+(?:\.\d+)?)%").unwrap();
-    if let Some(captures) = percentage_re.captures(handle) {
+    if let Some(captures) = percentage_re.captures(display_name) {
         if let Ok(percentage) = captures[1].parse::<f64>() {
             // Only accept non-negative percentages
             if percentage >= 0.0 {
@@ -1171,124 +1171,124 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_extract_progress_from_handle_basic_fractions() {
+    fn test_extract_progress_from_display_name_basic_fractions() {
         // Test fraction format - basic cases
         assert_eq!(
-            extract_progress_from_handle("user.bsky.app 3/4"),
+            extract_progress_from_display_name("user.bsky.app 3/4"),
             Some((3.0, 4.0))
         );
         assert_eq!(
-            extract_progress_from_handle("42/100 progress"),
+            extract_progress_from_display_name("42/100 progress"),
             Some((42.0, 100.0))
         );
-        assert_eq!(extract_progress_from_handle("1/2"), Some((1.0, 2.0)));
+        assert_eq!(extract_progress_from_display_name("1/2"), Some((1.0, 2.0)));
         assert_eq!(
-            extract_progress_from_handle("user123 1/1"),
+            extract_progress_from_display_name("user123 1/1"),
             Some((1.0, 1.0))
         );
     }
 
     #[test]
-    fn test_extract_progress_from_handle_edge_fractions() {
+    fn test_extract_progress_from_display_name_edge_fractions() {
         // Test fraction format - edge cases
-        assert_eq!(extract_progress_from_handle("0/1"), Some((0.0, 1.0)));
-        assert_eq!(extract_progress_from_handle("0/100"), Some((0.0, 100.0)));
+        assert_eq!(extract_progress_from_display_name("0/1"), Some((0.0, 1.0)));
+        assert_eq!(extract_progress_from_display_name("0/100"), Some((0.0, 100.0)));
         assert_eq!(
-            extract_progress_from_handle("100/100"),
+            extract_progress_from_display_name("100/100"),
             Some((100.0, 100.0))
         );
         assert_eq!(
-            extract_progress_from_handle("user 5/999"),
+            extract_progress_from_display_name("user 5/999"),
             Some((5.0, 999.0))
         );
         assert_eq!(
-            extract_progress_from_handle("999/1000 almost there!"),
+            extract_progress_from_display_name("999/1000 almost there!"),
             Some((999.0, 1000.0))
         );
         assert_eq!(
-            extract_progress_from_handle("prefix 50/200 suffix"),
+            extract_progress_from_display_name("prefix 50/200 suffix"),
             Some((50.0, 200.0))
         );
     }
 
     #[test]
-    fn test_extract_progress_from_handle_whole_percentages() {
+    fn test_extract_progress_from_display_name_whole_percentages() {
         // Test percentage format - whole numbers
         assert_eq!(
-            extract_progress_from_handle("user.bsky.app 75%"),
+            extract_progress_from_display_name("user.bsky.app 75%"),
             Some((75.0, 100.0))
         );
-        assert_eq!(extract_progress_from_handle("0%"), Some((0.0, 100.0)));
-        assert_eq!(extract_progress_from_handle("100%"), Some((100.0, 100.0)));
+        assert_eq!(extract_progress_from_display_name("0%"), Some((0.0, 100.0)));
+        assert_eq!(extract_progress_from_display_name("100%"), Some((100.0, 100.0)));
         assert_eq!(
-            extract_progress_from_handle("50% complete"),
+            extract_progress_from_display_name("50% complete"),
             Some((50.0, 100.0))
         );
         assert_eq!(
-            extract_progress_from_handle("user 25% done"),
+            extract_progress_from_display_name("user 25% done"),
             Some((25.0, 100.0))
         );
     }
 
     #[test]
-    fn test_extract_progress_from_handle_decimal_percentages() {
+    fn test_extract_progress_from_display_name_decimal_percentages() {
         // Test percentage format - decimal values
         assert_eq!(
-            extract_progress_from_handle("33.5% complete"),
+            extract_progress_from_display_name("33.5% complete"),
             Some((33.5, 100.0))
         );
-        assert_eq!(extract_progress_from_handle("0.5%"), Some((0.5, 100.0)));
+        assert_eq!(extract_progress_from_display_name("0.5%"), Some((0.5, 100.0)));
         assert_eq!(
-            extract_progress_from_handle("99.9% loaded"),
+            extract_progress_from_display_name("99.9% loaded"),
             Some((99.9, 100.0))
         );
         assert_eq!(
-            extract_progress_from_handle("user.bsky.social 66.67%"),
+            extract_progress_from_display_name("user.bsky.social 66.67%"),
             Some((66.67, 100.0))
         );
     }
 
     #[test]
-    fn test_extract_progress_from_handle_invalid_inputs() {
+    fn test_extract_progress_from_display_name_invalid_inputs() {
         // Test invalid or non-matching inputs
-        assert_eq!(extract_progress_from_handle("user.bsky.app"), None);
-        assert_eq!(extract_progress_from_handle(""), None);
-        assert_eq!(extract_progress_from_handle("no numbers here"), None);
+        assert_eq!(extract_progress_from_display_name("user.bsky.app"), None);
+        assert_eq!(extract_progress_from_display_name(""), None);
+        assert_eq!(extract_progress_from_display_name("no numbers here"), None);
     }
 
     #[test]
-    fn test_extract_progress_from_handle_malformed_formats() {
+    fn test_extract_progress_from_display_name_malformed_formats() {
         // Test malformed fraction and percentage formats
-        assert_eq!(extract_progress_from_handle("50 / 100"), None); // Spaces between numbers and slash
-        assert_eq!(extract_progress_from_handle("50/ 100"), None); // Space after slash
-        assert_eq!(extract_progress_from_handle("50 %"), None); // Space before percent
-        assert_eq!(extract_progress_from_handle("abc/xyz"), None); // Non-numeric values
+        assert_eq!(extract_progress_from_display_name("50 / 100"), None); // Spaces between numbers and slash
+        assert_eq!(extract_progress_from_display_name("50/ 100"), None); // Space after slash
+        assert_eq!(extract_progress_from_display_name("50 %"), None); // Space before percent
+        assert_eq!(extract_progress_from_display_name("abc/xyz"), None); // Non-numeric values
     }
 
     #[test]
-    fn test_extract_progress_from_handle_invalid_numbers() {
+    fn test_extract_progress_from_display_name_invalid_numbers() {
         // Test invalid numeric inputs
-        assert_eq!(extract_progress_from_handle("0/0"), None); // Division by zero
+        assert_eq!(extract_progress_from_display_name("0/0"), None); // Division by zero
                                                                // Note: The regex pattern ^-1/5 is "\d+/\d+" which doesn't match negative numbers
                                                                // so these tests aren't valid since the regex will never capture them
-                                                               // assert_eq!(extract_progress_from_handle("-1/5"), None); // Negative numerator
-                                                               // assert_eq!(extract_progress_from_handle("5/-10"), None); // Negative denominator
-                                                               // assert_eq!(extract_progress_from_handle("-50%"), None); // Negative percentage
+                                                               // assert_eq!(extract_progress_from_display_name("-1/5"), None); // Negative numerator
+                                                               // assert_eq!(extract_progress_from_display_name("5/-10"), None); // Negative denominator
+                                                               // assert_eq!(extract_progress_from_display_name("-50%"), None); // Negative percentage
     }
 
     #[test]
-    fn test_extract_progress_from_handle_multiple_matches() {
+    fn test_extract_progress_from_display_name_multiple_matches() {
         // Test cases with multiple matches - should pick the first match
         assert_eq!(
-            extract_progress_from_handle("25/50 and 75%"),
+            extract_progress_from_display_name("25/50 and 75%"),
             Some((25.0, 50.0))
         );
         assert_eq!(
-            extract_progress_from_handle("1/3 and 30%"),
+            extract_progress_from_display_name("1/3 and 30%"),
             Some((1.0, 3.0))
         );
         assert_eq!(
-            extract_progress_from_handle("1/4 progress and 2/8 again"),
+            extract_progress_from_display_name("1/4 progress and 2/8 again"),
             Some((1.0, 4.0))
         );
     }

@@ -21,7 +21,7 @@ pub struct ProfileAvatar {
 /// Parameters for profile data extraction
 pub struct ProfileDataParams {
     pub display_name: Option<String>,
-    pub handle: Option<String>,
+    pub display_name_legacy: Option<String>, // For backwards compatibility
     pub avatar: Option<ProfileAvatar>,
     pub description: Option<String>,
     pub profile_data: Option<serde_json::Value>,
@@ -31,7 +31,7 @@ pub struct ProfileDataParams {
 pub fn extract_profile_info(profile_data: &serde_json::Value) -> ProfileDataParams {
     let mut params = ProfileDataParams {
         display_name: None,
-        handle: None,
+        display_name_legacy: None,
         avatar: None,
         description: None,
         profile_data: Some(profile_data.clone()),
@@ -44,9 +44,9 @@ pub fn extract_profile_info(profile_data: &serde_json::Value) -> ProfileDataPara
             params.display_name = Some(name.to_string());
         }
 
-        // Extract handle
+        // Extract handle (legacy)
         if let Some(handle) = value.get("handle").and_then(|h| h.as_str()) {
-            params.handle = Some(handle.to_string());
+            params.display_name_legacy = Some(handle.to_string());
         }
 
         // Extract description

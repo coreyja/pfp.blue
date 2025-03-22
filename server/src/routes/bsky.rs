@@ -1232,7 +1232,7 @@ async fn display_profile_multi(
             // Create default profile info with just the DID
             crate::api::ProfileDataParams {
                 display_name: None,
-                handle: None,
+                display_name_legacy: None,
                 avatar: None,
                 description: None,
                 profile_data: None,
@@ -1244,7 +1244,7 @@ async fn display_profile_multi(
     let display_name = profile_info
         .display_name
         .unwrap_or_else(|| primary_token.did.clone());
-    let handle = profile_info.handle;
+    let handle = profile_info.display_name_legacy;
 
     // Extract avatar information and encode as base64 if available
     let avatar_blob_cid = profile_info.avatar.as_ref().map(|a| a.cid.clone());
@@ -1360,7 +1360,7 @@ async fn display_profile_multi(
                     div class="space-y-3" {
                         @for token in &all_tokens {
                             (AccountCard::new(&token.did, token.expires_at)
-                                .handle(token.handle.as_deref().unwrap_or(""))
+                                .handle(token.display_name.as_deref().unwrap_or(""))
                                 .is_primary(token.did == primary_token.did))
                         }
                     }

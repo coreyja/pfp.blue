@@ -414,8 +414,8 @@ pub struct OAuthTokenSet {
     pub scope: String,
     /// The Bluesky DID this token is associated with
     pub did: String,
-    /// The Bluesky handle (username) associated with this DID
-    pub handle: Option<String>,
+    /// The Bluesky display name associated with this DID
+    pub display_name: Option<String>,
     /// DPoP confirmation key (JWK thumbprint)
     pub dpop_jkt: Option<String>,
     /// User ID that owns this token
@@ -437,7 +437,7 @@ impl OAuthTokenSet {
             refresh_token: response.refresh_token,
             scope: response.scope,
             did,
-            handle: None, // Will be updated later when we fetch profile data
+            display_name: None, // Will be updated later when we fetch profile data
             dpop_jkt: response.dpop_confirmation.map(|cnf| cnf.jkt),
             user_id: None,
         }
@@ -445,10 +445,10 @@ impl OAuthTokenSet {
 
     // Function removed - not used in codebase
 
-    /// Copy the handle from another token
+    /// Copy the display name from another token
     #[allow(dead_code)]
-    pub fn with_handle_from(mut self, other: &OAuthTokenSet) -> Self {
-        self.handle = other.handle.clone();
+    pub fn with_display_name_from(mut self, other: &OAuthTokenSet) -> Self {
+        self.display_name = other.display_name.clone();
         self
     }
 
@@ -1160,30 +1160,30 @@ pub mod db {
             }
         };
 
-        // Check if there's an existing token for this DID to preserve the handle if needed
-        let existing_row = if token_set.handle.is_none() {
-            // Only fetch the existing handle if the new token doesn't have one
+        // Check if there's an existing token for this DID to preserve the display_name if needed
+        let existing_row = if token_set.display_name.is_none() {
+            // Only fetch the existing display_name if the new token doesn't have one
             sqlx::query!(
                 r#"
-                SELECT id, handle FROM oauth_tokens 
-                WHERE did = $1 AND handle IS NOT NULL
+                SELECT id, display_name FROM oauth_tokens 
+                WHERE did = $1 AND display_name IS NOT NULL
                 "#,
                 &token_set.did
             )
             .fetch_optional(pool)
             .await?
         } else {
-            None // We already have a handle, no need to fetch
+            None // We already have a display_name, no need to fetch
         };
 
-        let existing_handle = existing_row.as_ref().and_then(|row| row.handle.clone());
-        let handle_to_use = token_set.handle.clone().or(existing_handle);
+        let existing_display_name = existing_row.as_ref().and_then(|row| row.display_name.clone());
+        let display_name_to_use = token_set.display_name.clone().or(existing_display_name);
 
-        // Log whether we're preserving the handle
-        if token_set.handle.is_none() && handle_to_use.is_some() {
+        // Log whether we're preserving the display_name
+        if token_set.display_name.is_none() && display_name_to_use.is_some() {
             tracing::info!(
-                "Preserving handle {:?} for DID {} when updating token",
-                handle_to_use,
+                "Preserving display_name {:?} for DID {} when updating token",
+                display_name_to_use,
                 token_set.did
             );
         }
@@ -1192,7 +1192,7 @@ pub mod db {
         sqlx::query!(
             r#"
             INSERT INTO oauth_tokens (
-                did, access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id, handle
+                did, access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id, display_name
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             ON CONFLICT (did) DO UPDATE SET
                 access_token = EXCLUDED.access_token,
@@ -1202,7 +1202,7 @@ pub mod db {
                 scope = EXCLUDED.scope,
                 dpop_jkt = EXCLUDED.dpop_jkt,
                 user_id = EXCLUDED.user_id,
-                handle = COALESCE(EXCLUDED.handle, oauth_tokens.handle),
+                display_name = COALESCE(EXCLUDED.display_name, oauth_tokens.display_name),
                 updated_at_utc = NOW()
             "#,
             &token_set.did,
@@ -1213,7 +1213,7 @@ pub mod db {
             &token_set.scope,
             token_set.dpop_jkt.as_deref(),
             user_id,
-            handle_to_use.as_deref()
+            display_name_to_use.as_deref()
         )
         .execute(pool)
         .await?;
@@ -1225,7 +1225,7 @@ pub mod db {
     pub async fn get_token(pool: &PgPool, did: &str) -> cja::Result<Option<OAuthTokenSet>> {
         let row = sqlx::query!(
             r#"
-            SELECT access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id, handle
+            SELECT access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id, display_name
             FROM oauth_tokens
             WHERE did = $1
             "#,
@@ -1241,7 +1241,7 @@ pub mod db {
             expires_at: row.expires_at as u64,
             refresh_token: row.refresh_token,
             scope: row.scope,
-            handle: row.handle,
+            display_name: row.display_name,
             dpop_jkt: row.dpop_jkt,
             user_id: Some(row.user_id),
         }))
@@ -1254,7 +1254,7 @@ pub mod db {
     ) -> cja::Result<Vec<OAuthTokenSet>> {
         let tokens = sqlx::query!(
             r#"
-            SELECT did, access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id, handle
+            SELECT did, access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id, display_name
             FROM oauth_tokens
             WHERE user_id = $1
             ORDER BY updated_at_utc DESC
@@ -1271,7 +1271,7 @@ pub mod db {
             expires_at: row.expires_at as u64,
             refresh_token: row.refresh_token,
             scope: row.scope,
-            handle: row.handle,
+            display_name: row.display_name,
             dpop_jkt: row.dpop_jkt,
             user_id: Some(row.user_id),
         })
@@ -1295,16 +1295,16 @@ pub mod db {
         Ok(())
     }
 
-    /// Updates the handle for a token
-    pub async fn update_token_handle(pool: &PgPool, did: &str, handle: &str) -> cja::Result<()> {
+    /// Updates the display name for a token
+    pub async fn update_token_display_name(pool: &PgPool, did: &str, display_name: &str) -> cja::Result<()> {
         sqlx::query!(
             r#"
             UPDATE oauth_tokens
-            SET handle = $2, updated_at_utc = NOW()
+            SET display_name = $2, updated_at_utc = NOW()
             WHERE did = $1
             "#,
             did,
-            handle
+            display_name
         )
         .execute(pool)
         .await?;
@@ -1506,17 +1506,17 @@ pub async fn refresh_token_if_needed(
     .await
     {
         Ok(token_response) => {
-            // Create a new token set preserving the user ID and handle
+            // Create a new token set preserving the user ID and display name
             let new_token = match OAuthTokenSet::from_token_response_with_jwk(
                 &token_response,
                 token.did.clone(),
                 &state.bsky_oauth.public_key,
             ) {
                 Ok(new_token) => {
-                    // Set user ID and handle from original token
+                    // Set user ID and display name from original token
                     let mut token_with_id = new_token.clone();
                     token_with_id.user_id = token.user_id;
-                    token_with_id.handle = token.handle.clone();
+                    token_with_id.display_name = token.display_name.clone();
                     token_with_id
                 }
                 Err(err) => {
@@ -1525,7 +1525,7 @@ pub async fn refresh_token_if_needed(
                     let mut standard_token =
                         OAuthTokenSet::from_token_response(token_response, token.did.clone());
                     standard_token.user_id = token.user_id;
-                    standard_token.handle = token.handle.clone();
+                    standard_token.display_name = token.display_name.clone();
                     standard_token
                 }
             };
@@ -1536,18 +1536,18 @@ pub async fn refresh_token_if_needed(
                 return Err(eyre!("Failed to store refreshed token: {:?}", err));
             }
 
-            // Also fetch profile to update handle if needed
+            // Also fetch profile to update display name if needed
             if let Err(err) = crate::jobs::UpdateProfileHandleJob::from_token(&new_token)
                 .enqueue(state.clone(), "token_refresh".to_string())
                 .await
             {
                 error!(
-                    "Failed to enqueue handle update job after token refresh: {:?}",
+                    "Failed to enqueue display name update job after token refresh: {:?}",
                     err
                 );
             } else {
                 info!(
-                    "Queued handle update job after token refresh for {}",
+                    "Queued display name update job after token refresh for {}",
                     new_token.did
                 );
             }
