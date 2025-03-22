@@ -13,7 +13,7 @@ use crate::{
 pub fn get_available_jobs() -> Vec<&'static str> {
     vec![
         NoopJob::NAME,
-        UpdateProfileHandleJob::NAME,
+        UpdateProfileDisplayNameJob::NAME,
         UpdateProfilePictureProgressJob::NAME,
     ]
 }
@@ -22,7 +22,7 @@ pub fn get_available_jobs() -> Vec<&'static str> {
 #[derive(Debug, Clone)]
 pub enum JobType {
     Noop(NoopJob),
-    UpdateProfileHandle(UpdateProfileHandleJob),
+    UpdateProfileDisplayName(UpdateProfileDisplayNameJob),
     UpdateProfilePicture(UpdateProfilePictureProgressJob),
 }
 
@@ -30,7 +30,7 @@ impl JobType {
     pub async fn run(&self, app_state: AppState) -> cja::Result<()> {
         match self {
             JobType::Noop(job) => job.run(app_state).await,
-            JobType::UpdateProfileHandle(job) => job.run(app_state).await,
+            JobType::UpdateProfileDisplayName(job) => job.run(app_state).await,
             JobType::UpdateProfilePicture(job) => job.run(app_state).await,
         }
     }
@@ -45,7 +45,7 @@ impl JobType {
                 let job_clone = job.clone();
                 job_clone.enqueue(app_state, context).await
             }
-            JobType::UpdateProfileHandle(job) => {
+            JobType::UpdateProfileDisplayName(job) => {
                 let job_clone = job.clone();
                 job_clone.enqueue(app_state, context).await
             }
@@ -62,7 +62,7 @@ impl JobType {
     pub fn name(&self) -> &'static str {
         match self {
             JobType::Noop(_) => NoopJob::NAME,
-            JobType::UpdateProfileHandle(_) => UpdateProfileHandleJob::NAME,
+            JobType::UpdateProfileDisplayName(_) => UpdateProfileDisplayNameJob::NAME,
             JobType::UpdateProfilePicture(_) => UpdateProfilePictureProgressJob::NAME,
         }
     }
@@ -76,9 +76,9 @@ pub fn create_job_from_name_and_args(
     match job_name {
         NoopJob::NAME => Ok(JobType::Noop(NoopJob)),
 
-        UpdateProfileHandleJob::NAME => {
+        UpdateProfileDisplayNameJob::NAME => {
             let did = args.get("did").ok_or("Missing required arg: did")?;
-            Ok(JobType::UpdateProfileHandle(UpdateProfileHandleJob {
+            Ok(JobType::UpdateProfileDisplayName(UpdateProfileDisplayNameJob {
                 did: did.clone(),
             }))
         }
@@ -103,7 +103,7 @@ pub fn get_job_params(job_name: &str) -> Vec<(String, String, bool)> {
     match job_name {
         NoopJob::NAME => Vec::new(),
 
-        UpdateProfileHandleJob::NAME => vec![(
+        UpdateProfileDisplayNameJob::NAME => vec![(
             "did".to_string(),
             "DID string (e.g., did:plc:abcdef...)".to_string(),
             true,
@@ -123,7 +123,7 @@ pub fn get_job_params(job_name: &str) -> Vec<(String, String, bool)> {
 cja::impl_job_registry!(
     AppState,
     NoopJob,
-    UpdateProfileHandleJob,
+    UpdateProfileDisplayNameJob,
     UpdateProfilePictureProgressJob
 );
 
@@ -141,12 +141,12 @@ impl Job<AppState> for NoopJob {
 
 /// Job to update a user's profile display name in the database
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct UpdateProfileHandleJob {
+pub struct UpdateProfileDisplayNameJob {
     /// The DID of the user - only thing we need to look up the token in the DB
     pub did: String,
 }
 
-impl UpdateProfileHandleJob {
+impl UpdateProfileDisplayNameJob {
     /// Create a new job from an OAuthTokenSet
     pub fn from_token(token: &OAuthTokenSet) -> Self {
         Self {
@@ -156,8 +156,8 @@ impl UpdateProfileHandleJob {
 }
 
 #[async_trait::async_trait]
-impl Job<AppState> for UpdateProfileHandleJob {
-    const NAME: &'static str = "UpdateProfileHandleJob";
+impl Job<AppState> for UpdateProfileDisplayNameJob {
+    const NAME: &'static str = "UpdateProfileDisplayNameJob";
 
     async fn run(&self, app_state: AppState) -> cja::Result<()> {
         use color_eyre::eyre::eyre;

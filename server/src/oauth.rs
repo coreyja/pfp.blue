@@ -1537,7 +1537,7 @@ pub async fn refresh_token_if_needed(
             }
 
             // Also fetch profile to update display name if needed
-            if let Err(err) = crate::jobs::UpdateProfileHandleJob::from_token(&new_token)
+            if let Err(err) = crate::jobs::UpdateProfileDisplayNameJob::from_token(&new_token)
                 .enqueue(state.clone(), "token_refresh".to_string())
                 .await
             {

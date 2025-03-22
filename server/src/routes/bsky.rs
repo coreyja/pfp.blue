@@ -758,15 +758,15 @@ pub async fn callback(
             .into_response();
     }
 
-    // Schedule a background job to update the handle
-    if let Err(err) = crate::jobs::UpdateProfileHandleJob::from_token(&token_set)
+    // Schedule a background job to update the display name
+    if let Err(err) = crate::jobs::UpdateProfileDisplayNameJob::from_token(&token_set)
         .enqueue(state.clone(), "callback".to_string())
         .await
     {
         // Log the error but continue - not fatal
-        error!("Failed to enqueue handle update job: {:?}", err);
+        error!("Failed to enqueue display name update job: {:?}", err);
     } else {
-        info!("Queued handle update job for DID: {}", session.did);
+        info!("Queued display name update job for DID: {}", session.did);
     }
 
     info!("Authentication successful for DID: {}", session.did);
@@ -808,17 +808,17 @@ pub async fn get_token(
     // Use our consolidated function to get a valid token
     match oauth::get_valid_token_by_did(&params.did, &state).await {
         Ok(token) => {
-            // Also fetch profile in the background to ensure handle is up to date
-            if let Err(err) = crate::jobs::UpdateProfileHandleJob::from_token(&token)
+            // Also fetch profile in the background to ensure display name is up to date
+            if let Err(err) = crate::jobs::UpdateProfileDisplayNameJob::from_token(&token)
                 .enqueue(state.clone(), "get_token".to_string())
                 .await
             {
                 error!(
-                    "Failed to enqueue handle update job in get_token: {:?}",
+                    "Failed to enqueue display name update job in get_token: {:?}",
                     err
                 );
             } else {
-                info!("Queued handle update job for DID: {}", token.did);
+                info!("Queued display name update job for DID: {}", token.did);
             }
 
             // Calculate the expires_in value
@@ -1010,15 +1010,15 @@ pub async fn profile(
         }
     };
 
-    // Start background jobs to update handles for all tokens
-    // This ensures we have the latest handle data when displaying the profile
+    // Start background jobs to update display names for all tokens
+    // This ensures we have the latest display name data when showing the profile
     for token in &tokens {
-        if let Err(err) = crate::jobs::UpdateProfileHandleJob::from_token(token)
+        if let Err(err) = crate::jobs::UpdateProfileDisplayNameJob::from_token(token)
             .enqueue(state.clone(), "profile_route".to_string())
             .await
         {
             error!(
-                "Failed to enqueue handle update job for DID {}: {:?}",
+                "Failed to enqueue display name update job for DID {}: {:?}",
                 token.did, err
             );
         }
@@ -1217,11 +1217,11 @@ async fn display_profile_multi(
     use maud::Render;
 
     // Queue a job to update the handle in the background
-    if let Err(err) = crate::jobs::UpdateProfileHandleJob::from_token(&primary_token)
+    if let Err(err) = crate::jobs::UpdateProfileDisplayNameJob::from_token(&primary_token)
         .enqueue(state.clone(), "display_profile_multi".to_string())
         .await
     {
-        error!("Failed to enqueue handle update job for display: {:?}", err);
+        error!("Failed to enqueue display name update job for display: {:?}", err);
     }
 
     // Fetch profile data with avatar using our API helpers
@@ -1232,7 +1232,6 @@ async fn display_profile_multi(
             // Create default profile info with just the DID
             crate::api::ProfileDataParams {
                 display_name: None,
-                display_name_legacy: None,
                 avatar: None,
                 description: None,
                 profile_data: None,
@@ -1244,7 +1243,7 @@ async fn display_profile_multi(
     let display_name = profile_info
         .display_name
         .unwrap_or_else(|| primary_token.did.clone());
-    let handle = profile_info.display_name_legacy;
+    // We don't need handle anymore since we use display_name
 
     // Extract avatar information and encode as base64 if available
     let avatar_blob_cid = profile_info.avatar.as_ref().map(|a| a.cid.clone());
@@ -1296,9 +1295,7 @@ async fn display_profile_multi(
                     // Profile info
                     div class="text-center md:text-left" {
                         (Heading::h1(&display_name))
-                        @if let Some(h) = &handle {
-                            p class="text-lg text-indigo-600 font-semibold mb-2" { "@" (h) }
-                        }
+                        // We just display the display name now, no need to show handle separately
                         p class="text-sm text-gray-500 mb-4 max-w-md truncate" { (primary_token.did) }
 
                         // Playful badges
@@ -1407,8 +1404,8 @@ async fn display_profile_multi(
                     (Heading::h3("Profile Picture Progress"))
                     div class="bg-indigo-50 rounded-xl p-5 border border-indigo-200" {
                         p class="text-gray-700 mb-4" {
-                            "This feature automatically updates your profile picture to show progress from your handle. "
-                            "Use a fraction (e.g. 3/10) or percentage (e.g. 30%) in your handle, and we'll visualize it!"
+                            "This feature automatically updates your profile picture to show progress from your display name. "
+                            "Use a fraction (e.g. 3/10) or percentage (e.g. 30%) in your display name, and we'll visualize it!"
                         }
 
                         // Get profile progress settings for this token
@@ -1437,7 +1434,7 @@ async fn display_profile_multi(
                                 "enabled",
                                 "Enable Progress Visualization",
                                 progress_settings.0
-                            ).description("Automatically update your profile picture based on progress in your handle"))
+                            ).description("Automatically update your profile picture based on progress in your display name"))
 
                             div class="mt-3 flex justify-end" {
                                 (Button::primary("Save")
@@ -1478,18 +1475,18 @@ async fn display_profile_multi(
                             }
                         }
 
-                        // Show how to format handle
+                        // Show how to format display name
                         div class="mt-4 p-3 bg-white rounded-lg shadow-sm" {
-                            p class="font-medium text-gray-900 mb-2" { "How to format your handle" }
+                            p class="font-medium text-gray-900 mb-2" { "How to format your display name" }
                             div class="space-y-2 text-sm text-gray-600" {
-                                p { "Your current handle: " @if let Some(h) = &handle {
-                                    strong { "@" (h) }
-                                } @else { "None" }}
-                                p { "To show progress, format your handle with one of these patterns:" }
+                                p { "Your current display name: " 
+                                    strong { (display_name) }
+                                }
+                                p { "To show progress, add one of these patterns to your display name:" }
                                 ul class="list-disc list-inside ml-2 space-y-1" {
-                                    li { "Fraction: " code class="bg-gray-100 px-1" { "username.3/10" } " — Shows 30% progress" }
-                                    li { "Percentage: " code class="bg-gray-100 px-1" { "username.30%" } " — Shows 30% progress" }
-                                    li { "Decimal: " code class="bg-gray-100 px-1" { "username.30.5%" } " — Shows 30.5% progress" }
+                                    li { "Fraction: " code class="bg-gray-100 px-1" { "My Name 3/10" } " — Shows 30% progress" }
+                                    li { "Percentage: " code class="bg-gray-100 px-1" { "My Name 30%" } " — Shows 30% progress" }
+                                    li { "Decimal: " code class="bg-gray-100 px-1" { "My Name 30.5%" } " — Shows 30.5% progress" }
                                 }
                             }
                         }
