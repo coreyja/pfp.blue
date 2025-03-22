@@ -11,7 +11,7 @@ use atrium_identity::{
     handle::{AppViewHandleResolver, AppViewHandleResolverConfig},
 };
 use atrium_xrpc_client::reqwest::ReqwestClient;
-use color_eyre::eyre::eyre;
+use color_eyre::eyre::{eyre, WrapErr};
 use tracing::{error, info};
 
 /// Resolves a Bluesky handle to its DID
@@ -38,11 +38,11 @@ pub async fn resolve_did_or_handle(
     if did_or_handle.starts_with("did:") {
         // It's already a DID, validate and convert
         atrium_api::types::string::Did::new(did_or_handle.to_string())
-            .map_err(|e| eyre!("Invalid DID format: {}", e))
+            .map_err(|e| eyre!("Invalid DID format for {}: {}", did_or_handle, e))
     } else {
         // It's a handle, try to resolve it to a DID
         let handle = atrium_api::types::string::Handle::new(did_or_handle.to_string())
-            .map_err(|e| eyre!("Invalid handle format: {}", e))?;
+            .map_err(|e| eyre!("Invalid handle format for {}: {}", did_or_handle, e))?;
 
         info!("Resolving handle {} to DID", did_or_handle);
         resolve_handle_to_did(&handle, client).await
@@ -74,27 +74,25 @@ pub async fn resolve_did_to_document(
     };
     let resolver = CommonDidResolver::new(config);
 
-    match resolver.resolve(did).await {
-        Ok(document) => {
-            info!("Successfully resolved DID document for {}", did.as_str());
-            Ok(document)
-        }
-        Err(e) => {
-            // In e2e tests, let's create a fake document when using fixture-user.test
-            if did.as_str() == "did:plc:abcdefg"
-                && std::env::var("USE_FIXTURES").unwrap_or_default() == "1"
-            {
-                error!(
-                    "PLC resolution failed, but using fixture user, creating fake document: {}",
-                    e
-                );
-                create_test_fixture_document(did)
-            } else {
-                error!("Failed to resolve DID document for {}: {}", did.as_str(), e);
-                Err(eyre!("Failed to resolve DID document: {}", e))
-            }
-        }
+    let resolve_result = resolver.resolve(did).await;
+    
+    // In e2e tests, let's create a fake document when using fixture-user.test
+    if resolve_result.is_err() 
+        && did.as_str() == "did:plc:abcdefg"
+        && std::env::var("USE_FIXTURES").unwrap_or_default() == "1"
+    {
+        let err = resolve_result.unwrap_err();
+        error!(
+            "PLC resolution failed, but using fixture user, creating fake document: {}",
+            err
+        );
+        return create_test_fixture_document(did);
     }
+
+    // Handle the normal case
+    let document = resolve_result.wrap_err_with(|| format!("Failed to resolve DID document for {}", did.as_str()))?;
+    info!("Successfully resolved DID document for {}", did.as_str());
+    Ok(document)
 }
 
 /// Creates a test fixture document for e2e testing
@@ -198,7 +196,7 @@ async fn fetch_auth_server_metadata_from_pds(
 
     let pds_metadata = fetch_and_parse_json::<PDSMetadata>(&pds_metadata_url)
         .await
-        .map_err(|e| eyre!("Failed to get PDS metadata: {}", e))?;
+        .wrap_err_with(|| format!("Failed to get PDS metadata from {}", pds_metadata_url))?;
 
     // Step 2: Get the auth server metadata
     let auth_server_url = pds_metadata
@@ -216,7 +214,7 @@ async fn fetch_auth_server_metadata_from_pds(
 
     let metadata = fetch_and_parse_json::<AuthServerMetadata>(&auth_server_metadata_url)
         .await
-        .map_err(|e| eyre!("Failed to get auth server metadata: {}", e))?;
+        .wrap_err_with(|| format!("Failed to get auth server metadata from {}", auth_server_metadata_url))?;
 
     Ok(metadata)
 }
@@ -228,16 +226,18 @@ pub async fn fetch_and_parse_json<T: serde::de::DeserializeOwned>(url: &str) -> 
 
     if !response.status().is_success() {
         error!("Failed to get data: HTTP {}", response.status());
-        return Err(eyre!("Failed to get data: HTTP {}", response.status()));
+        return Err(eyre!("Failed to get data: HTTP {}", response.status()))
+            .wrap_err_with(|| format!("HTTP error {} when fetching {}", response.status(), url));
     }
 
     // Try to decode as JSON
     let response_text = response.text().await?;
-    match serde_json::from_str::<T>(&response_text) {
-        Ok(data) => Ok(data),
-        Err(e) => {
+    let result = serde_json::from_str::<T>(&response_text)
+        .map_err(|e| {
             error!("Failed to decode JSON: {} from body: {}", e, response_text);
-            Err(eyre!("Failed to decode JSON: {}", e))
-        }
-    }
+            e
+        })
+        .wrap_err_with(|| format!("Failed to decode JSON from {}", url))?;
+    
+    Ok(result)
 }

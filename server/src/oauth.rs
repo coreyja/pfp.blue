@@ -1,6 +1,6 @@
 use base64ct::{Base64UrlUnpadded, Encoding};
 use cja::jobs::Job;
-use color_eyre::eyre::eyre;
+use color_eyre::eyre::{eyre, WrapErr};
 use jsonwebtoken::Algorithm;
 use p256::{ecdsa::VerifyingKey, pkcs8::DecodePublicKey, EncodedPoint, PublicKey};
 use serde::{Deserialize, Serialize};
@@ -26,13 +26,11 @@ pub struct Jwk {
 /// Generate a JWK from a base64-encoded public key
 pub fn generate_jwk(public_key_base64: &str) -> cja::Result<Jwk> {
     // Decode the base64-encoded public key
-    let decoded_key = match base64::Engine::decode(
+    let decoded_key = base64::Engine::decode(
         &base64::engine::general_purpose::STANDARD,
         public_key_base64,
-    ) {
-        Ok(key) => key,
-        Err(e) => return Err(eyre!("Failed to decode base64-encoded public key: {}", e)),
-    };
+    )
+    .wrap_err_with(|| "Failed to decode base64-encoded public key".to_string())?;
 
     // Log the first few bytes without revealing the whole key
     let key_preview = if decoded_key.len() > 30 {
@@ -44,16 +42,11 @@ pub fn generate_jwk(public_key_base64: &str) -> cja::Result<Jwk> {
 
     // Convert the decoded key bytes to a string for PEM parsing
     let key_str = std::str::from_utf8(&decoded_key)
-        .map_err(|e| eyre!("Failed to convert decoded public key to string: {}", e))?;
+        .wrap_err_with(|| "Failed to convert decoded public key to string")?;
 
     // Parse the public key from PEM format
-    let verifying_key = VerifyingKey::from_public_key_pem(key_str).map_err(|e| {
-        eyre!(
-            "Failed to parse public key: {}. Key preview: {}",
-            e,
-            key_preview
-        )
-    })?;
+    let verifying_key = VerifyingKey::from_public_key_pem(key_str)
+        .wrap_err_with(|| format!("Failed to parse public key. Key preview: {}", key_preview))?;
 
     // Get the public key as an EncodedPoint
     let public_key = PublicKey::from(verifying_key);
@@ -62,10 +55,12 @@ pub fn generate_jwk(public_key_base64: &str) -> cja::Result<Jwk> {
     // Extract x and y coordinates
     let x_bytes = encoded_point
         .x()
-        .ok_or_else(|| eyre!("Failed to extract x coordinate"))?;
+        .ok_or_else(|| eyre!("Failed to extract x coordinate"))
+        .wrap_err("Missing x coordinate in public key")?;
     let y_bytes = encoded_point
         .y()
-        .ok_or_else(|| eyre!("Failed to extract y coordinate"))?;
+        .ok_or_else(|| eyre!("Failed to extract y coordinate"))
+        .wrap_err("Missing y coordinate in public key")?;
 
     // Base64-URL encode the coordinates
     let x = Base64UrlUnpadded::encode_string(x_bytes);
@@ -115,7 +110,7 @@ pub fn calculate_jwk_thumbprint(public_key_base64: &str) -> cja::Result<String> 
 
     // Convert to a compact JSON string without whitespace
     let canonical_json = serde_json::to_string(&canonical_jwk)
-        .map_err(|e| eyre!("Failed to serialize canonical JWK: {}", e))?;
+        .wrap_err("Failed to serialize canonical JWK")?;
 
     // Calculate SHA-256 hash
     use ring::digest::{digest, SHA256};
@@ -179,7 +174,7 @@ pub fn create_client_assertion(
 
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_err(|e| eyre!("Failed to get current time: {}", e))?
+        .wrap_err("Failed to get current time")?
         .as_secs();
 
     // Get the JWK for header
@@ -204,34 +199,32 @@ pub fn create_client_assertion(
 
     // Create a temporary file for the ES256 private key
     let mut key_file = NamedTempFile::new()
-        .map_err(|e| eyre!("Failed to create temporary file for private key: {}", e))?;
+        .wrap_err("Failed to create temporary file for private key")?;
 
     // Decode base64-encoded private key
-    let decoded_key = match base64::Engine::decode(
+    let decoded_key = base64::Engine::decode(
         &base64::engine::general_purpose::STANDARD,
         &oauth_config.private_key,
-    ) {
-        Ok(key) => key,
-        Err(e) => return Err(eyre!("Failed to decode base64-encoded private key: {}", e)),
-    };
+    )
+    .wrap_err("Failed to decode base64-encoded private key")?;
 
     // Write the decoded PEM-encoded private key to the file
     key_file
         .write_all(&decoded_key)
-        .map_err(|e| eyre!("Failed to write private key to temporary file: {}", e))?;
+        .wrap_err("Failed to write private key to temporary file")?;
 
     // Create a temporary file for the payload
     let mut payload_file = NamedTempFile::new()
-        .map_err(|e| eyre!("Failed to create temporary file for payload: {}", e))?;
+        .wrap_err("Failed to create temporary file for payload")?;
 
     // Create payload JSON
     let payload_json =
-        serde_json::to_string(&payload).map_err(|e| eyre!("Failed to serialize payload: {}", e))?;
+        serde_json::to_string(&payload).wrap_err("Failed to serialize payload")?;
 
     // Write payload to file
     payload_file
         .write_all(payload_json.as_bytes())
-        .map_err(|e| eyre!("Failed to write payload to temporary file: {}", e))?;
+        .wrap_err("Failed to write payload to temporary file")?;
 
     // Create header JSON with proper format for OpenSSL
     // Ensure we're using the exact format expected by Bluesky
@@ -262,10 +255,10 @@ pub fn create_client_assertion(
 
     // 4. Create a temporary file for the message
     let mut message_file = NamedTempFile::new()
-        .map_err(|e| eyre!("Failed to create temporary file for message: {}", e))?;
+        .wrap_err("Failed to create temporary file for message")?;
     message_file
         .write_all(message.as_bytes())
-        .map_err(|e| eyre!("Failed to write message to temporary file: {}", e))?;
+        .wrap_err("Failed to write message to temporary file")?;
 
     // 5. Use OpenSSL to create the signature, but with specific parameters for ES256
     // For ES256, the signature format is different than just the raw digest output
@@ -278,7 +271,7 @@ pub fn create_client_assertion(
         .arg("-binary")
         .arg(message_file.path())
         .output()
-        .map_err(|e| eyre!("Failed to execute OpenSSL for signing: {}", e))?;
+        .wrap_err("Failed to execute OpenSSL for signing")?;
 
     if !output.status.success() {
         let error = String::from_utf8_lossy(&output.stderr);
@@ -323,10 +316,8 @@ fn der_signature_to_raw_signature(der_signature: &[u8]) -> cja::Result<Vec<u8>> 
     use color_eyre::eyre::eyre;
 
     // Parse the DER-encoded signature
-    let blocks = match from_der(der_signature) {
-        Ok(blocks) => blocks,
-        Err(e) => return Err(eyre!("Failed to parse DER signature: {}", e)),
-    };
+    let blocks = from_der(der_signature)
+        .wrap_err("Failed to parse DER signature")?;
 
     // The DER signature should be a SEQUENCE with two INTEGERs (r and s)
     if blocks.len() != 1 {
