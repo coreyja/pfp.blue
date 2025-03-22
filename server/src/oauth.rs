@@ -457,6 +457,7 @@ impl OAuthTokenSet {
     // Function removed - not used in codebase
 
     /// Copy the handle from another token
+    #[allow(dead_code)]
     pub fn with_handle_from(mut self, other: &OAuthTokenSet) -> Self {
         self.handle = other.handle.clone();
         self
@@ -1418,6 +1419,59 @@ pub mod db {
     }
 }
 
+/// Resolve the token endpoint for a DID
+pub async fn resolve_token_endpoint_for_did(
+    did: &str, 
+    state: &crate::state::AppState
+) -> cja::Result<String> {
+    use tracing::info;
+    
+    // First try to get the endpoint from the database
+    match crate::routes::bsky::get_token_endpoint_for_did(&state.db, did).await? {
+        Some(endpoint) => Ok(endpoint),
+        None => {
+            // Resolve the PDS endpoint for the token
+            let xrpc_client = std::sync::Arc::new(
+                atrium_xrpc_client::reqwest::ReqwestClient::new("https://bsky.social"),
+            );
+
+            match atrium_api::types::string::Did::new(did.to_string()) {
+                Ok(did_obj) => {
+                    match crate::did::resolve_did_to_document(&did_obj, xrpc_client).await {
+                        Ok(did_document) => {
+                            if let Some(services) = did_document.service.as_ref() {
+                                if let Some(pds_service) = services.iter().find(|s| s.id == "#atproto_pds") {
+                                    let pds_endpoint = &pds_service.service_endpoint;
+                                    let refresh_endpoint = format!(
+                                        "{}/xrpc/com.atproto.server.refreshSession",
+                                        pds_endpoint
+                                    );
+                                    info!("Resolved PDS endpoint for refresh: {}", refresh_endpoint);
+                                    Ok(refresh_endpoint)
+                                } else {
+                                    // Fallback to bsky.social if no PDS service found
+                                    Ok("https://bsky.social/xrpc/com.atproto.server.refreshSession".to_string())
+                                }
+                            } else {
+                                // Fallback to bsky.social if no services found
+                                Ok("https://bsky.social/xrpc/com.atproto.server.refreshSession".to_string())
+                            }
+                        }
+                        Err(_) => {
+                            // Fallback to bsky.social on resolution error
+                            Ok("https://bsky.social/xrpc/com.atproto.server.refreshSession".to_string())
+                        }
+                    }
+                }
+                Err(_) => {
+                    // Fallback to bsky.social on DID parse error
+                    Ok("https://bsky.social/xrpc/com.atproto.server.refreshSession".to_string())
+                }
+            }
+        }
+    }
+}
+
 /// Attempt to refresh a token if it's expired
 pub async fn refresh_token_if_needed(
     token: &OAuthTokenSet,
@@ -1506,6 +1560,44 @@ pub async fn refresh_token_if_needed(
         Err(err) => {
             error!("Failed to refresh token: {:?}", err);
             Err(eyre!("Failed to refresh token: {:?}", err))
+        }
+    }
+}
+
+/// Get a token by DID and refresh it if needed
+/// This provides a single entry point for getting a valid token
+pub async fn get_valid_token_by_did(
+    did: &str, 
+    state: &crate::state::AppState
+) -> cja::Result<OAuthTokenSet> {
+    use color_eyre::eyre::eyre;
+    use tracing::{error, info};
+
+    // Get the token from the database
+    let token = match db::get_token(&state.db, did).await? {
+        Some(token) => token,
+        None => return Err(eyre!("No token found for DID: {}", did)),
+    };
+
+    // If token is not expired, just return it
+    if !token.is_expired() {
+        return Ok(token);
+    }
+
+    // If token is expired, try to refresh it
+    // First resolve the token endpoint
+    let token_endpoint = resolve_token_endpoint_for_did(did, state).await?;
+    
+    // Then try to refresh
+    match refresh_token_if_needed(&token, state, &token_endpoint).await? {
+        Some(refreshed_token) => {
+            info!("Token for DID {} was refreshed", did);
+            Ok(refreshed_token)
+        },
+        None => {
+            // This shouldn't happen since we already checked the token is expired
+            error!("Token wasn't refreshed despite being expired");
+            Ok(token) // Return the original token as a fallback
         }
     }
 }

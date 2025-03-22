@@ -805,102 +805,71 @@ pub async fn get_token(
     State(state): State<AppState>,
     Query(params): Query<GetTokenParams>,
 ) -> impl IntoResponse {
-    // Get the token for the given DID
-    let token = match oauth::db::get_token(&state.db, &params.did).await {
-        Ok(Some(token)) => token,
-        Ok(None) => {
-            return (
-                StatusCode::NOT_FOUND,
-                "No active token found for this DID".to_string(),
-            )
-                .into_response();
-        }
+    // Use our consolidated function to get a valid token
+    match oauth::get_valid_token_by_did(&params.did, &state).await {
+        Ok(token) => {
+            // Also fetch profile in the background to ensure handle is up to date
+            if let Err(err) = crate::jobs::UpdateProfileHandleJob::from_token(&token)
+                .enqueue(state.clone(), "get_token".to_string())
+                .await
+            {
+                error!("Failed to enqueue handle update job in get_token: {:?}", err);
+            } else {
+                info!("Queued handle update job for DID: {}", token.did);
+            }
+            
+            // Calculate the expires_in value
+            let expires_in = if token.expires_at > SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() 
+            {
+                token.expires_at - SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs()
+            } else { 
+                0 
+            };
+            
+            // Return the token data
+            Json(serde_json::json!({
+                "did": token.did,
+                "access_token": token.access_token,
+                "token_type": token.token_type,
+                "expires_in": expires_in,
+                "scope": token.scope,
+                "status": if token.is_expired() { "expired" } else { "valid" }
+            })).into_response()
+        },
         Err(err) => {
-            error!("Failed to retrieve token: {:?}", err);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to retrieve token".to_string(),
-            )
-                .into_response();
-        }
-    };
-
-    // Also fetch profile in the background to ensure handle is up to date
-    // Use the job system to do this asynchronously
-    if let Err(err) = crate::jobs::UpdateProfileHandleJob::from_token(&token)
-        .enqueue(state.clone(), "get_token".to_string())
-        .await
-    {
-        error!(
-            "Failed to enqueue handle update job in get_token: {:?}",
-            err
-        );
-    } else {
-        info!("Queued handle update job for DID: {}", token.did);
-    }
-
-    // Check if the token is expired
-    if token.is_expired() {
-        // Get token endpoint from parameters or fetch it
-        let token_endpoint = match params.token_endpoint.clone() {
-            Some(endpoint) => endpoint,
-            None => {
-                // Try to find a stored token endpoint or use default
-                match get_token_endpoint_for_did(&state.db, &token.did).await {
-                    Ok(Some(endpoint)) => endpoint,
-                    _ => "https://bsky.social/xrpc/com.atproto.server.refreshSession".to_string(),
-                }
+            error!("Error getting token: {:?}", err);
+            
+            if err.to_string().contains("No token found") {
+                return (
+                    StatusCode::NOT_FOUND,
+                    "No active token found for this DID".to_string(),
+                ).into_response();
             }
-        };
-
-        // Attempt to refresh the token using our helper
-        match oauth::refresh_token_if_needed(&token, &state, &token_endpoint).await {
-            Ok(Some(new_token)) => {
-                // Return the refreshed token
-                return Json(serde_json::json!({
-                    "did": new_token.did,
-                    "access_token": new_token.access_token,
-                    "token_type": new_token.token_type,
-                    "expires_in": if new_token.expires_at > SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() {
-                        new_token.expires_at - SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs()
-                    } else { 0 },
-                    "scope": new_token.scope,
-                    "status": "refreshed"
-                })).into_response();
-            }
-            Ok(None) => {
-                // This shouldn't happen - we already verified the token is expired
-                error!("Token wasn't refreshed despite being expired");
-            }
-            Err(err) => {
-                error!("Failed to refresh token: {:?}", err);
-
-                // Delete the expired token
-                if let Err(e) = oauth::db::delete_token(&state.db, &token.did).await {
+            
+            // Try to delete the token if it's failing to refresh
+            if err.to_string().contains("Failed to refresh token") {
+                if let Err(e) = oauth::db::delete_token(&state.db, &params.did).await {
                     error!("Failed to delete expired token: {:?}", e);
                 }
-
-                // No refresh token or refresh failed
+                
                 return (
                     StatusCode::UNAUTHORIZED,
                     "Token expired and refresh failed. Please authenticate again.".to_string(),
-                )
-                    .into_response();
+                ).into_response();
             }
+            
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to retrieve token: {}", err),
+            ).into_response()
         }
     }
-
-    // Token is valid, return it
-    Json(serde_json::json!({
-        "did": token.did,
-        "access_token": token.access_token,
-        "token_type": token.token_type,
-        "expires_in": if token.expires_at > SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() {
-            token.expires_at - SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs()
-        } else { 0 },
-        "scope": token.scope,
-        "status": "valid"
-    })).into_response()
 }
 
 /// Delete a token for a DID
@@ -928,7 +897,10 @@ pub async fn revoke_token(
 
 #[derive(Deserialize)]
 pub struct GetTokenParams {
+    /// The DID to get a token for
     pub did: String,
+    /// Optional token endpoint override (used by calling code but marked as unused by linter)
+    #[allow(dead_code)]
     pub token_endpoint: Option<String>,
 }
 
@@ -1167,35 +1139,9 @@ pub async fn profile(
 
     // Check if the primary token is expired and try to refresh it
     if primary_token.is_expired() {
-        // Lookup the token endpoint for refreshing
-        let token_endpoint = match get_token_endpoint_for_did(&state.db, &primary_token.did).await {
-            Ok(Some(endpoint)) => endpoint,
-            _ => {
-                // Resolve the PDS endpoint
-                info!(
-                    "No stored token endpoint found for DID: {}, resolving PDS",
-                    &primary_token.did
-                );
-                match crate::api::find_pds_endpoint(&primary_token.did, state.bsky_client.clone())
-                    .await
-                {
-                    Ok(pds_endpoint) => {
-                        let refresh_endpoint =
-                            format!("{}/xrpc/com.atproto.server.refreshSession", pds_endpoint);
-                        info!("Resolved PDS endpoint for refresh: {}", refresh_endpoint);
-                        refresh_endpoint
-                    }
-                    Err(e) => {
-                        error!("Failed to resolve PDS endpoint: {:?}, using default", e);
-                        "https://bsky.social/xrpc/com.atproto.server.refreshSession".to_string()
-                    }
-                }
-            }
-        };
-
-        // Use our helper function to attempt token refresh
-        match oauth::refresh_token_if_needed(&primary_token, &state, &token_endpoint).await {
-            Ok(Some(new_token)) => {
+        // Use our consolidated function to get a valid token
+        match oauth::get_valid_token_by_did(&primary_token.did, &state).await {
+            Ok(new_token) => {
                 // Refresh all tokens
                 let tokens = match oauth::db::get_tokens_for_user(&state.db, user.user_id).await {
                     Ok(tokens) => tokens,
@@ -1206,10 +1152,6 @@ pub async fn profile(
                 return display_profile_multi(&state, new_token, tokens)
                     .await
                     .into_response();
-            }
-            Ok(None) => {
-                // Token wasn't refreshed (shouldn't happen as we already checked is_expired)
-                info!("Token wasn't refreshed (unexpected - should be expired)");
             }
             Err(err) => {
                 error!("Failed to refresh token: {:?}", err);
