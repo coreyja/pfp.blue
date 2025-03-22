@@ -3,6 +3,7 @@ pub mod auth;
 pub mod components;
 pub mod cron;
 pub mod did;
+pub mod docs;
 pub mod jobs;
 pub mod oauth;
 pub mod profile_progress;
