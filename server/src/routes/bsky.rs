@@ -1221,7 +1221,10 @@ async fn display_profile_multi(
         .enqueue(state.clone(), "display_profile_multi".to_string())
         .await
     {
-        error!("Failed to enqueue display name update job for display: {:?}", err);
+        error!(
+            "Failed to enqueue display name update job for display: {:?}",
+            err
+        );
     }
 
     // Fetch profile data with avatar using our API helpers
@@ -1479,7 +1482,7 @@ async fn display_profile_multi(
                         div class="mt-4 p-3 bg-white rounded-lg shadow-sm" {
                             p class="font-medium text-gray-900 mb-2" { "How to format your display name" }
                             div class="space-y-2 text-sm text-gray-600" {
-                                p { "Your current display name: " 
+                                p { "Your current display name: "
                                     strong { (display_name) }
                                 }
                                 p { "To show progress, add one of these patterns to your display name:" }

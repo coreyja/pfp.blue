@@ -1,5 +1,5 @@
 //! # Project Terminology
-//! 
+//!
 //! This module documents key terminology used throughout the pfp.blue project.
 //! Understanding these terms is essential for developers working with the codebase
 //! and Bluesky protocol.
@@ -18,7 +18,7 @@
 //! * **Display Name**: The user's chosen display name in Bluesky. This is the name shown
 //!   prominently in the UI and can include spaces, emoji, and special characters.
 //!   Example: "Alice 🌸". In our code, stored in `OAuthTokenSet.display_name`.
-//!   For our profile picture progress feature, users include progress indicators 
+//!   For our profile picture progress feature, users include progress indicators
 //!   (like "50%" or "3/10") in their display name.
 //!
 //! ## Authentication Terms
@@ -46,7 +46,7 @@
 //!   stored in the Bluesky network. Used as the base for our progress visualization.
 //!
 //! ## Database Terms
-//! 
+//!
 //! * **User**: Represents a user of our application who may have multiple Bluesky accounts
 //!   (multiple DIDs) linked.
 //!

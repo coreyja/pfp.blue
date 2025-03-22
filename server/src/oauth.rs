@@ -1176,7 +1176,9 @@ pub mod db {
             None // We already have a display_name, no need to fetch
         };
 
-        let existing_display_name = existing_row.as_ref().and_then(|row| row.display_name.clone());
+        let existing_display_name = existing_row
+            .as_ref()
+            .and_then(|row| row.display_name.clone());
         let display_name_to_use = token_set.display_name.clone().or(existing_display_name);
 
         // Log whether we're preserving the display_name
@@ -1296,7 +1298,11 @@ pub mod db {
     }
 
     /// Updates the display name for a token
-    pub async fn update_token_display_name(pool: &PgPool, did: &str, display_name: &str) -> cja::Result<()> {
+    pub async fn update_token_display_name(
+        pool: &PgPool,
+        did: &str,
+        display_name: &str,
+    ) -> cja::Result<()> {
         sqlx::query!(
             r#"
             UPDATE oauth_tokens

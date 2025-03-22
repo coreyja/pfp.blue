@@ -78,9 +78,9 @@ pub fn create_job_from_name_and_args(
 
         UpdateProfileDisplayNameJob::NAME => {
             let did = args.get("did").ok_or("Missing required arg: did")?;
-            Ok(JobType::UpdateProfileDisplayName(UpdateProfileDisplayNameJob {
-                did: did.clone(),
-            }))
+            Ok(JobType::UpdateProfileDisplayName(
+                UpdateProfileDisplayNameJob { did: did.clone() },
+            ))
         }
 
         UpdateProfilePictureProgressJob::NAME => {
@@ -359,11 +359,18 @@ impl Job<AppState> for UpdateProfileDisplayNameJob {
 
             if should_update {
                 // Update the display name in the database
-                match crate::oauth::db::update_token_display_name(&app_state.db, &self.did, &display_name_str)
-                    .await
+                match crate::oauth::db::update_token_display_name(
+                    &app_state.db,
+                    &self.did,
+                    &display_name_str,
+                )
+                .await
                 {
                     Ok(_) => {
-                        info!("Updated display name for DID {}: {}", self.did, display_name_str);
+                        info!(
+                            "Updated display name for DID {}: {}",
+                            self.did, display_name_str
+                        );
                     }
                     Err(err) => {
                         error!("Failed to update display name in database: {:?}", err);
@@ -377,7 +384,10 @@ impl Job<AppState> for UpdateProfileDisplayNameJob {
                 );
             }
         } else {
-            debug!("No display name found in profile data for DID: {}", self.did);
+            debug!(
+                "No display name found in profile data for DID: {}",
+                self.did
+            );
         }
 
         Ok(())
@@ -473,7 +483,9 @@ impl Job<AppState> for UpdateProfilePictureProgressJob {
 
         // Extract progress fraction or percentage from display_name
         let (numerator, denominator) = match &token.display_name {
-            Some(display_name) => extract_progress_from_display_name(display_name).unwrap_or((0.0, 1.0)),
+            Some(display_name) => {
+                extract_progress_from_display_name(display_name).unwrap_or((0.0, 1.0))
+            }
             None => {
                 debug!(
                     "No display name found for token ID {}, defaulting to 0%",
@@ -1192,7 +1204,10 @@ mod tests {
     fn test_extract_progress_from_display_name_edge_fractions() {
         // Test fraction format - edge cases
         assert_eq!(extract_progress_from_display_name("0/1"), Some((0.0, 1.0)));
-        assert_eq!(extract_progress_from_display_name("0/100"), Some((0.0, 100.0)));
+        assert_eq!(
+            extract_progress_from_display_name("0/100"),
+            Some((0.0, 100.0))
+        );
         assert_eq!(
             extract_progress_from_display_name("100/100"),
             Some((100.0, 100.0))
@@ -1219,7 +1234,10 @@ mod tests {
             Some((75.0, 100.0))
         );
         assert_eq!(extract_progress_from_display_name("0%"), Some((0.0, 100.0)));
-        assert_eq!(extract_progress_from_display_name("100%"), Some((100.0, 100.0)));
+        assert_eq!(
+            extract_progress_from_display_name("100%"),
+            Some((100.0, 100.0))
+        );
         assert_eq!(
             extract_progress_from_display_name("50% complete"),
             Some((50.0, 100.0))
@@ -1237,7 +1255,10 @@ mod tests {
             extract_progress_from_display_name("33.5% complete"),
             Some((33.5, 100.0))
         );
-        assert_eq!(extract_progress_from_display_name("0.5%"), Some((0.5, 100.0)));
+        assert_eq!(
+            extract_progress_from_display_name("0.5%"),
+            Some((0.5, 100.0))
+        );
         assert_eq!(
             extract_progress_from_display_name("99.9% loaded"),
             Some((99.9, 100.0))
@@ -1269,11 +1290,11 @@ mod tests {
     fn test_extract_progress_from_display_name_invalid_numbers() {
         // Test invalid numeric inputs
         assert_eq!(extract_progress_from_display_name("0/0"), None); // Division by zero
-                                                               // Note: The regex pattern ^-1/5 is "\d+/\d+" which doesn't match negative numbers
-                                                               // so these tests aren't valid since the regex will never capture them
-                                                               // assert_eq!(extract_progress_from_display_name("-1/5"), None); // Negative numerator
-                                                               // assert_eq!(extract_progress_from_display_name("5/-10"), None); // Negative denominator
-                                                               // assert_eq!(extract_progress_from_display_name("-50%"), None); // Negative percentage
+                                                                     // Note: The regex pattern ^-1/5 is "\d+/\d+" which doesn't match negative numbers
+                                                                     // so these tests aren't valid since the regex will never capture them
+                                                                     // assert_eq!(extract_progress_from_display_name("-1/5"), None); // Negative numerator
+                                                                     // assert_eq!(extract_progress_from_display_name("5/-10"), None); // Negative denominator
+                                                                     // assert_eq!(extract_progress_from_display_name("-50%"), None); // Negative percentage
     }
 
     #[test]
