@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT u.id, u.username, u.email, u.created_at_utc, u.updated_at_utc FROM users u\n            JOIN oauth_tokens ot ON u.id = ot.user_id\n            WHERE ot.did = $1\n            LIMIT 1\n            ",
+  "query": "\n            SELECT u.id, u.username, u.email, u.is_admin, u.created_at_utc, u.updated_at_utc FROM users u\n            JOIN oauth_tokens ot ON u.id = ot.user_id\n            WHERE ot.did = $1\n            LIMIT 1\n            ",
   "describe": {
     "columns": [
       {
@@ -20,11 +20,16 @@
       },
       {
         "ordinal": 3,
+        "name": "is_admin",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
         "name": "created_at_utc",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "updated_at_utc",
         "type_info": "Timestamptz"
       }
@@ -39,8 +44,9 @@
       true,
       true,
       false,
+      false,
       false
     ]
   },
-  "hash": "8bfb718f0eedcdbeae29f25d9c70609d671ba6edebb7d25aa526389384d9927f"
+  "hash": "60efcc8c69d2a039e3f5520cd13241e2a17623f2c80ffd193d1c3625a033c51f"
 }
