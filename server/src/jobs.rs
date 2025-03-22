@@ -517,14 +517,69 @@ impl Job<AppState> for UpdateProfilePictureProgressJob {
             return Ok(());
         }
 
-        // Check if we have the original blob CID
-        let original_blob_cid = match progress.original_blob_cid {
-            Some(cid) => cid,
-            None => {
-                error!("No original blob CID found for token ID {}", self.token_id);
-                return Err(eyre!("No original blob CID found"));
+        // Get the original profile picture blob from our custom collection
+        let original_blob = match get_original_profile_picture(&app_state, &token).await {
+            Ok(Some(blob)) => blob,
+            Ok(None) => {
+                // Backwards compatibility - if we don't have a custom collection record,
+                // check if we still have the CID in the database
+                if let Some(cid) = progress.original_blob_cid {
+                    // Fetch the original profile picture from the old CID
+                    debug!("Using legacy original_blob_cid from DB: {}", cid);
+                    
+                    // Fetch the blob image
+                    let blob_data = match crate::routes::bsky::fetch_blob_by_cid(
+                        &token.did,
+                        &cid,
+                        &app_state,
+                    ).await {
+                        Ok(data) => data,
+                        Err(err) => {
+                            error!("Failed to fetch original profile picture from legacy CID: {:?}", err);
+                            return Err(eyre!("Failed to fetch original profile picture: {}", err));
+                        }
+                    };
+                    
+                    // Upload the blob to get the blob object
+                    match upload_image_to_bluesky(&app_state, &token, &blob_data).await {
+                        Ok(blob_object) => {
+                            // Save to our custom collection for future use
+                            if let Err(err) = save_original_profile_picture(&app_state, &token, blob_object.clone()).await {
+                                error!("Failed to save original profile picture to custom collection: {:?}", err);
+                                // Continue anyway, we have the blob object already
+                            }
+                            blob_object
+                        },
+                        Err(err) => {
+                            error!("Failed to upload original profile picture for migration: {:?}", err);
+                            return Err(eyre!("Failed to upload original profile picture for migration: {}", err));
+                        }
+                    }
+                } else {
+                    error!("No original profile picture found for token ID {}", self.token_id);
+                    return Err(eyre!("No original profile picture found"));
+                }
+            },
+            Err(err) => {
+                error!("Failed to check for original profile picture: {:?}", err);
+                return Err(err);
             }
         };
+
+        // Extract the CID (link) from the blob object
+        let original_blob_cid = if let Some(blob_ref) = original_blob.get("ref") {
+            if let Some(link) = blob_ref.get("$link").and_then(|l| l.as_str()) {
+                link.to_string()
+            } else {
+                error!("Original blob object has no valid $link field");
+                return Err(eyre!("Original blob object has no valid $link field"));
+            }
+        } else {
+            error!("Original blob object has no ref field");
+            return Err(eyre!("Original blob object has no ref field"));
+        };
+
+        debug!("Using original blob CID: {}", original_blob_cid);
 
         // Extract progress fraction or percentage from display_name
         let (numerator, denominator) = match &token.display_name {
@@ -808,7 +863,7 @@ pub async fn generate_progress_image(
 }
 
 /// Upload an image to Bluesky and return the blob object
-async fn upload_image_to_bluesky(
+pub async fn upload_image_to_bluesky(
     app_state: &AppState,
     token: &OAuthTokenSet,
     image_data: &[u8],
@@ -980,6 +1035,288 @@ async fn upload_image_to_bluesky(
         );
         Err(eyre!("Failed to extract blob object from response"))
     }
+}
+
+/// Save the original profile picture blob to a dedicated PDS collection
+/// This allows us to reference the original image without storing its blob ID in our database
+pub async fn save_original_profile_picture(
+    app_state: &AppState,
+    token: &OAuthTokenSet,
+    original_blob_object: serde_json::Value,
+) -> cja::Result<()> {
+    use color_eyre::eyre::eyre;
+    use tracing::{error, info};
+
+    // Create a reqwest client
+    let client = reqwest::Client::new();
+
+    // Find PDS endpoint for this user
+    let pds_endpoint = match find_pds_endpoint(token).await {
+        Ok(endpoint) => endpoint,
+        Err(err) => return Err(err),
+    };
+
+    // Construct the full URL to the PDS endpoint for putRecord
+    let put_record_url = format!("{}/xrpc/com.atproto.repo.putRecord", pds_endpoint);
+
+    // Start with no nonce and handle any in the error response
+    // Create a DPoP proof for updating the profile with access token hash
+    let put_dpop_proof = create_dpop_proof_with_ath(
+        &app_state.bsky_oauth,
+        "POST",
+        &put_record_url,
+        None,
+        &token.access_token,
+    )?;
+
+    // Create the record - we use a fixed rkey of "self" as we only need one record per user
+    let record = serde_json::json!({
+        "avatar": original_blob_object,
+        "createdAt": chrono::Utc::now().to_rfc3339(),
+    });
+
+    // Create the request body
+    let put_body = serde_json::json!({
+        "repo": token.did,
+        "collection": "blue.pfp.unmodified_pfp", 
+        "rkey": "self",
+        "record": record
+    });
+
+    // Make the API request to store the record on the user's PDS
+    let mut put_response_result = client
+        .post(&put_record_url)
+        .header("Authorization", format!("DPoP {}", token.access_token))
+        .header("DPoP", put_dpop_proof)
+        .json(&put_body)
+        .send()
+        .await;
+
+    // Handle nonce errors by trying again if needed
+    if let Ok(response) = &put_response_result {
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            // Check if there's a DPoP-Nonce in the error response
+            if let Some(new_nonce) = response
+                .headers()
+                .get("DPoP-Nonce")
+                .and_then(|h| h.to_str().ok())
+            {
+                info!("Received new DPoP-Nonce in error response: {}", new_nonce);
+
+                // Create a new DPoP proof with the provided nonce and access token hash
+                let new_dpop_proof = create_dpop_proof_with_ath(
+                    &app_state.bsky_oauth,
+                    "POST",
+                    &put_record_url,
+                    Some(new_nonce),
+                    &token.access_token,
+                )?;
+
+                // Retry the request with the new nonce
+                info!("Retrying record creation with new DPoP-Nonce");
+                put_response_result = client
+                    .post(&put_record_url)
+                    .header("Authorization", format!("DPoP {}", token.access_token))
+                    .header("DPoP", new_dpop_proof)
+                    .json(&put_body)
+                    .send()
+                    .await;
+            }
+        }
+    }
+
+    // Unwrap the final result
+    let put_response = put_response_result?;
+
+    if !put_response.status().is_success() {
+        let status = put_response.status();
+        let error_text = put_response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Failed to read error response".to_string());
+
+        error!("Failed to save original profile picture: {} - {}", status, error_text);
+        return Err(eyre!(
+            "Failed to save original profile picture: {} - {}",
+            status,
+            error_text
+        ));
+    }
+
+    info!(
+        "Successfully saved original profile picture for DID: {}",
+        token.did
+    );
+    Ok(())
+}
+
+/// Get the original profile picture blob from our custom PDS collection
+pub async fn get_original_profile_picture(
+    app_state: &AppState, 
+    token: &OAuthTokenSet
+) -> cja::Result<Option<serde_json::Value>> {
+    use color_eyre::eyre::eyre;
+    use tracing::{error, info};
+
+    // Create a reqwest client
+    let client = reqwest::Client::new();
+
+    // Find PDS endpoint for this user
+    let pds_endpoint = match find_pds_endpoint(token).await {
+        Ok(endpoint) => endpoint,
+        Err(err) => return Err(err),
+    };
+
+    // Construct the full URL to the PDS endpoint for getRecord
+    let get_record_url = format!("{}/xrpc/com.atproto.repo.getRecord", pds_endpoint);
+
+    // Start with no nonce and handle any in the error response
+    let get_dpop_proof = create_dpop_proof_with_ath(
+        &app_state.bsky_oauth,
+        "GET",
+        &get_record_url,
+        None,
+        &token.access_token,
+    )?;
+
+    // Make the API request to get the record from the user's PDS
+    let mut get_response_result = client
+        .get(&get_record_url)
+        .query(&[
+            ("repo", &token.did),
+            ("collection", &String::from("blue.pfp.unmodified_pfp")),
+            ("rkey", &String::from("self")),
+        ])
+        .header("Authorization", format!("DPoP {}", token.access_token))
+        .header("DPoP", get_dpop_proof)
+        .send()
+        .await;
+
+    // Handle nonce errors by trying again if needed
+    if let Ok(response) = &get_response_result {
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            // Check if there's a DPoP-Nonce in the error response
+            if let Some(new_nonce) = response
+                .headers()
+                .get("DPoP-Nonce")
+                .and_then(|h| h.to_str().ok())
+            {
+                info!("Received new DPoP-Nonce in error response: {}", new_nonce);
+
+                // Create a new DPoP proof with the provided nonce and access token hash
+                let new_dpop_proof = create_dpop_proof_with_ath(
+                    &app_state.bsky_oauth,
+                    "GET",
+                    &get_record_url,
+                    Some(new_nonce),
+                    &token.access_token,
+                )?;
+
+                // Retry the request with the new nonce
+                info!("Retrying record retrieval with new DPoP-Nonce");
+                get_response_result = client
+                    .get(&get_record_url)
+                    .query(&[
+                        ("repo", &token.did),
+                        ("collection", &String::from("blue.pfp.unmodified_pfp")),
+                        ("rkey", &String::from("self")),
+                    ])
+                    .header("Authorization", format!("DPoP {}", token.access_token))
+                    .header("DPoP", new_dpop_proof)
+                    .send()
+                    .await;
+            }
+        }
+    }
+
+    // Unwrap the final result
+    let get_response = get_response_result?;
+
+    // If record doesn't exist, return None (not an error)
+    if get_response.status() == reqwest::StatusCode::NOT_FOUND {
+        info!("No original profile picture record found for DID: {}", token.did);
+        return Ok(None);
+    }
+
+    if !get_response.status().is_success() {
+        let status = get_response.status();
+        let error_text = get_response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Failed to read error response".to_string());
+
+        error!("Failed to get original profile picture: {} - {}", status, error_text);
+        return Err(eyre!(
+            "Failed to get original profile picture: {} - {}",
+            status,
+            error_text
+        ));
+    }
+
+    // Parse the response JSON
+    let record_data = get_response.json::<serde_json::Value>().await?;
+
+    // Extract the avatar blob from the record
+    if let Some(value) = record_data.get("value") {
+        if let Some(avatar) = value.get("avatar") {
+            info!("Found original profile picture record for DID: {}", token.did);
+            return Ok(Some(avatar.clone()));
+        }
+    }
+
+    // No avatar found in the record
+    info!("Original profile picture record exists but has no avatar for DID: {}", token.did);
+    Ok(None)
+}
+
+/// Helper function to find PDS endpoint for a user
+pub async fn find_pds_endpoint(token: &OAuthTokenSet) -> cja::Result<String> {
+    use color_eyre::eyre::eyre;
+    use tracing::error;
+
+    // First, resolve the DID document to find PDS endpoint
+    let xrpc_client = std::sync::Arc::new(atrium_xrpc_client::reqwest::ReqwestClient::new(
+        "https://bsky.social",
+    ));
+
+    // Convert string DID to DID object
+    let did = match atrium_api::types::string::Did::new(token.did.clone()) {
+        Ok(did) => did,
+        Err(err) => {
+            error!("Invalid DID format: {:?}", err);
+            return Err(eyre!("Invalid DID format: {}", err));
+        }
+    };
+
+    // Resolve DID to document
+    let did_document = match crate::did::resolve_did_to_document(&did, xrpc_client).await {
+        Ok(doc) => doc,
+        Err(err) => {
+            error!("Failed to resolve DID document: {:?}", err);
+            return Err(eyre!("Failed to resolve DID document: {}", err));
+        }
+    };
+
+    // Find the PDS service endpoint
+    let services = match did_document.service.as_ref() {
+        Some(services) => services,
+        None => {
+            error!("No service endpoints found in DID document");
+            return Err(eyre!("No service endpoints found in DID document"));
+        }
+    };
+
+    let pds_service = match services.iter().find(|s| s.id == "#atproto_pds") {
+        Some(service) => service,
+        None => {
+            error!("No ATProto PDS service endpoint found in DID document");
+            return Err(eyre!(
+                "No ATProto PDS service endpoint found in DID document"
+            ));
+        }
+    };
+
+    Ok(pds_service.service_endpoint.clone())
 }
 
 /// Update profile with a new image

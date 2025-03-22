@@ -122,8 +122,10 @@ impl ProfilePictureProgress {
         Ok(())
     }
 
-    /// Update the original blob CID
-    pub async fn update_original_blob_cid(
+    // This method is kept for backwards compatibility but should be considered deprecated
+    // We now store profile pictures in the PDS instead of our database
+    #[allow(dead_code)]
+    async fn update_original_blob_cid(
         &mut self,
         pool: &PgPool,
         original_blob_cid: Option<String>,

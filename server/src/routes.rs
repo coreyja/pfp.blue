@@ -313,33 +313,86 @@ async fn set_original_profile_picture(
         }
     };
 
-    // Get or create the profile progress settings
+    // Get the token information to fetch the blob and save to PDS
+    let token_result = sqlx::query!(
+        r#"
+        SELECT * FROM oauth_tokens
+        WHERE id = $1
+        "#,
+        token_id
+    )
+    .fetch_optional(&state.db)
+    .await;
+    
+    let token = match token_result {
+        Ok(Some(row)) => {
+            // Create OAuthTokenSet from the database row
+            crate::oauth::OAuthTokenSet {
+                did: row.did.clone(),
+                display_name: row.display_name.clone(),
+                handle: row.handle.clone(),
+                access_token: row.access_token.clone(),
+                refresh_token: row.refresh_token.clone(),
+                token_type: row.token_type.clone(),
+                scope: row.scope.clone(),
+                expires_at: row.expires_at as u64,
+                dpop_jkt: row.dpop_jkt.clone(),
+                user_id: Some(row.user_id),
+            }
+        },
+        Ok(None) => {
+            error!("Token not found: {}", token_id);
+            return Redirect::to("/me").into_response();
+        },
+        Err(e) => {
+            error!("Database error when fetching token: {:?}", e);
+            return Redirect::to("/me").into_response();
+        }
+    };
+
+    // Get or create profile progress settings (don't store the blob CID anymore)
     let result = ProfilePictureProgress::get_or_create(
         &state.db,
         token_id,
         true, // Enable when setting an original profile picture
-        Some(params.blob_cid.clone()),
+        None, // Don't store the blob CID in DB anymore
     )
     .await;
 
     match result {
-        Ok(mut settings) => {
-            // Update the original blob CID
-            if let Err(err) = settings
-                .update_original_blob_cid(&state.db, Some(params.blob_cid.clone()))
-                .await
-            {
-                error!("Failed to update original blob CID: {:?}", err);
-            } else {
-                info!(
-                    "Updated original blob CID for token {}: {}",
-                    token_id, params.blob_cid
-                );
-
-                // Enqueue a job to update the profile picture
-                enqueue_profile_picture_update_job(&state, token_id).await;
+        Ok(_settings) => {
+            // Fetch the original blob to get its contents
+            match crate::routes::bsky::fetch_blob_by_cid(&token.did, &params.blob_cid, &state).await {
+                Ok(blob_data) => {
+                    // Upload the blob to get a proper blob object
+                    match crate::jobs::upload_image_to_bluesky(&state, &token, &blob_data).await {
+                        Ok(blob_object) => {
+                            // Save the blob object to our custom PDS collection
+                            match crate::jobs::save_original_profile_picture(&state, &token, blob_object).await {
+                                Ok(_) => {
+                                    info!(
+                                        "Saved original profile picture to PDS collection for DID {}",
+                                        token.did
+                                    );
+                                    
+                                    // Enqueue a job to update the profile picture
+                                    enqueue_profile_picture_update_job(&state, token_id).await;
+                                },
+                                Err(err) => {
+                                    error!("Failed to save original profile picture to PDS: {:?}", err);
+                                }
+                            }
+                        },
+                        Err(err) => {
+                            error!("Failed to upload original profile picture blob: {:?}", err);
+                        }
+                    }
+                },
+                Err(err) => {
+                    error!("Failed to fetch blob data: {:?}", err);
+                }
             }
-        }
+        },
         Err(err) => {
             error!("Failed to get/create profile progress settings: {:?}", err);
         }
