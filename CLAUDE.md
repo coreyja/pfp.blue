@@ -137,6 +137,15 @@ This script runs the following checks:
 
 If any of these checks fail, the script will stop and show the error. Fix the issues before committing your changes.
 
+### Important Pre-Commit Steps
+
+Always run these commands before committing:
+
+1. **After changing any SQL queries**: Run `cargo sqlx prepare --workspace` to update the prepared queries
+2. **Before each commit**: Run `cargo fmt` to format all code consistently
+
+These steps ensure CI will pass and maintain consistent code style throughout the project.
+
 ## End-to-End Testing
 
 **ALL user-facing features must have end-to-end test coverage.** We use Playwright for our end-to-end tests.
