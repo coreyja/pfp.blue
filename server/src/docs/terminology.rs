@@ -13,7 +13,7 @@
 //! * **Handle**: The user's username in the Bluesky network, prefixed with '@'.
 //!   Example: `@alice.bsky.social`. This is what other users type to mention someone.
 //!   Unlike display names, handles must be unique across the network.
-//!   Note: We don't directly store this in our database as we focus on display name.
+//!   In our code, stored in `OAuthTokenSet.handle`.
 //!
 //! * **Display Name**: The user's chosen display name in Bluesky. This is the name shown
 //!   prominently in the UI and can include spaces, emoji, and special characters.

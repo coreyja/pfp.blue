@@ -276,7 +276,7 @@ impl Session {
             let row = sqlx::query!(
                 r#"
                 SELECT did, access_token, token_type, expires_at, refresh_token, 
-                       scope, dpop_jkt, user_id, display_name, id as token_id
+                       scope, dpop_jkt, user_id, display_name, handle, id as token_id
                 FROM oauth_tokens
                 WHERE uuid_id = $1
                 "#,
@@ -295,6 +295,7 @@ impl Session {
                     refresh_token: row.refresh_token,
                     scope: row.scope,
                     display_name: row.display_name,
+                    handle: row.handle,
                     dpop_jkt: row.dpop_jkt,
                     user_id: Some(row.user_id),
                 }));

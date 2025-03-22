@@ -13,7 +13,7 @@ use crate::{
 pub fn get_available_jobs() -> Vec<&'static str> {
     vec![
         NoopJob::NAME,
-        UpdateProfileDisplayNameJob::NAME,
+        UpdateProfileInfoJob::NAME,
         UpdateProfilePictureProgressJob::NAME,
     ]
 }
@@ -22,7 +22,7 @@ pub fn get_available_jobs() -> Vec<&'static str> {
 #[derive(Debug, Clone)]
 pub enum JobType {
     Noop(NoopJob),
-    UpdateProfileDisplayName(UpdateProfileDisplayNameJob),
+    UpdateProfileInfo(UpdateProfileInfoJob),
     UpdateProfilePicture(UpdateProfilePictureProgressJob),
 }
 
@@ -30,7 +30,7 @@ impl JobType {
     pub async fn run(&self, app_state: AppState) -> cja::Result<()> {
         match self {
             JobType::Noop(job) => job.run(app_state).await,
-            JobType::UpdateProfileDisplayName(job) => job.run(app_state).await,
+            JobType::UpdateProfileInfo(job) => job.run(app_state).await,
             JobType::UpdateProfilePicture(job) => job.run(app_state).await,
         }
     }
@@ -45,7 +45,7 @@ impl JobType {
                 let job_clone = job.clone();
                 job_clone.enqueue(app_state, context).await
             }
-            JobType::UpdateProfileDisplayName(job) => {
+            JobType::UpdateProfileInfo(job) => {
                 let job_clone = job.clone();
                 job_clone.enqueue(app_state, context).await
             }
@@ -62,7 +62,7 @@ impl JobType {
     pub fn name(&self) -> &'static str {
         match self {
             JobType::Noop(_) => NoopJob::NAME,
-            JobType::UpdateProfileDisplayName(_) => UpdateProfileDisplayNameJob::NAME,
+            JobType::UpdateProfileInfo(_) => UpdateProfileInfoJob::NAME,
             JobType::UpdateProfilePicture(_) => UpdateProfilePictureProgressJob::NAME,
         }
     }
@@ -76,11 +76,11 @@ pub fn create_job_from_name_and_args(
     match job_name {
         NoopJob::NAME => Ok(JobType::Noop(NoopJob)),
 
-        UpdateProfileDisplayNameJob::NAME => {
+        UpdateProfileInfoJob::NAME => {
             let did = args.get("did").ok_or("Missing required arg: did")?;
-            Ok(JobType::UpdateProfileDisplayName(
-                UpdateProfileDisplayNameJob { did: did.clone() },
-            ))
+            Ok(JobType::UpdateProfileInfo(UpdateProfileInfoJob {
+                did: did.clone(),
+            }))
         }
 
         UpdateProfilePictureProgressJob::NAME => {
@@ -103,7 +103,7 @@ pub fn get_job_params(job_name: &str) -> Vec<(String, String, bool)> {
     match job_name {
         NoopJob::NAME => Vec::new(),
 
-        UpdateProfileDisplayNameJob::NAME => vec![(
+        UpdateProfileInfoJob::NAME => vec![(
             "did".to_string(),
             "DID string (e.g., did:plc:abcdef...)".to_string(),
             true,
@@ -123,7 +123,7 @@ pub fn get_job_params(job_name: &str) -> Vec<(String, String, bool)> {
 cja::impl_job_registry!(
     AppState,
     NoopJob,
-    UpdateProfileDisplayNameJob,
+    UpdateProfileInfoJob,
     UpdateProfilePictureProgressJob
 );
 
@@ -139,14 +139,14 @@ impl Job<AppState> for NoopJob {
     }
 }
 
-/// Job to update a user's profile display name in the database
+/// Job to update a user's profile information (display name and handle) in the database
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct UpdateProfileDisplayNameJob {
+pub struct UpdateProfileInfoJob {
     /// The DID of the user - only thing we need to look up the token in the DB
     pub did: String,
 }
 
-impl UpdateProfileDisplayNameJob {
+impl UpdateProfileInfoJob {
     /// Create a new job from an OAuthTokenSet
     pub fn from_token(token: &OAuthTokenSet) -> Self {
         Self {
@@ -156,8 +156,8 @@ impl UpdateProfileDisplayNameJob {
 }
 
 #[async_trait::async_trait]
-impl Job<AppState> for UpdateProfileDisplayNameJob {
-    const NAME: &'static str = "UpdateProfileDisplayNameJob";
+impl Job<AppState> for UpdateProfileInfoJob {
+    const NAME: &'static str = "UpdateProfileInfoJob";
 
     async fn run(&self, app_state: AppState) -> cja::Result<()> {
         use color_eyre::eyre::eyre;
@@ -338,10 +338,24 @@ impl Job<AppState> for UpdateProfileDisplayNameJob {
             }
         };
 
-        // Extract the display name from the profile data
-        let extracted_display_name = if let Some(value) = profile_data.get("value") {
+        // Extract the display name and handle from the profile data
+        let value = profile_data.get("value");
+
+        // Extract the display name
+        let extracted_display_name = if let Some(value) = value {
             if let Some(display_name_val) = value.get("displayName") {
                 display_name_val.as_str().map(|s| s.to_string())
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        // Extract the handle from the profile data
+        let extracted_handle = if let Some(value) = profile_data.get("value") {
+            if let Some(handle_val) = value.get("handle") {
+                handle_val.as_str().map(|s| s.to_string())
             } else {
                 None
             }
@@ -388,6 +402,37 @@ impl Job<AppState> for UpdateProfileDisplayNameJob {
                 "No display name found in profile data for DID: {}",
                 self.did
             );
+        }
+
+        // If we found a handle in the profile, make sure it's updated in the database
+        if let Some(handle_str) = extracted_handle {
+            // Check if handle is different than what we have saved
+            let should_update = match &token.handle {
+                Some(current_handle) => current_handle != &handle_str,
+                None => true, // No handle stored yet, need to update
+            };
+
+            if should_update {
+                // Update the handle in the database
+                match crate::oauth::db::update_token_handle(&app_state.db, &self.did, &handle_str)
+                    .await
+                {
+                    Ok(_) => {
+                        info!("Updated handle for DID {}: {}", self.did, handle_str);
+                    }
+                    Err(err) => {
+                        error!("Failed to update handle in database: {:?}", err);
+                        return Err(err);
+                    }
+                }
+            } else {
+                debug!(
+                    "Handle for DID {} already up to date: {}",
+                    self.did, handle_str
+                );
+            }
+        } else {
+            debug!("No handle found in profile data for DID: {}", self.did);
         }
 
         Ok(())

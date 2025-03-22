@@ -416,6 +416,8 @@ pub struct OAuthTokenSet {
     pub did: String,
     /// The Bluesky display name associated with this DID
     pub display_name: Option<String>,
+    /// The Bluesky handle (username with domain) associated with this DID
+    pub handle: Option<String>,
     /// DPoP confirmation key (JWK thumbprint)
     pub dpop_jkt: Option<String>,
     /// User ID that owns this token
@@ -438,6 +440,7 @@ impl OAuthTokenSet {
             scope: response.scope,
             did,
             display_name: None, // Will be updated later when we fetch profile data
+            handle: None,       // Will be updated later when we fetch profile data
             dpop_jkt: response.dpop_confirmation.map(|cnf| cnf.jkt),
             user_id: None,
         }
@@ -445,10 +448,11 @@ impl OAuthTokenSet {
 
     // Function removed - not used in codebase
 
-    /// Copy the display name from another token
+    /// Copy the display name and handle from another token
     #[allow(dead_code)]
     pub fn with_display_name_from(mut self, other: &OAuthTokenSet) -> Self {
         self.display_name = other.display_name.clone();
+        self.handle = other.handle.clone();
         self
     }
 
@@ -1194,8 +1198,8 @@ pub mod db {
         sqlx::query!(
             r#"
             INSERT INTO oauth_tokens (
-                did, access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id, display_name
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                did, access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id, display_name, handle
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             ON CONFLICT (did) DO UPDATE SET
                 access_token = EXCLUDED.access_token,
                 token_type = EXCLUDED.token_type,
@@ -1205,6 +1209,7 @@ pub mod db {
                 dpop_jkt = EXCLUDED.dpop_jkt,
                 user_id = EXCLUDED.user_id,
                 display_name = COALESCE(EXCLUDED.display_name, oauth_tokens.display_name),
+                handle = COALESCE(EXCLUDED.handle, oauth_tokens.handle),
                 updated_at_utc = NOW()
             "#,
             &token_set.did,
@@ -1215,7 +1220,8 @@ pub mod db {
             &token_set.scope,
             token_set.dpop_jkt.as_deref(),
             user_id,
-            display_name_to_use.as_deref()
+            display_name_to_use.as_deref(),
+            token_set.handle.as_deref()
         )
         .execute(pool)
         .await?;
@@ -1227,7 +1233,7 @@ pub mod db {
     pub async fn get_token(pool: &PgPool, did: &str) -> cja::Result<Option<OAuthTokenSet>> {
         let row = sqlx::query!(
             r#"
-            SELECT access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id, display_name
+            SELECT access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id, display_name, handle
             FROM oauth_tokens
             WHERE did = $1
             "#,
@@ -1244,6 +1250,7 @@ pub mod db {
             refresh_token: row.refresh_token,
             scope: row.scope,
             display_name: row.display_name,
+            handle: row.handle,
             dpop_jkt: row.dpop_jkt,
             user_id: Some(row.user_id),
         }))
@@ -1256,7 +1263,7 @@ pub mod db {
     ) -> cja::Result<Vec<OAuthTokenSet>> {
         let tokens = sqlx::query!(
             r#"
-            SELECT did, access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id, display_name
+            SELECT did, access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id, display_name, handle
             FROM oauth_tokens
             WHERE user_id = $1
             ORDER BY updated_at_utc DESC
@@ -1274,6 +1281,7 @@ pub mod db {
             refresh_token: row.refresh_token,
             scope: row.scope,
             display_name: row.display_name,
+            handle: row.handle,
             dpop_jkt: row.dpop_jkt,
             user_id: Some(row.user_id),
         })
@@ -1311,6 +1319,23 @@ pub mod db {
             "#,
             did,
             display_name
+        )
+        .execute(pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Updates the handle for a token
+    pub async fn update_token_handle(pool: &PgPool, did: &str, handle: &str) -> cja::Result<()> {
+        sqlx::query!(
+            r#"
+            UPDATE oauth_tokens
+            SET handle = $2, updated_at_utc = NOW()
+            WHERE did = $1
+            "#,
+            did,
+            handle
         )
         .execute(pool)
         .await?;
@@ -1519,10 +1544,11 @@ pub async fn refresh_token_if_needed(
                 &state.bsky_oauth.public_key,
             ) {
                 Ok(new_token) => {
-                    // Set user ID and display name from original token
+                    // Set user ID, display name, and handle from original token
                     let mut token_with_id = new_token.clone();
                     token_with_id.user_id = token.user_id;
                     token_with_id.display_name = token.display_name.clone();
+                    token_with_id.handle = token.handle.clone();
                     token_with_id
                 }
                 Err(err) => {
@@ -1532,6 +1558,7 @@ pub async fn refresh_token_if_needed(
                         OAuthTokenSet::from_token_response(token_response, token.did.clone());
                     standard_token.user_id = token.user_id;
                     standard_token.display_name = token.display_name.clone();
+                    standard_token.handle = token.handle.clone();
                     standard_token
                 }
             };
@@ -1543,7 +1570,7 @@ pub async fn refresh_token_if_needed(
             }
 
             // Also fetch profile to update display name if needed
-            if let Err(err) = crate::jobs::UpdateProfileDisplayNameJob::from_token(&new_token)
+            if let Err(err) = crate::jobs::UpdateProfileInfoJob::from_token(&new_token)
                 .enqueue(state.clone(), "token_refresh".to_string())
                 .await
             {

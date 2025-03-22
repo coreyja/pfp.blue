@@ -759,7 +759,7 @@ pub async fn callback(
     }
 
     // Schedule a background job to update the display name
-    if let Err(err) = crate::jobs::UpdateProfileDisplayNameJob::from_token(&token_set)
+    if let Err(err) = crate::jobs::UpdateProfileInfoJob::from_token(&token_set)
         .enqueue(state.clone(), "callback".to_string())
         .await
     {
@@ -809,7 +809,7 @@ pub async fn get_token(
     match oauth::get_valid_token_by_did(&params.did, &state).await {
         Ok(token) => {
             // Also fetch profile in the background to ensure display name is up to date
-            if let Err(err) = crate::jobs::UpdateProfileDisplayNameJob::from_token(&token)
+            if let Err(err) = crate::jobs::UpdateProfileInfoJob::from_token(&token)
                 .enqueue(state.clone(), "get_token".to_string())
                 .await
             {
@@ -1013,7 +1013,7 @@ pub async fn profile(
     // Start background jobs to update display names for all tokens
     // This ensures we have the latest display name data when showing the profile
     for token in &tokens {
-        if let Err(err) = crate::jobs::UpdateProfileDisplayNameJob::from_token(token)
+        if let Err(err) = crate::jobs::UpdateProfileInfoJob::from_token(token)
             .enqueue(state.clone(), "profile_route".to_string())
             .await
         {
@@ -1217,7 +1217,7 @@ async fn display_profile_multi(
     use maud::Render;
 
     // Queue a job to update the handle in the background
-    if let Err(err) = crate::jobs::UpdateProfileDisplayNameJob::from_token(&primary_token)
+    if let Err(err) = crate::jobs::UpdateProfileInfoJob::from_token(&primary_token)
         .enqueue(state.clone(), "display_profile_multi".to_string())
         .await
     {
