@@ -34,31 +34,31 @@ impl JobType {
             JobType::UpdateProfilePicture(job) => job.run(app_state).await,
         }
     }
-    
+
     pub async fn enqueue(&self, app_state: AppState) -> cja::Result<()> {
         // Create a context string for the job enqueue
         let context = format!("admin_panel_enqueue_{}", self.name());
-        
+
         // Match on the job type and enqueue the job with the context
         let result = match self {
             JobType::Noop(job) => {
                 let job_clone = job.clone();
                 job_clone.enqueue(app_state, context).await
-            },
+            }
             JobType::UpdateProfileHandle(job) => {
                 let job_clone = job.clone();
                 job_clone.enqueue(app_state, context).await
-            },
+            }
             JobType::UpdateProfilePicture(job) => {
                 let job_clone = job.clone();
                 job_clone.enqueue(app_state, context).await
-            },
+            }
         };
-        
+
         // Convert the EnqueueError to cja::Result
         result.map_err(|e| color_eyre::eyre::eyre!("Failed to enqueue job: {}", e))
     }
-    
+
     pub fn name(&self) -> &'static str {
         match self {
             JobType::Noop(_) => NoopJob::NAME,
@@ -75,19 +75,25 @@ pub fn create_job_from_name_and_args(
 ) -> Result<JobType, String> {
     match job_name {
         NoopJob::NAME => Ok(JobType::Noop(NoopJob)),
-        
+
         UpdateProfileHandleJob::NAME => {
             let did = args.get("did").ok_or("Missing required arg: did")?;
-            Ok(JobType::UpdateProfileHandle(UpdateProfileHandleJob { did: did.clone() }))
-        },
-        
+            Ok(JobType::UpdateProfileHandle(UpdateProfileHandleJob {
+                did: did.clone(),
+            }))
+        }
+
         UpdateProfilePictureProgressJob::NAME => {
-            let token_id_str = args.get("token_id").ok_or("Missing required arg: token_id")?;
+            let token_id_str = args
+                .get("token_id")
+                .ok_or("Missing required arg: token_id")?;
             let token_id = uuid::Uuid::from_str(token_id_str)
                 .map_err(|e| format!("Invalid UUID for token_id: {}", e))?;
-            Ok(JobType::UpdateProfilePicture(UpdateProfilePictureProgressJob { token_id }))
-        },
-        
+            Ok(JobType::UpdateProfilePicture(
+                UpdateProfilePictureProgressJob { token_id },
+            ))
+        }
+
         _ => Err(format!("Unknown job type: {}", job_name)),
     }
 }
@@ -96,15 +102,19 @@ pub fn create_job_from_name_and_args(
 pub fn get_job_params(job_name: &str) -> Vec<(String, String, bool)> {
     match job_name {
         NoopJob::NAME => Vec::new(),
-        
-        UpdateProfileHandleJob::NAME => vec![
-            ("did".to_string(), "DID string (e.g., did:plc:abcdef...)".to_string(), true),
-        ],
-        
-        UpdateProfilePictureProgressJob::NAME => vec![
-            ("token_id".to_string(), "UUID of the OAuth token".to_string(), true),
-        ],
-        
+
+        UpdateProfileHandleJob::NAME => vec![(
+            "did".to_string(),
+            "DID string (e.g., did:plc:abcdef...)".to_string(),
+            true,
+        )],
+
+        UpdateProfilePictureProgressJob::NAME => vec![(
+            "token_id".to_string(),
+            "UUID of the OAuth token".to_string(),
+            true,
+        )],
+
         _ => Vec::new(),
     }
 }
@@ -418,7 +428,10 @@ impl Job<AppState> for UpdateProfilePictureProgressJob {
         let token = match crate::oauth::get_valid_token_by_did(&token_info.did, &app_state).await {
             Ok(token) => token,
             Err(err) => {
-                error!("Failed to get valid token for DID {}: {:?}", token_info.did, err);
+                error!(
+                    "Failed to get valid token for DID {}: {:?}",
+                    token_info.did, err
+                );
                 return Err(eyre!("Failed to get valid token: {}", err));
             }
         };
@@ -1256,11 +1269,11 @@ mod tests {
     fn test_extract_progress_from_handle_invalid_numbers() {
         // Test invalid numeric inputs
         assert_eq!(extract_progress_from_handle("0/0"), None); // Division by zero
-        // Note: The regex pattern ^-1/5 is "\d+/\d+" which doesn't match negative numbers
-        // so these tests aren't valid since the regex will never capture them
-        // assert_eq!(extract_progress_from_handle("-1/5"), None); // Negative numerator 
-        // assert_eq!(extract_progress_from_handle("5/-10"), None); // Negative denominator
-        // assert_eq!(extract_progress_from_handle("-50%"), None); // Negative percentage
+                                                               // Note: The regex pattern ^-1/5 is "\d+/\d+" which doesn't match negative numbers
+                                                               // so these tests aren't valid since the regex will never capture them
+                                                               // assert_eq!(extract_progress_from_handle("-1/5"), None); // Negative numerator
+                                                               // assert_eq!(extract_progress_from_handle("5/-10"), None); // Negative denominator
+                                                               // assert_eq!(extract_progress_from_handle("-50%"), None); // Negative percentage
     }
 
     #[test]

@@ -98,13 +98,16 @@ impl FromRequestParts<AppState> for AdminUser {
             Ok(user) => user,
             Err(rejection) => return Err(rejection),
         };
-        
+
         // Check if user has admin privileges
         if !auth_user.0.is_admin {
-            error!("User {} attempted to access admin area without admin privileges", auth_user.0.user_id);
+            error!(
+                "User {} attempted to access admin area without admin privileges",
+                auth_user.0.user_id
+            );
             return Err(StatusCode::FORBIDDEN.into_response());
         }
-        
+
         Ok(AdminUser(auth_user.0))
     }
 }

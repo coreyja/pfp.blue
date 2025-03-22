@@ -98,8 +98,8 @@ impl User {
             updated_at_utc: row.updated_at_utc,
         })
     }
-    
-    // The set_admin_status and make_admin_by_did functions have been removed 
+
+    // The set_admin_status and make_admin_by_did functions have been removed
     // since we'll be updating the database manually
 
     /// Get a user by the DID of one of their OAuth tokens

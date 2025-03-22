@@ -75,9 +75,9 @@ pub async fn resolve_did_to_document(
     let resolver = CommonDidResolver::new(config);
 
     let resolve_result = resolver.resolve(did).await;
-    
+
     // In e2e tests, let's create a fake document when using fixture-user.test
-    if resolve_result.is_err() 
+    if resolve_result.is_err()
         && did.as_str() == "did:plc:abcdefg"
         && std::env::var("USE_FIXTURES").unwrap_or_default() == "1"
     {
@@ -90,7 +90,8 @@ pub async fn resolve_did_to_document(
     }
 
     // Handle the normal case
-    let document = resolve_result.wrap_err_with(|| format!("Failed to resolve DID document for {}", did.as_str()))?;
+    let document = resolve_result
+        .wrap_err_with(|| format!("Failed to resolve DID document for {}", did.as_str()))?;
     info!("Successfully resolved DID document for {}", did.as_str());
     Ok(document)
 }
@@ -214,7 +215,12 @@ async fn fetch_auth_server_metadata_from_pds(
 
     let metadata = fetch_and_parse_json::<AuthServerMetadata>(&auth_server_metadata_url)
         .await
-        .wrap_err_with(|| format!("Failed to get auth server metadata from {}", auth_server_metadata_url))?;
+        .wrap_err_with(|| {
+            format!(
+                "Failed to get auth server metadata from {}",
+                auth_server_metadata_url
+            )
+        })?;
 
     Ok(metadata)
 }
@@ -238,6 +244,6 @@ pub async fn fetch_and_parse_json<T: serde::de::DeserializeOwned>(url: &str) -> 
             e
         })
         .wrap_err_with(|| format!("Failed to decode JSON from {}", url))?;
-    
+
     Ok(result)
 }

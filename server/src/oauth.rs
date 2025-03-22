@@ -109,8 +109,8 @@ pub fn calculate_jwk_thumbprint(public_key_base64: &str) -> cja::Result<String> 
     });
 
     // Convert to a compact JSON string without whitespace
-    let canonical_json = serde_json::to_string(&canonical_jwk)
-        .wrap_err("Failed to serialize canonical JWK")?;
+    let canonical_json =
+        serde_json::to_string(&canonical_jwk).wrap_err("Failed to serialize canonical JWK")?;
 
     // Calculate SHA-256 hash
     use ring::digest::{digest, SHA256};
@@ -198,8 +198,8 @@ pub fn create_client_assertion(
     };
 
     // Create a temporary file for the ES256 private key
-    let mut key_file = NamedTempFile::new()
-        .wrap_err("Failed to create temporary file for private key")?;
+    let mut key_file =
+        NamedTempFile::new().wrap_err("Failed to create temporary file for private key")?;
 
     // Decode base64-encoded private key
     let decoded_key = base64::Engine::decode(
@@ -214,12 +214,11 @@ pub fn create_client_assertion(
         .wrap_err("Failed to write private key to temporary file")?;
 
     // Create a temporary file for the payload
-    let mut payload_file = NamedTempFile::new()
-        .wrap_err("Failed to create temporary file for payload")?;
+    let mut payload_file =
+        NamedTempFile::new().wrap_err("Failed to create temporary file for payload")?;
 
     // Create payload JSON
-    let payload_json =
-        serde_json::to_string(&payload).wrap_err("Failed to serialize payload")?;
+    let payload_json = serde_json::to_string(&payload).wrap_err("Failed to serialize payload")?;
 
     // Write payload to file
     payload_file
@@ -254,8 +253,8 @@ pub fn create_client_assertion(
     let message = format!("{}.{}", header_b64, payload_b64);
 
     // 4. Create a temporary file for the message
-    let mut message_file = NamedTempFile::new()
-        .wrap_err("Failed to create temporary file for message")?;
+    let mut message_file =
+        NamedTempFile::new().wrap_err("Failed to create temporary file for message")?;
     message_file
         .write_all(message.as_bytes())
         .wrap_err("Failed to write message to temporary file")?;
@@ -316,8 +315,7 @@ fn der_signature_to_raw_signature(der_signature: &[u8]) -> cja::Result<Vec<u8>> 
     use color_eyre::eyre::eyre;
 
     // Parse the DER-encoded signature
-    let blocks = from_der(der_signature)
-        .wrap_err("Failed to parse DER signature")?;
+    let blocks = from_der(der_signature).wrap_err("Failed to parse DER signature")?;
 
     // The DER signature should be a SEQUENCE with two INTEGERs (r and s)
     if blocks.len() != 1 {
@@ -1412,45 +1410,53 @@ pub mod db {
 
 /// Resolve the token endpoint for a DID
 pub async fn resolve_token_endpoint_for_did(
-    did: &str, 
-    state: &crate::state::AppState
+    did: &str,
+    state: &crate::state::AppState,
 ) -> cja::Result<String> {
     use tracing::info;
-    
+
     // First try to get the endpoint from the database
     match crate::routes::bsky::get_token_endpoint_for_did(&state.db, did).await? {
         Some(endpoint) => Ok(endpoint),
         None => {
             // Resolve the PDS endpoint for the token
-            let xrpc_client = std::sync::Arc::new(
-                atrium_xrpc_client::reqwest::ReqwestClient::new("https://bsky.social"),
-            );
+            let xrpc_client = std::sync::Arc::new(atrium_xrpc_client::reqwest::ReqwestClient::new(
+                "https://bsky.social",
+            ));
 
             match atrium_api::types::string::Did::new(did.to_string()) {
                 Ok(did_obj) => {
                     match crate::did::resolve_did_to_document(&did_obj, xrpc_client).await {
                         Ok(did_document) => {
                             if let Some(services) = did_document.service.as_ref() {
-                                if let Some(pds_service) = services.iter().find(|s| s.id == "#atproto_pds") {
+                                if let Some(pds_service) =
+                                    services.iter().find(|s| s.id == "#atproto_pds")
+                                {
                                     let pds_endpoint = &pds_service.service_endpoint;
                                     let refresh_endpoint = format!(
                                         "{}/xrpc/com.atproto.server.refreshSession",
                                         pds_endpoint
                                     );
-                                    info!("Resolved PDS endpoint for refresh: {}", refresh_endpoint);
+                                    info!(
+                                        "Resolved PDS endpoint for refresh: {}",
+                                        refresh_endpoint
+                                    );
                                     Ok(refresh_endpoint)
                                 } else {
                                     // Fallback to bsky.social if no PDS service found
-                                    Ok("https://bsky.social/xrpc/com.atproto.server.refreshSession".to_string())
+                                    Ok("https://bsky.social/xrpc/com.atproto.server.refreshSession"
+                                        .to_string())
                                 }
                             } else {
                                 // Fallback to bsky.social if no services found
-                                Ok("https://bsky.social/xrpc/com.atproto.server.refreshSession".to_string())
+                                Ok("https://bsky.social/xrpc/com.atproto.server.refreshSession"
+                                    .to_string())
                             }
                         }
                         Err(_) => {
                             // Fallback to bsky.social on resolution error
-                            Ok("https://bsky.social/xrpc/com.atproto.server.refreshSession".to_string())
+                            Ok("https://bsky.social/xrpc/com.atproto.server.refreshSession"
+                                .to_string())
                         }
                     }
                 }
@@ -1558,8 +1564,8 @@ pub async fn refresh_token_if_needed(
 /// Get a token by DID and refresh it if needed
 /// This provides a single entry point for getting a valid token
 pub async fn get_valid_token_by_did(
-    did: &str, 
-    state: &crate::state::AppState
+    did: &str,
+    state: &crate::state::AppState,
 ) -> cja::Result<OAuthTokenSet> {
     use color_eyre::eyre::eyre;
     use tracing::{error, info};
@@ -1578,13 +1584,13 @@ pub async fn get_valid_token_by_did(
     // If token is expired, try to refresh it
     // First resolve the token endpoint
     let token_endpoint = resolve_token_endpoint_for_did(did, state).await?;
-    
+
     // Then try to refresh
     match refresh_token_if_needed(&token, state, &token_endpoint).await? {
         Some(refreshed_token) => {
             info!("Token for DID {} was refreshed", did);
             Ok(refreshed_token)
-        },
+        }
         None => {
             // This shouldn't happen since we already checked the token is expired
             error!("Token wasn't refreshed despite being expired");

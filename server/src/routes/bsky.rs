@@ -813,25 +813,30 @@ pub async fn get_token(
                 .enqueue(state.clone(), "get_token".to_string())
                 .await
             {
-                error!("Failed to enqueue handle update job in get_token: {:?}", err);
+                error!(
+                    "Failed to enqueue handle update job in get_token: {:?}",
+                    err
+                );
             } else {
                 info!("Queued handle update job for DID: {}", token.did);
             }
-            
+
             // Calculate the expires_in value
-            let expires_in = if token.expires_at > SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs() 
-            {
-                token.expires_at - SystemTime::now()
+            let expires_in = if token.expires_at
+                > SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs()
-            } else { 
-                0 
+            {
+                token.expires_at
+                    - SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs()
+            } else {
+                0
             };
-            
+
             // Return the token data
             Json(serde_json::json!({
                 "did": token.did,
@@ -840,34 +845,38 @@ pub async fn get_token(
                 "expires_in": expires_in,
                 "scope": token.scope,
                 "status": if token.is_expired() { "expired" } else { "valid" }
-            })).into_response()
-        },
+            }))
+            .into_response()
+        }
         Err(err) => {
             error!("Error getting token: {:?}", err);
-            
+
             if err.to_string().contains("No token found") {
                 return (
                     StatusCode::NOT_FOUND,
                     "No active token found for this DID".to_string(),
-                ).into_response();
+                )
+                    .into_response();
             }
-            
+
             // Try to delete the token if it's failing to refresh
             if err.to_string().contains("Failed to refresh token") {
                 if let Err(e) = oauth::db::delete_token(&state.db, &params.did).await {
                     error!("Failed to delete expired token: {:?}", e);
                 }
-                
+
                 return (
                     StatusCode::UNAUTHORIZED,
                     "Token expired and refresh failed. Please authenticate again.".to_string(),
-                ).into_response();
+                )
+                    .into_response();
             }
-            
+
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Failed to retrieve token: {}", err),
-            ).into_response()
+            )
+                .into_response()
         }
     }
 }
