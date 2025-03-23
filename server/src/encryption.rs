@@ -1,10 +1,8 @@
-use std::io::{Read, Write};
 use std::sync::Arc;
 
-use age::armor::{ArmoredReader, ArmoredWriter};
 use age::encrypt_and_armor;
-use age::{x25519::Identity, Decryptor, Encryptor};
-use color_eyre::eyre::{eyre, Result};
+use age::x25519::Identity;
+use color_eyre::eyre::Result;
 
 /// Encrypts a string using age encryption with ASCII armor
 ///
