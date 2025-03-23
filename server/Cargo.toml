@@ -6,6 +6,10 @@ default-run = "pfp-blue"
 
 build = "build.rs"
 
+[[bin]]
+name = "generate-key"
+path = "src/bin/generate_key.rs"
+
 [dependencies]
 tokio = { version = "1.21", features = ["full"] }
 color-eyre = "0.6.2"
