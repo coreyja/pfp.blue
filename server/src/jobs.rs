@@ -479,6 +479,12 @@ impl Job<AppState> for UpdateProfilePictureProgressJob {
             }
         };
 
+        UpdateProfileInfoJob {
+            did: token_info.did.clone(),
+        }
+        .run(app_state.clone())
+        .await?;
+
         // Use our consolidated function to get a valid token
         let token = match crate::oauth::get_valid_token_by_did(&token_info.did, &app_state).await {
             Ok(token) => token,
