@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT data FROM oauth_sessions \n            WHERE did = $1 \n            ORDER BY updated_at_utc DESC \n            LIMIT 1\n            ",
+  "query": "\n        SELECT data FROM oauth_sessions \n        WHERE did = $1 \n        ORDER BY updated_at_utc DESC \n        LIMIT 1\n        ",
   "describe": {
     "columns": [
       {
@@ -18,5 +18,5 @@
       true
     ]
   },
-  "hash": "0745d1b62cd900efc3a546fc96b83921119f84218113411d53ef3579ec2ef53d"
+  "hash": "70370ec4a8ea136aadd9e20008da1d95eb9172ea45868469e6421d6e160a11e9"
 }

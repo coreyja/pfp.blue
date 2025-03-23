@@ -748,8 +748,8 @@ pub async fn callback(
         token_set.user_id = Some(user_id);
     }
 
-    // Store the token in the database
-    if let Err(err) = oauth::db::store_token(&state.db, &token_set).await {
+    // Store the token in the database with encryption
+    if let Err(err) = oauth::db::store_token(&state, &token_set).await {
         error!("Failed to store token: {:?}", err);
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -998,7 +998,7 @@ pub async fn profile(
     crate::auth::AuthUser(user): crate::auth::AuthUser,
 ) -> impl IntoResponse {
     // Get all tokens for this user
-    let tokens = match oauth::db::get_tokens_for_user(&state.db, user.user_id).await {
+    let tokens = match oauth::db::get_tokens_for_user(&state, user.user_id).await {
         Ok(tokens) => tokens,
         Err(err) => {
             error!("Failed to retrieve tokens for user: {:?}", err);
@@ -1152,7 +1152,7 @@ pub async fn profile(
         match oauth::get_valid_token_by_did(&primary_token.did, &state).await {
             Ok(new_token) => {
                 // Refresh all tokens
-                let tokens = match oauth::db::get_tokens_for_user(&state.db, user.user_id).await {
+                let tokens = match oauth::db::get_tokens_for_user(&state, user.user_id).await {
                     Ok(tokens) => tokens,
                     Err(_) => vec![new_token.clone()],
                 };

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                SELECT id, display_name FROM oauth_tokens \n                WHERE did = $1 AND display_name IS NOT NULL\n                ",
+  "query": "\n            SELECT id, display_name FROM oauth_tokens \n            WHERE did = $1 AND display_name IS NOT NULL\n            ",
   "describe": {
     "columns": [
       {
@@ -24,5 +24,5 @@
       true
     ]
   },
-  "hash": "116854caed856d66958ae576db9b545f98543623326f77cce90850467a8c63d9"
+  "hash": "7b941392bf912002c021b7a10861f9dec9aa5d82668ef097e98353a9e6402afc"
 }

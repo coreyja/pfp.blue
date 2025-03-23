@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE oauth_sessions\n            SET data = $1, updated_at_utc = NOW()\n            WHERE session_id = $2\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Jsonb",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f74d403e53fee216039d3d9328164f20a671eaa584e6510e69bfa26ab7d16082"
+}

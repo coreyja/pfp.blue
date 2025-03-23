@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT did, access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id, display_name, handle\n            FROM oauth_tokens\n            WHERE user_id = $1\n            ORDER BY updated_at_utc DESC\n            ",
+  "query": "\n        SELECT did, access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id, display_name, handle\n        FROM oauth_tokens\n        WHERE user_id = $1\n        ORDER BY updated_at_utc DESC\n        ",
   "describe": {
     "columns": [
       {
@@ -72,5 +72,5 @@
       true
     ]
   },
-  "hash": "519093b07c5e450ee6a84d4bb1328e9b97497e72fcfebf4efa77ef3d028745ad"
+  "hash": "d265671a6f6184372995490e1fa320fd7728cdc8d227b3f206617fa4f455cd8d"
 }

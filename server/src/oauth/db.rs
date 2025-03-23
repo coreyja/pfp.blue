@@ -1,0 +1,423 @@
+use super::*;
+use crate::state::AppState;
+use sqlx::PgPool;
+use std::time::{SystemTime, UNIX_EPOCH};
+use uuid::Uuid;
+
+// We need to ensure we're using the actual encryption module
+use self::encryption_helpers::*;
+
+// Create a local module with functions that call the external encryption functions
+mod encryption_helpers {
+    use age::x25519::Identity;
+    use std::sync::Arc;
+
+    pub async fn encrypt(data: &str, key: &Arc<Identity>) -> cja::Result<String> {
+        // Call the encryption function from the main crate
+        crate::encryption::encrypt(data, key).await
+    }
+
+    pub async fn decrypt(encrypted_base64: &str, key: &Arc<Identity>) -> cja::Result<String> {
+        // Call the decryption function from the main crate
+        crate::encryption::decrypt(encrypted_base64, key).await
+    }
+}
+
+/// Stores a new OAuth session in the database
+pub async fn store_session(pool: &PgPool, session: &OAuthSession) -> cja::Result<Uuid> {
+    let session_id = Uuid::new_v4();
+
+    // Store PKCE data and DPoP nonce in the data JSONB field
+    let data = serde_json::json!({
+        "code_verifier": session.code_verifier,
+        "code_challenge": session.code_challenge,
+        "dpop_nonce": session.dpop_nonce
+    });
+
+    sqlx::query!(
+        r#"
+        INSERT INTO oauth_sessions (
+            id, session_id, did, state, token_endpoint, created_at, data
+        ) VALUES (DEFAULT, $1, $2, $3, $4, $5, $6)
+        "#,
+        session_id,
+        &session.did,
+        session.state.as_deref(),
+        &session.token_endpoint,
+        session.created_at as i64,
+        data
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(session_id)
+}
+
+/// Retrieves an OAuth session by session ID
+pub async fn get_session(pool: &PgPool, session_id: Uuid) -> cja::Result<Option<OAuthSession>> {
+    let row = sqlx::query!(
+        r#"
+        SELECT did, state, token_endpoint, created_at, data
+        FROM oauth_sessions
+        WHERE session_id = $1
+        "#,
+        session_id
+    )
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row.map(|row| {
+        // Extract PKCE data from the JSONB field
+        let data: Option<serde_json::Value> = row.data;
+        let code_verifier = data
+            .as_ref()
+            .and_then(|d| d.get("code_verifier"))
+            .and_then(|v| v.as_str())
+            .map(String::from);
+
+        let code_challenge = data
+            .as_ref()
+            .and_then(|d| d.get("code_challenge"))
+            .and_then(|v| v.as_str())
+            .map(String::from);
+
+        let dpop_nonce = data
+            .as_ref()
+            .and_then(|d| d.get("dpop_nonce"))
+            .and_then(|v| v.as_str())
+            .map(String::from);
+
+        OAuthSession {
+            did: row.did,
+            state: row.state,
+            token_endpoint: row.token_endpoint,
+            created_at: row.created_at as u64,
+            token_set: None, // Token set is retrieved separately
+            code_verifier,
+            code_challenge,
+            dpop_nonce,
+        }
+    }))
+}
+
+/// Stores an OAuth token in the database with encryption
+pub async fn store_token(app_state: &AppState, token_set: &OAuthTokenSet) -> cja::Result<()> {
+    // Check if we need to create a user
+    let user_id = if let Some(user_id) = token_set.user_id {
+        user_id
+    } else {
+        // Check if a user already exists for this DID
+        let existing_user = crate::user::User::get_by_did(&app_state.db, &token_set.did).await?;
+
+        match existing_user {
+            Some(user) => user.user_id,
+            None => {
+                // Create a new user
+                let user = crate::user::User::create(&app_state.db, None, None).await?;
+                user.user_id
+            }
+        }
+    };
+
+    // Check if there's an existing token for this DID to preserve the display_name if needed
+    let existing_row = if token_set.display_name.is_none() {
+        // Only fetch the existing display_name if the new token doesn't have one
+        sqlx::query!(
+            r#"
+            SELECT id, display_name FROM oauth_tokens 
+            WHERE did = $1 AND display_name IS NOT NULL
+            "#,
+            &token_set.did
+        )
+        .fetch_optional(&app_state.db)
+        .await?
+    } else {
+        None // We already have a display_name, no need to fetch
+    };
+
+    let existing_display_name = existing_row
+        .as_ref()
+        .and_then(|row| row.display_name.clone());
+    let display_name_to_use = token_set.display_name.clone().or(existing_display_name);
+
+    // Log whether we're preserving the display_name
+    if token_set.display_name.is_none() && display_name_to_use.is_some() {
+        tracing::info!(
+            "Preserving display_name {:?} for DID {} when updating token",
+            display_name_to_use,
+            token_set.did
+        );
+    }
+
+    // Encrypt sensitive token information
+    let encrypted_access_token =
+        encrypt(&token_set.access_token, &app_state.encryption.key).await?;
+    let encrypted_refresh_token = match &token_set.refresh_token {
+        Some(refresh_token) => Some(encrypt(refresh_token, &app_state.encryption.key).await?),
+        None => None,
+    };
+
+    // Use upsert (INSERT ... ON CONFLICT ... DO UPDATE) to insert or update the token
+    sqlx::query!(
+        r#"
+        INSERT INTO oauth_tokens (
+            did, access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id, display_name, handle
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        ON CONFLICT (did) DO UPDATE SET
+            access_token = EXCLUDED.access_token,
+            token_type = EXCLUDED.token_type,
+            expires_at = EXCLUDED.expires_at,
+            refresh_token = EXCLUDED.refresh_token,
+            scope = EXCLUDED.scope,
+            dpop_jkt = EXCLUDED.dpop_jkt,
+            user_id = EXCLUDED.user_id,
+            display_name = COALESCE(EXCLUDED.display_name, oauth_tokens.display_name),
+            handle = COALESCE(EXCLUDED.handle, oauth_tokens.handle),
+            updated_at_utc = NOW()
+        "#,
+        &token_set.did,
+        &encrypted_access_token,
+        &token_set.token_type,
+        token_set.expires_at as i64,
+        encrypted_refresh_token.as_deref(),
+        &token_set.scope,
+        token_set.dpop_jkt.as_deref(),
+        user_id,
+        display_name_to_use.as_deref(),
+        token_set.handle.as_deref()
+    )
+    .execute(&app_state.db)
+    .await?;
+
+    Ok(())
+}
+
+/// Retrieves the OAuth token for a DID, decrypting sensitive data
+pub async fn get_token(app_state: &AppState, did: &str) -> cja::Result<Option<OAuthTokenSet>> {
+    let row = sqlx::query!(
+        r#"
+        SELECT access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id, display_name, handle
+        FROM oauth_tokens
+        WHERE did = $1
+        "#,
+        did
+    )
+    .fetch_optional(&app_state.db)
+    .await?;
+
+    if let Some(row) = row {
+        // Decrypt access token and refresh token
+        let access_token = decrypt(&row.access_token, &app_state.encryption.key).await?;
+        let refresh_token = match row.refresh_token {
+            Some(ref encrypted_refresh_token) => {
+                Some(decrypt(encrypted_refresh_token, &app_state.encryption.key).await?)
+            }
+            None => None,
+        };
+
+        Ok(Some(OAuthTokenSet {
+            did: did.to_string(),
+            access_token,
+            token_type: row.token_type,
+            expires_at: row.expires_at as u64,
+            refresh_token,
+            scope: row.scope,
+            display_name: row.display_name,
+            handle: row.handle,
+            dpop_jkt: row.dpop_jkt,
+            user_id: Some(row.user_id),
+        }))
+    } else {
+        Ok(None)
+    }
+}
+
+/// Retrieves all tokens for a user, decrypting sensitive data
+pub async fn get_tokens_for_user(
+    app_state: &AppState,
+    user_id: uuid::Uuid,
+) -> cja::Result<Vec<OAuthTokenSet>> {
+    let encrypted_tokens = sqlx::query!(
+        r#"
+        SELECT did, access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id, display_name, handle
+        FROM oauth_tokens
+        WHERE user_id = $1
+        ORDER BY updated_at_utc DESC
+        "#,
+        user_id
+    )
+    .fetch_all(&app_state.db)
+    .await?;
+
+    let mut tokens = Vec::with_capacity(encrypted_tokens.len());
+
+    for row in encrypted_tokens {
+        // Decrypt access token and refresh token for each token
+        let access_token = decrypt(&row.access_token, &app_state.encryption.key).await?;
+        let refresh_token = match row.refresh_token {
+            Some(ref encrypted_refresh_token) => {
+                Some(decrypt(encrypted_refresh_token, &app_state.encryption.key).await?)
+            }
+            None => None,
+        };
+
+        tokens.push(OAuthTokenSet {
+            did: row.did,
+            access_token,
+            token_type: row.token_type,
+            expires_at: row.expires_at as u64,
+            refresh_token,
+            scope: row.scope,
+            display_name: row.display_name,
+            handle: row.handle,
+            dpop_jkt: row.dpop_jkt,
+            user_id: Some(row.user_id),
+        });
+    }
+
+    Ok(tokens)
+}
+
+/// Deletes a token for a DID
+pub async fn delete_token(pool: &PgPool, did: &str) -> cja::Result<()> {
+    sqlx::query!(
+        r#"
+        DELETE FROM oauth_tokens
+        WHERE did = $1
+        "#,
+        did
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+/// Updates the display name for a token
+pub async fn update_token_display_name(
+    pool: &PgPool,
+    did: &str,
+    display_name: &str,
+) -> cja::Result<()> {
+    sqlx::query!(
+        r#"
+        UPDATE oauth_tokens
+        SET display_name = $2, updated_at_utc = NOW()
+        WHERE did = $1
+        "#,
+        did,
+        display_name
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+/// Updates the handle for a token
+pub async fn update_token_handle(pool: &PgPool, did: &str, handle: &str) -> cja::Result<()> {
+    sqlx::query!(
+        r#"
+        UPDATE oauth_tokens
+        SET handle = $2, updated_at_utc = NOW()
+        WHERE did = $1
+        "#,
+        did,
+        handle
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+/// Gets the most recent DPoP nonce for a DID
+pub async fn get_latest_nonce(pool: &PgPool, did: &str) -> cja::Result<Option<String>> {
+    // Find the most recent session for this DID that has a nonce
+    let row = sqlx::query!(
+        r#"
+        SELECT data FROM oauth_sessions 
+        WHERE did = $1 
+        ORDER BY updated_at_utc DESC 
+        LIMIT 1
+        "#,
+        did
+    )
+    .fetch_optional(pool)
+    .await?;
+
+    if let Some(row) = row {
+        let data: serde_json::Value = row.data.unwrap_or(serde_json::Value::Null);
+        let nonce = data
+            .get("dpop_nonce")
+            .and_then(|v| v.as_str())
+            .map(String::from);
+
+        return Ok(nonce);
+    }
+
+    Ok(None)
+}
+
+/// Updates a session's DPoP nonce
+pub async fn update_session_nonce(pool: &PgPool, session_id: Uuid, nonce: &str) -> cja::Result<()> {
+    // First get the current session data
+    let row = sqlx::query!(
+        r#"
+        SELECT data FROM oauth_sessions WHERE session_id = $1
+        "#,
+        session_id
+    )
+    .fetch_optional(pool)
+    .await?;
+
+    if let Some(row) = row {
+        let mut data: serde_json::Value = row.data.unwrap_or(serde_json::Value::Null);
+
+        // Update the nonce in the data
+        if let Some(obj) = data.as_object_mut() {
+            obj.insert(
+                "dpop_nonce".to_string(),
+                serde_json::Value::String(nonce.to_string()),
+            );
+        }
+
+        // Update the session with the new data
+        sqlx::query!(
+            r#"
+            UPDATE oauth_sessions
+            SET data = $1, updated_at_utc = NOW()
+            WHERE session_id = $2
+            "#,
+            data,
+            session_id
+        )
+        .execute(pool)
+        .await?;
+    }
+
+    Ok(())
+}
+
+#[allow(dead_code)]
+pub async fn cleanup_expired_sessions(pool: &PgPool) -> cja::Result<u64> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    // Sessions expire after 1 hour
+    let expired_timestamp = now - 3600;
+
+    let result = sqlx::query!(
+        r#"
+        DELETE FROM oauth_sessions
+        WHERE created_at < $1
+        "#,
+        expired_timestamp as i64
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(result.rows_affected())
+}

@@ -163,14 +163,9 @@ impl Job<AppState> for UpdateProfileInfoJob {
         use color_eyre::eyre::eyre;
         use tracing::{debug, error, info};
 
-        // First, get the current token from the database
-        let token = match crate::oauth::db::get_token(&app_state.db, &self.did).await {
-            Ok(Some(token)) => token,
-            Ok(None) => {
-                // No token found for this DID, can't proceed
-                error!("No active token found for DID {} in job", self.did);
-                return Err(eyre!("No active token found for DID"));
-            }
+        // First, get the current token from the database with decryption
+        let token = match crate::oauth::get_valid_token_by_did(&self.did, &app_state).await {
+            Ok(token) => token,
             Err(err) => {
                 error!("Error retrieving token for DID {}: {:?}", self.did, err);
                 return Err(err);
