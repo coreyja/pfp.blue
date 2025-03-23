@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT token_endpoint FROM oauth_sessions\n        WHERE did = $1\n        ORDER BY updated_at_utc DESC\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "token_endpoint",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "3cce0120ae827b5ae10e2d8d97c98d4cb73dc5bab1f34836d1c9c8e288e857d5"
+}

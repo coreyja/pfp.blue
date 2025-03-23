@@ -1,5 +1,6 @@
 use base64ct::{Base64UrlUnpadded, Encoding};
-use color_eyre::eyre::eyre;
+use cja::jobs::Job;
+use color_eyre::eyre::{eyre, WrapErr};
 use jsonwebtoken::Algorithm;
 use p256::{ecdsa::VerifyingKey, pkcs8::DecodePublicKey, EncodedPoint, PublicKey};
 use serde::{Deserialize, Serialize};
@@ -25,13 +26,11 @@ pub struct Jwk {
 /// Generate a JWK from a base64-encoded public key
 pub fn generate_jwk(public_key_base64: &str) -> cja::Result<Jwk> {
     // Decode the base64-encoded public key
-    let decoded_key = match base64::Engine::decode(
+    let decoded_key = base64::Engine::decode(
         &base64::engine::general_purpose::STANDARD,
         public_key_base64,
-    ) {
-        Ok(key) => key,
-        Err(e) => return Err(eyre!("Failed to decode base64-encoded public key: {}", e)),
-    };
+    )
+    .wrap_err_with(|| "Failed to decode base64-encoded public key".to_string())?;
 
     // Log the first few bytes without revealing the whole key
     let key_preview = if decoded_key.len() > 30 {
@@ -43,16 +42,11 @@ pub fn generate_jwk(public_key_base64: &str) -> cja::Result<Jwk> {
 
     // Convert the decoded key bytes to a string for PEM parsing
     let key_str = std::str::from_utf8(&decoded_key)
-        .map_err(|e| eyre!("Failed to convert decoded public key to string: {}", e))?;
+        .wrap_err_with(|| "Failed to convert decoded public key to string")?;
 
     // Parse the public key from PEM format
-    let verifying_key = VerifyingKey::from_public_key_pem(key_str).map_err(|e| {
-        eyre!(
-            "Failed to parse public key: {}. Key preview: {}",
-            e,
-            key_preview
-        )
-    })?;
+    let verifying_key = VerifyingKey::from_public_key_pem(key_str)
+        .wrap_err_with(|| format!("Failed to parse public key. Key preview: {}", key_preview))?;
 
     // Get the public key as an EncodedPoint
     let public_key = PublicKey::from(verifying_key);
@@ -61,10 +55,12 @@ pub fn generate_jwk(public_key_base64: &str) -> cja::Result<Jwk> {
     // Extract x and y coordinates
     let x_bytes = encoded_point
         .x()
-        .ok_or_else(|| eyre!("Failed to extract x coordinate"))?;
+        .ok_or_else(|| eyre!("Failed to extract x coordinate"))
+        .wrap_err("Missing x coordinate in public key")?;
     let y_bytes = encoded_point
         .y()
-        .ok_or_else(|| eyre!("Failed to extract y coordinate"))?;
+        .ok_or_else(|| eyre!("Failed to extract y coordinate"))
+        .wrap_err("Missing y coordinate in public key")?;
 
     // Base64-URL encode the coordinates
     let x = Base64UrlUnpadded::encode_string(x_bytes);
@@ -113,8 +109,8 @@ pub fn calculate_jwk_thumbprint(public_key_base64: &str) -> cja::Result<String> 
     });
 
     // Convert to a compact JSON string without whitespace
-    let canonical_json = serde_json::to_string(&canonical_jwk)
-        .map_err(|e| eyre!("Failed to serialize canonical JWK: {}", e))?;
+    let canonical_json =
+        serde_json::to_string(&canonical_jwk).wrap_err("Failed to serialize canonical JWK")?;
 
     // Calculate SHA-256 hash
     use ring::digest::{digest, SHA256};
@@ -178,7 +174,7 @@ pub fn create_client_assertion(
 
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_err(|e| eyre!("Failed to get current time: {}", e))?
+        .wrap_err("Failed to get current time")?
         .as_secs();
 
     // Get the JWK for header
@@ -202,35 +198,32 @@ pub fn create_client_assertion(
     };
 
     // Create a temporary file for the ES256 private key
-    let mut key_file = NamedTempFile::new()
-        .map_err(|e| eyre!("Failed to create temporary file for private key: {}", e))?;
+    let mut key_file =
+        NamedTempFile::new().wrap_err("Failed to create temporary file for private key")?;
 
     // Decode base64-encoded private key
-    let decoded_key = match base64::Engine::decode(
+    let decoded_key = base64::Engine::decode(
         &base64::engine::general_purpose::STANDARD,
         &oauth_config.private_key,
-    ) {
-        Ok(key) => key,
-        Err(e) => return Err(eyre!("Failed to decode base64-encoded private key: {}", e)),
-    };
+    )
+    .wrap_err("Failed to decode base64-encoded private key")?;
 
     // Write the decoded PEM-encoded private key to the file
     key_file
         .write_all(&decoded_key)
-        .map_err(|e| eyre!("Failed to write private key to temporary file: {}", e))?;
+        .wrap_err("Failed to write private key to temporary file")?;
 
     // Create a temporary file for the payload
-    let mut payload_file = NamedTempFile::new()
-        .map_err(|e| eyre!("Failed to create temporary file for payload: {}", e))?;
+    let mut payload_file =
+        NamedTempFile::new().wrap_err("Failed to create temporary file for payload")?;
 
     // Create payload JSON
-    let payload_json =
-        serde_json::to_string(&payload).map_err(|e| eyre!("Failed to serialize payload: {}", e))?;
+    let payload_json = serde_json::to_string(&payload).wrap_err("Failed to serialize payload")?;
 
     // Write payload to file
     payload_file
         .write_all(payload_json.as_bytes())
-        .map_err(|e| eyre!("Failed to write payload to temporary file: {}", e))?;
+        .wrap_err("Failed to write payload to temporary file")?;
 
     // Create header JSON with proper format for OpenSSL
     // Ensure we're using the exact format expected by Bluesky
@@ -260,11 +253,11 @@ pub fn create_client_assertion(
     let message = format!("{}.{}", header_b64, payload_b64);
 
     // 4. Create a temporary file for the message
-    let mut message_file = NamedTempFile::new()
-        .map_err(|e| eyre!("Failed to create temporary file for message: {}", e))?;
+    let mut message_file =
+        NamedTempFile::new().wrap_err("Failed to create temporary file for message")?;
     message_file
         .write_all(message.as_bytes())
-        .map_err(|e| eyre!("Failed to write message to temporary file: {}", e))?;
+        .wrap_err("Failed to write message to temporary file")?;
 
     // 5. Use OpenSSL to create the signature, but with specific parameters for ES256
     // For ES256, the signature format is different than just the raw digest output
@@ -277,7 +270,7 @@ pub fn create_client_assertion(
         .arg("-binary")
         .arg(message_file.path())
         .output()
-        .map_err(|e| eyre!("Failed to execute OpenSSL for signing: {}", e))?;
+        .wrap_err("Failed to execute OpenSSL for signing")?;
 
     if !output.status.success() {
         let error = String::from_utf8_lossy(&output.stderr);
@@ -322,10 +315,7 @@ fn der_signature_to_raw_signature(der_signature: &[u8]) -> cja::Result<Vec<u8>> 
     use color_eyre::eyre::eyre;
 
     // Parse the DER-encoded signature
-    let blocks = match from_der(der_signature) {
-        Ok(blocks) => blocks,
-        Err(e) => return Err(eyre!("Failed to parse DER signature: {}", e)),
-    };
+    let blocks = from_der(der_signature).wrap_err("Failed to parse DER signature")?;
 
     // The DER signature should be a SEQUENCE with two INTEGERs (r and s)
     if blocks.len() != 1 {
@@ -424,7 +414,9 @@ pub struct OAuthTokenSet {
     pub scope: String,
     /// The Bluesky DID this token is associated with
     pub did: String,
-    /// The Bluesky handle (username) associated with this DID
+    /// The Bluesky display name associated with this DID
+    pub display_name: Option<String>,
+    /// The Bluesky handle (username with domain) associated with this DID
     pub handle: Option<String>,
     /// DPoP confirmation key (JWK thumbprint)
     pub dpop_jkt: Option<String>,
@@ -447,19 +439,19 @@ impl OAuthTokenSet {
             refresh_token: response.refresh_token,
             scope: response.scope,
             did,
-            handle: None, // Will be updated later when we fetch profile data
+            display_name: None, // Will be updated later when we fetch profile data
+            handle: None,       // Will be updated later when we fetch profile data
             dpop_jkt: response.dpop_confirmation.map(|cnf| cnf.jkt),
             user_id: None,
         }
     }
 
-    pub fn with_user_id(mut self, user_id: uuid::Uuid) -> Self {
-        self.user_id = Some(user_id);
-        self
-    }
+    // Function removed - not used in codebase
 
-    /// Copy the handle from another token
-    pub fn with_handle_from(mut self, other: &OAuthTokenSet) -> Self {
+    /// Copy the display name and handle from another token
+    #[allow(dead_code)]
+    pub fn with_display_name_from(mut self, other: &OAuthTokenSet) -> Self {
+        self.display_name = other.display_name.clone();
         self.handle = other.handle.clone();
         self
     }
@@ -1073,7 +1065,7 @@ impl OAuthSession {
 /// Database functions for managing OAuth sessions and tokens
 pub mod db {
     use super::*;
-    use sqlx::{PgPool, Row};
+    use sqlx::PgPool;
     use uuid::Uuid;
 
     /// Stores a new OAuth session in the database
@@ -1087,19 +1079,19 @@ pub mod db {
             "dpop_nonce": session.dpop_nonce
         });
 
-        sqlx::query(
+        sqlx::query!(
             r#"
             INSERT INTO oauth_sessions (
                 id, session_id, did, state, token_endpoint, created_at, data
             ) VALUES (DEFAULT, $1, $2, $3, $4, $5, $6)
             "#,
+            session_id,
+            &session.did,
+            session.state.as_deref(),
+            &session.token_endpoint,
+            session.created_at as i64,
+            data
         )
-        .bind(session_id)
-        .bind(&session.did)
-        .bind(&session.state)
-        .bind(&session.token_endpoint)
-        .bind(session.created_at as i64)
-        .bind(data)
         .execute(pool)
         .await?;
 
@@ -1108,20 +1100,20 @@ pub mod db {
 
     /// Retrieves an OAuth session by session ID
     pub async fn get_session(pool: &PgPool, session_id: Uuid) -> cja::Result<Option<OAuthSession>> {
-        let row = sqlx::query(
+        let row = sqlx::query!(
             r#"
             SELECT did, state, token_endpoint, created_at, data
             FROM oauth_sessions
             WHERE session_id = $1
             "#,
+            session_id
         )
-        .bind(session_id)
         .fetch_optional(pool)
         .await?;
 
         Ok(row.map(|row| {
             // Extract PKCE data from the JSONB field
-            let data: Option<serde_json::Value> = row.get("data");
+            let data: Option<serde_json::Value> = row.data;
             let code_verifier = data
                 .as_ref()
                 .and_then(|d| d.get("code_verifier"))
@@ -1141,10 +1133,10 @@ pub mod db {
                 .map(String::from);
 
             OAuthSession {
-                did: row.get("did"),
-                state: row.get("state"),
-                token_endpoint: row.get("token_endpoint"),
-                created_at: row.get::<i64, _>("created_at") as u64,
+                did: row.did,
+                state: row.state,
+                token_endpoint: row.token_endpoint,
+                created_at: row.created_at as u64,
                 token_set: None, // Token set is retrieved separately
                 code_verifier,
                 code_challenge,
@@ -1172,42 +1164,42 @@ pub mod db {
             }
         };
 
-        // Check if there's an existing token for this DID to preserve the handle if needed
-        let existing_row = if token_set.handle.is_none() {
-            // Only fetch the existing handle if the new token doesn't have one
-            sqlx::query(
+        // Check if there's an existing token for this DID to preserve the display_name if needed
+        let existing_row = if token_set.display_name.is_none() {
+            // Only fetch the existing display_name if the new token doesn't have one
+            sqlx::query!(
                 r#"
-                SELECT id, handle FROM oauth_tokens 
-                WHERE did = $1 AND handle IS NOT NULL
+                SELECT id, display_name FROM oauth_tokens 
+                WHERE did = $1 AND display_name IS NOT NULL
                 "#,
+                &token_set.did
             )
-            .bind(&token_set.did)
             .fetch_optional(pool)
             .await?
         } else {
-            None // We already have a handle, no need to fetch
+            None // We already have a display_name, no need to fetch
         };
 
-        let existing_handle = existing_row
+        let existing_display_name = existing_row
             .as_ref()
-            .and_then(|row| row.get::<Option<String>, _>("handle"));
-        let handle_to_use = token_set.handle.clone().or(existing_handle);
+            .and_then(|row| row.display_name.clone());
+        let display_name_to_use = token_set.display_name.clone().or(existing_display_name);
 
-        // Log whether we're preserving the handle
-        if token_set.handle.is_none() && handle_to_use.is_some() {
+        // Log whether we're preserving the display_name
+        if token_set.display_name.is_none() && display_name_to_use.is_some() {
             tracing::info!(
-                "Preserving handle {:?} for DID {} when updating token",
-                handle_to_use,
+                "Preserving display_name {:?} for DID {} when updating token",
+                display_name_to_use,
                 token_set.did
             );
         }
 
         // Use upsert (INSERT ... ON CONFLICT ... DO UPDATE) to insert or update the token
-        sqlx::query(
+        sqlx::query!(
             r#"
             INSERT INTO oauth_tokens (
-                did, access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id, handle
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                did, access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id, display_name, handle
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             ON CONFLICT (did) DO UPDATE SET
                 access_token = EXCLUDED.access_token,
                 token_type = EXCLUDED.token_type,
@@ -1216,19 +1208,21 @@ pub mod db {
                 scope = EXCLUDED.scope,
                 dpop_jkt = EXCLUDED.dpop_jkt,
                 user_id = EXCLUDED.user_id,
+                display_name = COALESCE(EXCLUDED.display_name, oauth_tokens.display_name),
                 handle = COALESCE(EXCLUDED.handle, oauth_tokens.handle),
                 updated_at_utc = NOW()
             "#,
+            &token_set.did,
+            &token_set.access_token,
+            &token_set.token_type,
+            token_set.expires_at as i64,
+            token_set.refresh_token.as_deref(),
+            &token_set.scope,
+            token_set.dpop_jkt.as_deref(),
+            user_id,
+            display_name_to_use.as_deref(),
+            token_set.handle.as_deref()
         )
-        .bind(&token_set.did)
-        .bind(&token_set.access_token)
-        .bind(&token_set.token_type)
-        .bind(token_set.expires_at as i64)
-        .bind(&token_set.refresh_token)
-        .bind(&token_set.scope)
-        .bind(&token_set.dpop_jkt)
-        .bind(user_id)
-        .bind(&handle_to_use)
         .execute(pool)
         .await?;
 
@@ -1237,27 +1231,28 @@ pub mod db {
 
     /// Retrieves the OAuth token for a DID
     pub async fn get_token(pool: &PgPool, did: &str) -> cja::Result<Option<OAuthTokenSet>> {
-        let row = sqlx::query(
+        let row = sqlx::query!(
             r#"
-            SELECT access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id, handle
+            SELECT access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id, display_name, handle
             FROM oauth_tokens
             WHERE did = $1
             "#,
+            did
         )
-        .bind(did)
         .fetch_optional(pool)
         .await?;
 
         Ok(row.map(|row| OAuthTokenSet {
             did: did.to_string(),
-            access_token: row.get("access_token"),
-            token_type: row.get("token_type"),
-            expires_at: row.get::<i64, _>("expires_at") as u64,
-            refresh_token: row.get("refresh_token"),
-            scope: row.get("scope"),
-            handle: row.get("handle"),
-            dpop_jkt: row.get("dpop_jkt"),
-            user_id: row.get("user_id"),
+            access_token: row.access_token,
+            token_type: row.token_type,
+            expires_at: row.expires_at as u64,
+            refresh_token: row.refresh_token,
+            scope: row.scope,
+            display_name: row.display_name,
+            handle: row.handle,
+            dpop_jkt: row.dpop_jkt,
+            user_id: Some(row.user_id),
         }))
     }
 
@@ -1266,45 +1261,65 @@ pub mod db {
         pool: &PgPool,
         user_id: uuid::Uuid,
     ) -> cja::Result<Vec<OAuthTokenSet>> {
-        let rows = sqlx::query(
+        let tokens = sqlx::query!(
             r#"
-            SELECT did, access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id, handle
+            SELECT did, access_token, token_type, expires_at, refresh_token, scope, dpop_jkt, user_id, display_name, handle
             FROM oauth_tokens
             WHERE user_id = $1
             ORDER BY updated_at_utc DESC
             "#,
+            user_id
         )
-        .bind(user_id)
         .fetch_all(pool)
-        .await?;
-
-        let tokens = rows
-            .into_iter()
-            .map(|row| OAuthTokenSet {
-                did: row.get("did"),
-                access_token: row.get("access_token"),
-                token_type: row.get("token_type"),
-                expires_at: row.get::<i64, _>("expires_at") as u64,
-                refresh_token: row.get("refresh_token"),
-                scope: row.get("scope"),
-                handle: row.get("handle"),
-                dpop_jkt: row.get("dpop_jkt"),
-                user_id: row.get("user_id"),
-            })
-            .collect();
+        .await?
+        .into_iter()
+        .map(|row| OAuthTokenSet {
+            did: row.did,
+            access_token: row.access_token,
+            token_type: row.token_type,
+            expires_at: row.expires_at as u64,
+            refresh_token: row.refresh_token,
+            scope: row.scope,
+            display_name: row.display_name,
+            handle: row.handle,
+            dpop_jkt: row.dpop_jkt,
+            user_id: Some(row.user_id),
+        })
+        .collect();
 
         Ok(tokens)
     }
 
     /// Deletes a token for a DID
     pub async fn delete_token(pool: &PgPool, did: &str) -> cja::Result<()> {
-        sqlx::query(
+        sqlx::query!(
             r#"
             DELETE FROM oauth_tokens
             WHERE did = $1
             "#,
+            did
         )
-        .bind(did)
+        .execute(pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Updates the display name for a token
+    pub async fn update_token_display_name(
+        pool: &PgPool,
+        did: &str,
+        display_name: &str,
+    ) -> cja::Result<()> {
+        sqlx::query!(
+            r#"
+            UPDATE oauth_tokens
+            SET display_name = $2, updated_at_utc = NOW()
+            WHERE did = $1
+            "#,
+            did,
+            display_name
+        )
         .execute(pool)
         .await?;
 
@@ -1313,15 +1328,15 @@ pub mod db {
 
     /// Updates the handle for a token
     pub async fn update_token_handle(pool: &PgPool, did: &str, handle: &str) -> cja::Result<()> {
-        sqlx::query(
+        sqlx::query!(
             r#"
             UPDATE oauth_tokens
             SET handle = $2, updated_at_utc = NOW()
             WHERE did = $1
             "#,
+            did,
+            handle
         )
-        .bind(did)
-        .bind(handle)
         .execute(pool)
         .await?;
 
@@ -1331,20 +1346,20 @@ pub mod db {
     /// Gets the most recent DPoP nonce for a DID
     pub async fn get_latest_nonce(pool: &PgPool, did: &str) -> cja::Result<Option<String>> {
         // Find the most recent session for this DID that has a nonce
-        let row = sqlx::query(
+        let row = sqlx::query!(
             r#"
             SELECT data FROM oauth_sessions 
             WHERE did = $1 
             ORDER BY updated_at_utc DESC 
             LIMIT 1
             "#,
+            did
         )
-        .bind(did)
         .fetch_optional(pool)
         .await?;
 
         if let Some(row) = row {
-            let data: serde_json::Value = row.get("data");
+            let data: serde_json::Value = row.data.unwrap_or(serde_json::Value::Null);
             let nonce = data
                 .get("dpop_nonce")
                 .and_then(|v| v.as_str())
@@ -1363,17 +1378,17 @@ pub mod db {
         nonce: &str,
     ) -> cja::Result<()> {
         // First get the current session data
-        let row = sqlx::query(
+        let row = sqlx::query!(
             r#"
             SELECT data FROM oauth_sessions WHERE session_id = $1
             "#,
+            session_id
         )
-        .bind(session_id)
         .fetch_optional(pool)
         .await?;
 
         if let Some(row) = row {
-            let mut data: serde_json::Value = row.get("data");
+            let mut data: serde_json::Value = row.data.unwrap_or(serde_json::Value::Null);
 
             // Update the nonce in the data
             if let Some(obj) = data.as_object_mut() {
@@ -1384,15 +1399,15 @@ pub mod db {
             }
 
             // Update the session with the new data
-            sqlx::query(
+            sqlx::query!(
                 r#"
                 UPDATE oauth_sessions
                 SET data = $1, updated_at_utc = NOW()
                 WHERE session_id = $2
                 "#,
+                data,
+                session_id
             )
-            .bind(data)
-            .bind(session_id)
             .execute(pool)
             .await?;
         }
@@ -1410,16 +1425,209 @@ pub mod db {
         // Sessions expire after 1 hour
         let expired_timestamp = now - 3600;
 
-        let result = sqlx::query(
+        let result = sqlx::query!(
             r#"
             DELETE FROM oauth_sessions
             WHERE created_at < $1
             "#,
+            expired_timestamp as i64
         )
-        .bind(expired_timestamp as i64)
         .execute(pool)
         .await?;
 
         Ok(result.rows_affected())
+    }
+}
+
+/// Resolve the token endpoint for a DID
+pub async fn resolve_token_endpoint_for_did(
+    did: &str,
+    state: &crate::state::AppState,
+) -> cja::Result<String> {
+    use tracing::info;
+
+    // First try to get the endpoint from the database
+    match crate::routes::bsky::get_token_endpoint_for_did(&state.db, did).await? {
+        Some(endpoint) => Ok(endpoint),
+        None => {
+            // Resolve the PDS endpoint for the token
+            let xrpc_client = std::sync::Arc::new(atrium_xrpc_client::reqwest::ReqwestClient::new(
+                "https://bsky.social",
+            ));
+
+            match atrium_api::types::string::Did::new(did.to_string()) {
+                Ok(did_obj) => {
+                    match crate::did::resolve_did_to_document(&did_obj, xrpc_client).await {
+                        Ok(did_document) => {
+                            if let Some(services) = did_document.service.as_ref() {
+                                if let Some(pds_service) =
+                                    services.iter().find(|s| s.id == "#atproto_pds")
+                                {
+                                    let pds_endpoint = &pds_service.service_endpoint;
+                                    let refresh_endpoint = format!(
+                                        "{}/xrpc/com.atproto.server.refreshSession",
+                                        pds_endpoint
+                                    );
+                                    info!(
+                                        "Resolved PDS endpoint for refresh: {}",
+                                        refresh_endpoint
+                                    );
+                                    Ok(refresh_endpoint)
+                                } else {
+                                    // Fallback to bsky.social if no PDS service found
+                                    Ok("https://bsky.social/xrpc/com.atproto.server.refreshSession"
+                                        .to_string())
+                                }
+                            } else {
+                                // Fallback to bsky.social if no services found
+                                Ok("https://bsky.social/xrpc/com.atproto.server.refreshSession"
+                                    .to_string())
+                            }
+                        }
+                        Err(_) => {
+                            // Fallback to bsky.social on resolution error
+                            Ok("https://bsky.social/xrpc/com.atproto.server.refreshSession"
+                                .to_string())
+                        }
+                    }
+                }
+                Err(_) => {
+                    // Fallback to bsky.social on DID parse error
+                    Ok("https://bsky.social/xrpc/com.atproto.server.refreshSession".to_string())
+                }
+            }
+        }
+    }
+}
+
+/// Attempt to refresh a token if it's expired
+pub async fn refresh_token_if_needed(
+    token: &OAuthTokenSet,
+    state: &crate::state::AppState,
+    token_endpoint: &str,
+) -> cja::Result<Option<OAuthTokenSet>> {
+    use color_eyre::eyre::eyre;
+    use tracing::{error, info};
+
+    // Only refresh if token is expired and we have a refresh token
+    if !token.is_expired() || token.refresh_token.is_none() {
+        return Ok(None);
+    }
+
+    let refresh_token_str = token.refresh_token.as_ref().unwrap();
+    let client_id = state.client_id();
+
+    // Try to get the latest DPoP nonce
+    let dpop_nonce = match db::get_latest_nonce(&state.db, &token.did).await {
+        Ok(nonce) => nonce,
+        Err(err) => {
+            error!("Failed to get DPoP nonce: {:?}", err);
+            None
+        }
+    };
+
+    // Request a new token
+    match refresh_token(
+        &state.bsky_oauth,
+        token_endpoint,
+        &client_id,
+        refresh_token_str,
+        dpop_nonce.as_deref(),
+    )
+    .await
+    {
+        Ok(token_response) => {
+            // Create a new token set preserving the user ID and display name
+            let new_token = match OAuthTokenSet::from_token_response_with_jwk(
+                &token_response,
+                token.did.clone(),
+                &state.bsky_oauth.public_key,
+            ) {
+                Ok(new_token) => {
+                    // Set user ID, display name, and handle from original token
+                    let mut token_with_id = new_token.clone();
+                    token_with_id.user_id = token.user_id;
+                    token_with_id.display_name = token.display_name.clone();
+                    token_with_id.handle = token.handle.clone();
+                    token_with_id
+                }
+                Err(err) => {
+                    error!("Failed to create token set with JWK: {:?}", err);
+                    // Fallback to standard token creation
+                    let mut standard_token =
+                        OAuthTokenSet::from_token_response(token_response, token.did.clone());
+                    standard_token.user_id = token.user_id;
+                    standard_token.display_name = token.display_name.clone();
+                    standard_token.handle = token.handle.clone();
+                    standard_token
+                }
+            };
+
+            // Store the new token
+            if let Err(err) = db::store_token(&state.db, &new_token).await {
+                error!("Failed to store refreshed token: {:?}", err);
+                return Err(eyre!("Failed to store refreshed token: {:?}", err));
+            }
+
+            // Also fetch profile to update display name if needed
+            if let Err(err) = crate::jobs::UpdateProfileInfoJob::from_token(&new_token)
+                .enqueue(state.clone(), "token_refresh".to_string())
+                .await
+            {
+                error!(
+                    "Failed to enqueue display name update job after token refresh: {:?}",
+                    err
+                );
+            } else {
+                info!(
+                    "Queued display name update job after token refresh for {}",
+                    new_token.did
+                );
+            }
+
+            Ok(Some(new_token))
+        }
+        Err(err) => {
+            error!("Failed to refresh token: {:?}", err);
+            Err(eyre!("Failed to refresh token: {:?}", err))
+        }
+    }
+}
+
+/// Get a token by DID and refresh it if needed
+/// This provides a single entry point for getting a valid token
+pub async fn get_valid_token_by_did(
+    did: &str,
+    state: &crate::state::AppState,
+) -> cja::Result<OAuthTokenSet> {
+    use color_eyre::eyre::eyre;
+    use tracing::{error, info};
+
+    // Get the token from the database
+    let token = match db::get_token(&state.db, did).await? {
+        Some(token) => token,
+        None => return Err(eyre!("No token found for DID: {}", did)),
+    };
+
+    // If token is not expired, just return it
+    if !token.is_expired() {
+        return Ok(token);
+    }
+
+    // If token is expired, try to refresh it
+    // First resolve the token endpoint
+    let token_endpoint = resolve_token_endpoint_for_did(did, state).await?;
+
+    // Then try to refresh
+    match refresh_token_if_needed(&token, state, &token_endpoint).await? {
+        Some(refreshed_token) => {
+            info!("Token for DID {} was refreshed", did);
+            Ok(refreshed_token)
+        }
+        None => {
+            // This shouldn't happen since we already checked the token is expired
+            error!("Token wasn't refreshed despite being expired");
+            Ok(token) // Return the original token as a fallback
+        }
     }
 }

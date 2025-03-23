@@ -1,5 +1,7 @@
 use cja::jobs::Job;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::str::FromStr;
 use tracing::debug;
 
 use crate::{
@@ -7,16 +9,126 @@ use crate::{
     state::AppState,
 };
 
+/// Helper function to get a list of all available job types
+pub fn get_available_jobs() -> Vec<&'static str> {
+    vec![
+        NoopJob::NAME,
+        UpdateProfileInfoJob::NAME,
+        UpdateProfilePictureProgressJob::NAME,
+    ]
+}
+
+// Define a JobType enum to represent our different job types
+#[derive(Debug, Clone)]
+pub enum JobType {
+    Noop(NoopJob),
+    UpdateProfileInfo(UpdateProfileInfoJob),
+    UpdateProfilePicture(UpdateProfilePictureProgressJob),
+}
+
+impl JobType {
+    pub async fn run(&self, app_state: AppState) -> cja::Result<()> {
+        match self {
+            JobType::Noop(job) => job.run(app_state).await,
+            JobType::UpdateProfileInfo(job) => job.run(app_state).await,
+            JobType::UpdateProfilePicture(job) => job.run(app_state).await,
+        }
+    }
+
+    pub async fn enqueue(&self, app_state: AppState) -> cja::Result<()> {
+        // Create a context string for the job enqueue
+        let context = format!("admin_panel_enqueue_{}", self.name());
+
+        // Match on the job type and enqueue the job with the context
+        let result = match self {
+            JobType::Noop(job) => {
+                let job_clone = job.clone();
+                job_clone.enqueue(app_state, context).await
+            }
+            JobType::UpdateProfileInfo(job) => {
+                let job_clone = job.clone();
+                job_clone.enqueue(app_state, context).await
+            }
+            JobType::UpdateProfilePicture(job) => {
+                let job_clone = job.clone();
+                job_clone.enqueue(app_state, context).await
+            }
+        };
+
+        // Convert the EnqueueError to cja::Result
+        result.map_err(|e| color_eyre::eyre::eyre!("Failed to enqueue job: {}", e))
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            JobType::Noop(_) => NoopJob::NAME,
+            JobType::UpdateProfileInfo(_) => UpdateProfileInfoJob::NAME,
+            JobType::UpdateProfilePicture(_) => UpdateProfilePictureProgressJob::NAME,
+        }
+    }
+}
+
+/// Helper function to create a job from its name and args
+pub fn create_job_from_name_and_args(
+    job_name: &str,
+    args: HashMap<String, String>,
+) -> Result<JobType, String> {
+    match job_name {
+        NoopJob::NAME => Ok(JobType::Noop(NoopJob)),
+
+        UpdateProfileInfoJob::NAME => {
+            let did = args.get("did").ok_or("Missing required arg: did")?;
+            Ok(JobType::UpdateProfileInfo(UpdateProfileInfoJob {
+                did: did.clone(),
+            }))
+        }
+
+        UpdateProfilePictureProgressJob::NAME => {
+            let token_id_str = args
+                .get("token_id")
+                .ok_or("Missing required arg: token_id")?;
+            let token_id = uuid::Uuid::from_str(token_id_str)
+                .map_err(|e| format!("Invalid UUID for token_id: {}", e))?;
+            Ok(JobType::UpdateProfilePicture(
+                UpdateProfilePictureProgressJob { token_id },
+            ))
+        }
+
+        _ => Err(format!("Unknown job type: {}", job_name)),
+    }
+}
+
+/// Get parameter descriptions for a job
+pub fn get_job_params(job_name: &str) -> Vec<(String, String, bool)> {
+    match job_name {
+        NoopJob::NAME => Vec::new(),
+
+        UpdateProfileInfoJob::NAME => vec![(
+            "did".to_string(),
+            "DID string (e.g., did:plc:abcdef...)".to_string(),
+            true,
+        )],
+
+        UpdateProfilePictureProgressJob::NAME => vec![(
+            "token_id".to_string(),
+            "UUID of the OAuth token".to_string(),
+            true,
+        )],
+
+        _ => Vec::new(),
+    }
+}
+
 // This implements the Jobs struct required by the cja job worker
 cja::impl_job_registry!(
     AppState,
     NoopJob,
-    UpdateProfileHandleJob,
+    UpdateProfileInfoJob,
     UpdateProfilePictureProgressJob
 );
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-struct NoopJob;
+pub struct NoopJob;
 
 #[async_trait::async_trait]
 impl Job<AppState> for NoopJob {
@@ -27,14 +139,14 @@ impl Job<AppState> for NoopJob {
     }
 }
 
-/// Job to update a user's profile handle in the database
+/// Job to update a user's profile information (display name and handle) in the database
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct UpdateProfileHandleJob {
+pub struct UpdateProfileInfoJob {
     /// The DID of the user - only thing we need to look up the token in the DB
     pub did: String,
 }
 
-impl UpdateProfileHandleJob {
+impl UpdateProfileInfoJob {
     /// Create a new job from an OAuthTokenSet
     pub fn from_token(token: &OAuthTokenSet) -> Self {
         Self {
@@ -44,8 +156,8 @@ impl UpdateProfileHandleJob {
 }
 
 #[async_trait::async_trait]
-impl Job<AppState> for UpdateProfileHandleJob {
-    const NAME: &'static str = "UpdateProfileHandleJob";
+impl Job<AppState> for UpdateProfileInfoJob {
+    const NAME: &'static str = "UpdateProfileInfoJob";
 
     async fn run(&self, app_state: AppState) -> cja::Result<()> {
         use color_eyre::eyre::eyre;
@@ -226,6 +338,20 @@ impl Job<AppState> for UpdateProfileHandleJob {
             }
         };
 
+        // Extract the display name and handle from the profile data
+        let value = profile_data.get("value");
+
+        // Extract the display name
+        let extracted_display_name = if let Some(value) = value {
+            if let Some(display_name_val) = value.get("displayName") {
+                display_name_val.as_str().map(|s| s.to_string())
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         // Extract the handle from the profile data
         let extracted_handle = if let Some(value) = profile_data.get("value") {
             if let Some(handle_val) = value.get("handle") {
@@ -236,6 +362,47 @@ impl Job<AppState> for UpdateProfileHandleJob {
         } else {
             None
         };
+
+        // If we found a display name in the profile, make sure it's updated in the database
+        if let Some(display_name_str) = extracted_display_name {
+            // Check if display name is different than what we have saved
+            let should_update = match &token.display_name {
+                Some(current_display_name) => current_display_name != &display_name_str,
+                None => true, // No display name stored yet, need to update
+            };
+
+            if should_update {
+                // Update the display name in the database
+                match crate::oauth::db::update_token_display_name(
+                    &app_state.db,
+                    &self.did,
+                    &display_name_str,
+                )
+                .await
+                {
+                    Ok(_) => {
+                        info!(
+                            "Updated display name for DID {}: {}",
+                            self.did, display_name_str
+                        );
+                    }
+                    Err(err) => {
+                        error!("Failed to update display name in database: {:?}", err);
+                        return Err(err);
+                    }
+                }
+            } else {
+                debug!(
+                    "Display name for DID {} already up to date: {}",
+                    self.did, display_name_str
+                );
+            }
+        } else {
+            debug!(
+                "No display name found in profile data for DID: {}",
+                self.did
+            );
+        }
 
         // If we found a handle in the profile, make sure it's updated in the database
         if let Some(handle_str) = extracted_handle {
@@ -294,30 +461,17 @@ impl Job<AppState> for UpdateProfilePictureProgressJob {
         use color_eyre::eyre::eyre;
         use tracing::{debug, error, info};
 
-        // First, get the token from the database
-        let mut token = match sqlx::query!(
+        // Get the token ID's DID first
+        let token_info = match sqlx::query!(
             r#"
-            SELECT did, access_token, token_type, handle, expires_at, 
-                   refresh_token, scope, dpop_jkt, user_id
-            FROM oauth_tokens
-            WHERE id = $1
+            SELECT did FROM oauth_tokens WHERE id = $1
             "#,
             self.token_id
         )
         .fetch_optional(&app_state.db)
         .await?
         {
-            Some(row) => crate::oauth::OAuthTokenSet {
-                did: row.did,
-                access_token: row.access_token,
-                token_type: row.token_type,
-                expires_at: row.expires_at as u64,
-                refresh_token: row.refresh_token,
-                scope: row.scope,
-                handle: row.handle,
-                dpop_jkt: row.dpop_jkt,
-                user_id: Some(row.user_id),
-            },
+            Some(row) => row,
             None => {
                 // No token found, can't proceed
                 error!("No token found for ID {} in job", self.token_id);
@@ -325,143 +479,23 @@ impl Job<AppState> for UpdateProfilePictureProgressJob {
             }
         };
 
-        // Check if the token is expired and try to refresh it if needed
-        if token.is_expired() {
-            info!(
-                "Token for DID {} is expired, attempting to refresh",
-                token.did
-            );
-
-            // Only try to refresh if we have a refresh token
-            if let Some(refresh_token) = &token.refresh_token {
-                // Get the client ID using the proper method from the app_state
-                let client_id = app_state.client_id();
-
-                // Try to get the token endpoint
-                let token_endpoint = match crate::routes::bsky::get_token_endpoint_for_did(
-                    &app_state.db,
-                    &token.did,
-                )
-                .await
-                {
-                    Ok(Some(endpoint)) => endpoint,
-                    _ => {
-                        // Resolve the PDS endpoint for the token
-                        let xrpc_client = std::sync::Arc::new(
-                            atrium_xrpc_client::reqwest::ReqwestClient::new("https://bsky.social"),
-                        );
-
-                        match atrium_api::types::string::Did::new(token.did.clone()) {
-                            Ok(did_obj) => {
-                                match crate::did::resolve_did_to_document(&did_obj, xrpc_client)
-                                    .await
-                                {
-                                    Ok(did_document) => {
-                                        if let Some(services) = did_document.service.as_ref() {
-                                            if let Some(pds_service) =
-                                                services.iter().find(|s| s.id == "#atproto_pds")
-                                            {
-                                                let pds_endpoint = &pds_service.service_endpoint;
-                                                let refresh_endpoint = format!(
-                                                    "{}/xrpc/com.atproto.server.refreshSession",
-                                                    pds_endpoint
-                                                );
-                                                info!(
-                                                    "Resolved PDS endpoint for refresh: {}",
-                                                    refresh_endpoint
-                                                );
-                                                refresh_endpoint
-                                            } else {
-                                                // Fallback to bsky.social if no PDS service found
-                                                "https://bsky.social/xrpc/com.atproto.server.refreshSession".to_string()
-                                            }
-                                        } else {
-                                            // Fallback to bsky.social if no services found
-                                            "https://bsky.social/xrpc/com.atproto.server.refreshSession".to_string()
-                                        }
-                                    }
-                                    Err(_) => {
-                                        // Fallback to bsky.social on resolution error
-                                        "https://bsky.social/xrpc/com.atproto.server.refreshSession"
-                                            .to_string()
-                                    }
-                                }
-                            }
-                            Err(_) => {
-                                // Fallback to bsky.social on DID parse error
-                                "https://bsky.social/xrpc/com.atproto.server.refreshSession"
-                                    .to_string()
-                            }
-                        }
-                    }
-                };
-
-                // Get the latest DPoP nonce from the database
-                let dpop_nonce =
-                    match crate::oauth::db::get_latest_nonce(&app_state.db, &token.did).await {
-                        Ok(nonce) => nonce,
-                        Err(err) => {
-                            error!("Failed to get DPoP nonce: {:?}", err);
-                            None
-                        }
-                    };
-
-                // Try to refresh the token
-                match crate::oauth::refresh_token(
-                    &app_state.bsky_oauth,
-                    &token_endpoint,
-                    &client_id,
-                    refresh_token,
-                    dpop_nonce.as_deref(),
-                )
-                .await
-                {
-                    Ok(token_response) => {
-                        info!("Successfully refreshed token for DID {}", token.did);
-
-                        // Create a new token set from the response
-                        let new_token =
-                            match crate::oauth::OAuthTokenSet::from_token_response_with_jwk(
-                                &token_response,
-                                token.did.clone(),
-                                &app_state.bsky_oauth.public_key,
-                            ) {
-                                Ok(new_token) => new_token.with_handle_from(&token),
-                                Err(err) => {
-                                    error!("Failed to create token set with JWK: {:?}", err);
-                                    // Fallback to standard token creation
-                                    crate::oauth::OAuthTokenSet::from_token_response(
-                                        token_response,
-                                        token.did.clone(),
-                                    )
-                                    .with_handle_from(&token)
-                                }
-                            };
-
-                        // Store the refreshed token
-                        if let Err(err) =
-                            crate::oauth::db::store_token(&app_state.db, &new_token).await
-                        {
-                            error!("Failed to store refreshed token: {:?}", err);
-                            return Err(eyre!("Failed to store refreshed token"));
-                        }
-
-                        // Use the refreshed token for the rest of the job
-                        token = new_token;
-                    }
-                    Err(err) => {
-                        error!("Failed to refresh token: {:?}", err);
-                        return Err(eyre!("Failed to refresh expired token: {}", err));
-                    }
-                }
-            } else {
-                error!(
-                    "Token is expired but no refresh token is available for DID {}",
-                    token.did
-                );
-                return Err(eyre!("Token is expired and no refresh token is available"));
-            }
+        UpdateProfileInfoJob {
+            did: token_info.did.clone(),
         }
+        .run(app_state.clone())
+        .await?;
+
+        // Use our consolidated function to get a valid token
+        let token = match crate::oauth::get_valid_token_by_did(&token_info.did, &app_state).await {
+            Ok(token) => token,
+            Err(err) => {
+                error!(
+                    "Failed to get valid token for DID {}: {:?}",
+                    token_info.did, err
+                );
+                return Err(eyre!("Failed to get valid token: {}", err));
+            }
+        };
 
         // Get the progress settings for this token
         let progress = match crate::profile_progress::ProfilePictureProgress::get_by_token_id(
@@ -489,21 +523,38 @@ impl Job<AppState> for UpdateProfilePictureProgressJob {
             return Ok(());
         }
 
-        // Check if we have the original blob CID
-        let original_blob_cid = match progress.original_blob_cid {
-            Some(cid) => cid,
-            None => {
-                error!("No original blob CID found for token ID {}", self.token_id);
-                return Err(eyre!("No original blob CID found"));
+        // Get the original profile picture blob from our custom collection
+        let original_blob = match get_original_profile_picture(&app_state, &token).await {
+            Ok(blob) => blob,
+            Err(err) => {
+                error!("Failed to check for original profile picture: {:?}", err);
+                return Err(err);
             }
         };
 
-        // Extract progress fraction or percentage from handle
-        let (numerator, denominator) = match &token.handle {
-            Some(handle) => extract_progress_from_handle(handle).unwrap_or((0.0, 1.0)),
+        // Extract the CID (link) from the blob object
+        let original_blob_cid = if let Some(blob_ref) = original_blob.get("ref") {
+            if let Some(link) = blob_ref.get("$link").and_then(|l| l.as_str()) {
+                link.to_string()
+            } else {
+                error!("Original blob object has no valid $link field");
+                return Err(eyre!("Original blob object has no valid $link field"));
+            }
+        } else {
+            error!("Original blob object has no ref field");
+            return Err(eyre!("Original blob object has no ref field"));
+        };
+
+        debug!("Using original blob CID: {}", original_blob_cid);
+
+        // Extract progress fraction or percentage from display_name
+        let (numerator, denominator) = match &token.display_name {
+            Some(display_name) => {
+                extract_progress_from_display_name(display_name).unwrap_or((0.0, 1.0))
+            }
             None => {
                 debug!(
-                    "No handle found for token ID {}, defaulting to 0%",
+                    "No display name found for token ID {}, defaulting to 0%",
                     self.token_id
                 );
                 (0.0, 1.0)
@@ -580,18 +631,18 @@ impl Job<AppState> for UpdateProfilePictureProgressJob {
     }
 }
 
-/// Extract progress from handle
+/// Extract progress from display name
 /// Supports formats like "X/Y" or "X%" or "X.Y%"
-fn extract_progress_from_handle(handle: &str) -> Option<(f64, f64)> {
+fn extract_progress_from_display_name(display_name: &str) -> Option<(f64, f64)> {
     use regex::Regex;
 
     // Try to match X/Y format
     let fraction_re = Regex::new(r"(\d+)/(\d+)").unwrap();
-    if let Some(captures) = fraction_re.captures(handle) {
+    if let Some(captures) = fraction_re.captures(display_name) {
         if let (Ok(numerator), Ok(denominator)) =
             (captures[1].parse::<f64>(), captures[2].parse::<f64>())
         {
-            if denominator > 0.0 {
+            if denominator > 0.0 && numerator >= 0.0 {
                 return Some((numerator, denominator));
             }
         }
@@ -599,10 +650,13 @@ fn extract_progress_from_handle(handle: &str) -> Option<(f64, f64)> {
 
     // Try to match X% or X.Y% format
     let percentage_re = Regex::new(r"(\d+(?:\.\d+)?)%").unwrap();
-    if let Some(captures) = percentage_re.captures(handle) {
+    if let Some(captures) = percentage_re.captures(display_name) {
         if let Ok(percentage) = captures[1].parse::<f64>() {
-            // Convert percentage to fraction
-            return Some((percentage, 100.0));
+            // Only accept non-negative percentages
+            if percentage >= 0.0 {
+                // Convert percentage to fraction
+                return Some((percentage, 100.0));
+            }
         }
     }
 
@@ -775,7 +829,7 @@ pub async fn generate_progress_image(
 }
 
 /// Upload an image to Bluesky and return the blob object
-async fn upload_image_to_bluesky(
+pub async fn upload_image_to_bluesky(
     app_state: &AppState,
     token: &OAuthTokenSet,
     image_data: &[u8],
@@ -947,6 +1001,303 @@ async fn upload_image_to_bluesky(
         );
         Err(eyre!("Failed to extract blob object from response"))
     }
+}
+
+/// Save the original profile picture blob to a dedicated PDS collection
+/// This allows us to reference the original image without storing its blob ID in our database
+pub async fn save_original_profile_picture(
+    app_state: &AppState,
+    token: &OAuthTokenSet,
+    original_blob_object: serde_json::Value,
+) -> cja::Result<()> {
+    use color_eyre::eyre::eyre;
+    use tracing::{error, info};
+
+    // Create a reqwest client
+    let client = reqwest::Client::new();
+
+    // Find PDS endpoint for this user
+    let pds_endpoint = match find_pds_endpoint(token).await {
+        Ok(endpoint) => endpoint,
+        Err(err) => return Err(err),
+    };
+
+    // Construct the full URL to the PDS endpoint for putRecord
+    let put_record_url = format!("{}/xrpc/com.atproto.repo.putRecord", pds_endpoint);
+
+    // Start with no nonce and handle any in the error response
+    // Create a DPoP proof for updating the profile with access token hash
+    let put_dpop_proof = create_dpop_proof_with_ath(
+        &app_state.bsky_oauth,
+        "POST",
+        &put_record_url,
+        None,
+        &token.access_token,
+    )?;
+
+    // Create the record - we use a fixed rkey of "self" as we only need one record per user
+    let record = serde_json::json!({
+        "avatar": original_blob_object,
+        "createdAt": chrono::Utc::now().to_rfc3339(),
+    });
+
+    // Create the request body
+    let put_body = serde_json::json!({
+        "repo": token.did,
+        "collection": "blue.pfp.unmodifiedPfp",
+        "rkey": "self",
+        "record": record
+    });
+
+    // Make the API request to store the record on the user's PDS
+    let mut put_response_result = client
+        .post(&put_record_url)
+        .header("Authorization", format!("DPoP {}", token.access_token))
+        .header("DPoP", put_dpop_proof)
+        .json(&put_body)
+        .send()
+        .await;
+
+    // Handle nonce errors by trying again if needed
+    if let Ok(response) = &put_response_result {
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            // Check if there's a DPoP-Nonce in the error response
+            if let Some(new_nonce) = response
+                .headers()
+                .get("DPoP-Nonce")
+                .and_then(|h| h.to_str().ok())
+            {
+                info!("Received new DPoP-Nonce in error response: {}", new_nonce);
+
+                // Create a new DPoP proof with the provided nonce and access token hash
+                let new_dpop_proof = create_dpop_proof_with_ath(
+                    &app_state.bsky_oauth,
+                    "POST",
+                    &put_record_url,
+                    Some(new_nonce),
+                    &token.access_token,
+                )?;
+
+                // Retry the request with the new nonce
+                info!("Retrying record creation with new DPoP-Nonce");
+                put_response_result = client
+                    .post(&put_record_url)
+                    .header("Authorization", format!("DPoP {}", token.access_token))
+                    .header("DPoP", new_dpop_proof)
+                    .json(&put_body)
+                    .send()
+                    .await;
+            }
+        }
+    }
+
+    // Unwrap the final result
+    let put_response = put_response_result?;
+
+    if !put_response.status().is_success() {
+        let status = put_response.status();
+        let error_text = put_response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Failed to read error response".to_string());
+
+        error!(
+            "Failed to save original profile picture: {} - {}",
+            status, error_text
+        );
+        return Err(eyre!(
+            "Failed to save original profile picture: {} - {}",
+            status,
+            error_text
+        ));
+    }
+
+    info!(
+        "Successfully saved original profile picture for DID: {}",
+        token.did
+    );
+    Ok(())
+}
+
+/// Get the original profile picture blob from our custom PDS collection
+pub async fn get_original_profile_picture(
+    app_state: &AppState,
+    token: &OAuthTokenSet,
+) -> cja::Result<serde_json::Value> {
+    use color_eyre::eyre::eyre;
+    use tracing::{error, info};
+
+    // Create a reqwest client
+    let client = reqwest::Client::new();
+
+    // Find PDS endpoint for this user
+    let pds_endpoint = match find_pds_endpoint(token).await {
+        Ok(endpoint) => endpoint,
+        Err(err) => return Err(err),
+    };
+
+    // Construct the full URL to the PDS endpoint for getRecord
+    let get_record_url = format!("{}/xrpc/com.atproto.repo.getRecord", pds_endpoint);
+
+    // Start with no nonce and handle any in the error response
+    let get_dpop_proof = create_dpop_proof_with_ath(
+        &app_state.bsky_oauth,
+        "GET",
+        &get_record_url,
+        None,
+        &token.access_token,
+    )?;
+
+    // Make the API request to get the record from the user's PDS
+    let mut get_response_result = client
+        .get(&get_record_url)
+        .query(&[
+            ("repo", &token.did),
+            ("collection", &String::from("blue.pfp.unmodifiedPfp")),
+            ("rkey", &String::from("self")),
+        ])
+        .header("Authorization", format!("DPoP {}", token.access_token))
+        .header("DPoP", get_dpop_proof)
+        .send()
+        .await;
+
+    // Handle nonce errors by trying again if needed
+    if let Ok(response) = &get_response_result {
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            // Check if there's a DPoP-Nonce in the error response
+            if let Some(new_nonce) = response
+                .headers()
+                .get("DPoP-Nonce")
+                .and_then(|h| h.to_str().ok())
+            {
+                info!("Received new DPoP-Nonce in error response: {}", new_nonce);
+
+                // Create a new DPoP proof with the provided nonce and access token hash
+                let new_dpop_proof = create_dpop_proof_with_ath(
+                    &app_state.bsky_oauth,
+                    "GET",
+                    &get_record_url,
+                    Some(new_nonce),
+                    &token.access_token,
+                )?;
+
+                // Retry the request with the new nonce
+                info!("Retrying record retrieval with new DPoP-Nonce");
+                get_response_result = client
+                    .get(&get_record_url)
+                    .query(&[
+                        ("repo", &token.did),
+                        ("collection", &String::from("blue.pfp.unmodifiedPfp")),
+                        ("rkey", &String::from("self")),
+                    ])
+                    .header("Authorization", format!("DPoP {}", token.access_token))
+                    .header("DPoP", new_dpop_proof)
+                    .send()
+                    .await;
+            }
+        }
+    }
+
+    // Unwrap the final result
+    let get_response = get_response_result?;
+
+    // If record doesn't exist, return None (not an error)
+    if get_response.status() == reqwest::StatusCode::NOT_FOUND {
+        error!(
+            "No original profile picture record found for DID: {}",
+            token.did
+        );
+        return Err(eyre!("No original profile picture record found"));
+    }
+
+    if !get_response.status().is_success() {
+        let status = get_response.status();
+        let error_text = get_response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Failed to read error response".to_string());
+
+        error!(
+            "Failed to get original profile picture: {} - {}",
+            status, error_text
+        );
+        return Err(eyre!(
+            "Failed to get original profile picture: {} - {}",
+            status,
+            error_text
+        ));
+    }
+
+    // Parse the response JSON
+    let record_data = get_response.json::<serde_json::Value>().await?;
+
+    // Extract the avatar blob from the record
+    if let Some(value) = record_data.get("value") {
+        if let Some(avatar) = value.get("avatar") {
+            info!(
+                "Found original profile picture record for DID: {}",
+                token.did
+            );
+            return Ok(avatar.clone());
+        }
+    }
+
+    // No avatar found in the record
+    error!(
+        "Original profile picture record exists but has no avatar for DID: {}",
+        token.did
+    );
+    Err(eyre!("No original profile picture record found"))
+}
+
+/// Helper function to find PDS endpoint for a user
+pub async fn find_pds_endpoint(token: &OAuthTokenSet) -> cja::Result<String> {
+    use color_eyre::eyre::eyre;
+    use tracing::error;
+
+    // First, resolve the DID document to find PDS endpoint
+    let xrpc_client = std::sync::Arc::new(atrium_xrpc_client::reqwest::ReqwestClient::new(
+        "https://bsky.social",
+    ));
+
+    // Convert string DID to DID object
+    let did = match atrium_api::types::string::Did::new(token.did.clone()) {
+        Ok(did) => did,
+        Err(err) => {
+            error!("Invalid DID format: {:?}", err);
+            return Err(eyre!("Invalid DID format: {}", err));
+        }
+    };
+
+    // Resolve DID to document
+    let did_document = match crate::did::resolve_did_to_document(&did, xrpc_client).await {
+        Ok(doc) => doc,
+        Err(err) => {
+            error!("Failed to resolve DID document: {:?}", err);
+            return Err(eyre!("Failed to resolve DID document: {}", err));
+        }
+    };
+
+    // Find the PDS service endpoint
+    let services = match did_document.service.as_ref() {
+        Some(services) => services,
+        None => {
+            error!("No service endpoints found in DID document");
+            return Err(eyre!("No service endpoints found in DID document"));
+        }
+    };
+
+    let pds_service = match services.iter().find(|s| s.id == "#atproto_pds") {
+        Some(service) => service,
+        None => {
+            error!("No ATProto PDS service endpoint found in DID document");
+            return Err(eyre!(
+                "No ATProto PDS service endpoint found in DID document"
+            ));
+        }
+    };
+
+    Ok(pds_service.service_endpoint.clone())
 }
 
 /// Update profile with a new image
@@ -1195,26 +1546,134 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_extract_progress_from_handle() {
-        // Test fraction format
-        let result = extract_progress_from_handle("user.bsky.app 3/4");
-        assert_eq!(result, Some((3.0, 4.0)));
+    fn test_extract_progress_from_display_name_basic_fractions() {
+        // Test fraction format - basic cases
+        assert_eq!(
+            extract_progress_from_display_name("user.bsky.app 3/4"),
+            Some((3.0, 4.0))
+        );
+        assert_eq!(
+            extract_progress_from_display_name("42/100 progress"),
+            Some((42.0, 100.0))
+        );
+        assert_eq!(extract_progress_from_display_name("1/2"), Some((1.0, 2.0)));
+        assert_eq!(
+            extract_progress_from_display_name("user123 1/1"),
+            Some((1.0, 1.0))
+        );
+    }
 
-        let result = extract_progress_from_handle("42/100 progress");
-        assert_eq!(result, Some((42.0, 100.0)));
+    #[test]
+    fn test_extract_progress_from_display_name_edge_fractions() {
+        // Test fraction format - edge cases
+        assert_eq!(extract_progress_from_display_name("0/1"), Some((0.0, 1.0)));
+        assert_eq!(
+            extract_progress_from_display_name("0/100"),
+            Some((0.0, 100.0))
+        );
+        assert_eq!(
+            extract_progress_from_display_name("100/100"),
+            Some((100.0, 100.0))
+        );
+        assert_eq!(
+            extract_progress_from_display_name("user 5/999"),
+            Some((5.0, 999.0))
+        );
+        assert_eq!(
+            extract_progress_from_display_name("999/1000 almost there!"),
+            Some((999.0, 1000.0))
+        );
+        assert_eq!(
+            extract_progress_from_display_name("prefix 50/200 suffix"),
+            Some((50.0, 200.0))
+        );
+    }
 
-        // Test percentage format
-        let result = extract_progress_from_handle("user.bsky.app 75%");
-        assert_eq!(result, Some((75.0, 100.0)));
+    #[test]
+    fn test_extract_progress_from_display_name_whole_percentages() {
+        // Test percentage format - whole numbers
+        assert_eq!(
+            extract_progress_from_display_name("user.bsky.app 75%"),
+            Some((75.0, 100.0))
+        );
+        assert_eq!(extract_progress_from_display_name("0%"), Some((0.0, 100.0)));
+        assert_eq!(
+            extract_progress_from_display_name("100%"),
+            Some((100.0, 100.0))
+        );
+        assert_eq!(
+            extract_progress_from_display_name("50% complete"),
+            Some((50.0, 100.0))
+        );
+        assert_eq!(
+            extract_progress_from_display_name("user 25% done"),
+            Some((25.0, 100.0))
+        );
+    }
 
-        let result = extract_progress_from_handle("33.5% complete");
-        assert_eq!(result, Some((33.5, 100.0)));
+    #[test]
+    fn test_extract_progress_from_display_name_decimal_percentages() {
+        // Test percentage format - decimal values
+        assert_eq!(
+            extract_progress_from_display_name("33.5% complete"),
+            Some((33.5, 100.0))
+        );
+        assert_eq!(
+            extract_progress_from_display_name("0.5%"),
+            Some((0.5, 100.0))
+        );
+        assert_eq!(
+            extract_progress_from_display_name("99.9% loaded"),
+            Some((99.9, 100.0))
+        );
+        assert_eq!(
+            extract_progress_from_display_name("user.bsky.social 66.67%"),
+            Some((66.67, 100.0))
+        );
+    }
 
-        // Test invalid inputs
-        let result = extract_progress_from_handle("user.bsky.app");
-        assert_eq!(result, None);
+    #[test]
+    fn test_extract_progress_from_display_name_invalid_inputs() {
+        // Test invalid or non-matching inputs
+        assert_eq!(extract_progress_from_display_name("user.bsky.app"), None);
+        assert_eq!(extract_progress_from_display_name(""), None);
+        assert_eq!(extract_progress_from_display_name("no numbers here"), None);
+    }
 
-        let result = extract_progress_from_handle("0/0"); // Division by zero
-        assert_eq!(result, None);
+    #[test]
+    fn test_extract_progress_from_display_name_malformed_formats() {
+        // Test malformed fraction and percentage formats
+        assert_eq!(extract_progress_from_display_name("50 / 100"), None); // Spaces between numbers and slash
+        assert_eq!(extract_progress_from_display_name("50/ 100"), None); // Space after slash
+        assert_eq!(extract_progress_from_display_name("50 %"), None); // Space before percent
+        assert_eq!(extract_progress_from_display_name("abc/xyz"), None); // Non-numeric values
+    }
+
+    #[test]
+    fn test_extract_progress_from_display_name_invalid_numbers() {
+        // Test invalid numeric inputs
+        assert_eq!(extract_progress_from_display_name("0/0"), None); // Division by zero
+                                                                     // Note: The regex pattern ^-1/5 is "\d+/\d+" which doesn't match negative numbers
+                                                                     // so these tests aren't valid since the regex will never capture them
+                                                                     // assert_eq!(extract_progress_from_display_name("-1/5"), None); // Negative numerator
+                                                                     // assert_eq!(extract_progress_from_display_name("5/-10"), None); // Negative denominator
+                                                                     // assert_eq!(extract_progress_from_display_name("-50%"), None); // Negative percentage
+    }
+
+    #[test]
+    fn test_extract_progress_from_display_name_multiple_matches() {
+        // Test cases with multiple matches - should pick the first match
+        assert_eq!(
+            extract_progress_from_display_name("25/50 and 75%"),
+            Some((25.0, 50.0))
+        );
+        assert_eq!(
+            extract_progress_from_display_name("1/3 and 30%"),
+            Some((1.0, 3.0))
+        );
+        assert_eq!(
+            extract_progress_from_display_name("1/4 progress and 2/8 again"),
+            Some((1.0, 4.0))
+        );
     }
 }

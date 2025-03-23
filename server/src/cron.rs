@@ -2,7 +2,6 @@ use cja::{
     cron::{CronRegistry, Worker},
     jobs::Job as _,
 };
-use sqlx::Row;
 use tracing::{error, info};
 
 use crate::{jobs::UpdateProfilePictureProgressJob, oauth, state::AppState};
@@ -71,12 +70,12 @@ async fn update_profile_pictures(state: AppState) -> cja::Result<()> {
     info!("Starting profile picture progress updates");
 
     // Find all tokens with enabled profile picture progress
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         r#"
         SELECT p.token_id 
         FROM profile_picture_progress p
         WHERE p.enabled = TRUE
-        "#,
+        "#
     )
     .fetch_all(&state.db)
     .await?;
@@ -86,7 +85,7 @@ async fn update_profile_pictures(state: AppState) -> cja::Result<()> {
 
     // Enqueue a job for each enabled token
     for row in rows {
-        let token_id: uuid::Uuid = row.get("token_id");
+        let token_id = row.token_id;
 
         // Create and enqueue the job
         let job = UpdateProfilePictureProgressJob::new(token_id);

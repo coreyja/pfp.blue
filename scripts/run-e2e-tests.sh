@@ -64,7 +64,7 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     --test|-t)
-      TEST_FILTER="test=$2"
+      TEST_FILTER="$2"
       shift 2
       ;;
     --debug|-d)

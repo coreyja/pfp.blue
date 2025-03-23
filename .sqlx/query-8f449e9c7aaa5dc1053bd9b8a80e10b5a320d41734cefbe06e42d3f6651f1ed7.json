@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE sessions SET primary_token_id = $1, updated_at_utc = NOW()\n            WHERE id = $2\n            RETURNING updated_at_utc\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "updated_at_utc",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8f449e9c7aaa5dc1053bd9b8a80e10b5a320d41734cefbe06e42d3f6651f1ed7"
+}
