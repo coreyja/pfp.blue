@@ -6,6 +6,10 @@ default-run = "pfp-blue"
 
 build = "build.rs"
 
+[features]
+# Enable this feature once the encrypted_oauth migrations have been applied
+encrypted_oauth = []
+
 [[bin]]
 name = "generate-key"
 path = "src/bin/generate_key.rs"

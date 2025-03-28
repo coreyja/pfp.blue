@@ -10,29 +10,38 @@ use crate::encryption;
 pub async fn store_session(app_state: &AppState, session: &OAuthSession) -> cja::Result<Uuid> {
     let session_id = Uuid::new_v4();
     
-    // We'll encrypt sensitive data once the migration is applied
-    // For now we just use the JSONB column
+    // Encrypt sensitive data
+    let encrypted_code_verifier = match &session.code_verifier {
+        Some(verifier) => Some(encryption::encrypt(verifier, &app_state.encryption.key).await?),
+        None => None,
+    };
+    
+    let encrypted_code_challenge = match &session.code_challenge {
+        Some(challenge) => Some(encryption::encrypt(challenge, &app_state.encryption.key).await?),
+        None => None,
+    };
+    
+    let encrypted_dpop_nonce = match &session.dpop_nonce {
+        Some(nonce) => Some(encryption::encrypt(nonce, &app_state.encryption.key).await?),
+        None => None,
+    };
 
-    // For backward compatibility, also store in the JSONB field
-    let data = serde_json::json!({
-        "code_verifier": session.code_verifier,
-        "code_challenge": session.code_challenge,
-        "dpop_nonce": session.dpop_nonce
-    });
-
-    // For now, we'll use the existing database schema until the migration is applied
+    // Insert the session into the database with encrypted values
     sqlx::query!(
         r#"
         INSERT INTO oauth_sessions (
-            id, session_id, did, state, token_endpoint, created_at, data
-        ) VALUES (DEFAULT, $1, $2, $3, $4, $5, $6)
+            id, session_id, did, state, token_endpoint, created_at,
+            encrypted_code_verifier, encrypted_code_challenge, encrypted_dpop_nonce
+        ) VALUES (DEFAULT, $1, $2, $3, $4, $5, $6, $7, $8)
         "#,
         session_id,
         &session.did,
         session.state.as_deref(),
         &session.token_endpoint,
         session.created_at as i64,
-        data
+        encrypted_code_verifier.as_deref(),
+        encrypted_code_challenge.as_deref(),
+        encrypted_dpop_nonce.as_deref()
     )
     .execute(&app_state.db)
     .await?;
@@ -44,7 +53,8 @@ pub async fn store_session(app_state: &AppState, session: &OAuthSession) -> cja:
 pub async fn get_session(app_state: &AppState, session_id: Uuid) -> cja::Result<Option<OAuthSession>> {
     let row = sqlx::query!(
         r#"
-        SELECT did, state, token_endpoint, created_at, data
+        SELECT did, state, token_endpoint, created_at,
+               encrypted_code_verifier, encrypted_code_challenge, encrypted_dpop_nonce
         FROM oauth_sessions
         WHERE session_id = $1
         "#,
@@ -54,26 +64,21 @@ pub async fn get_session(app_state: &AppState, session_id: Uuid) -> cja::Result<
     .await?;
 
     if let Some(row) = row {
-        // Extract data from JSONB
-        let data: Option<serde_json::Value> = row.data;
+        // Decrypt the data from encrypted columns
+        let code_verifier = match &row.encrypted_code_verifier {
+            Some(encrypted) => Some(encryption::decrypt(encrypted, &app_state.encryption.key).await?),
+            None => None,
+        };
         
-        let code_verifier = data
-            .as_ref()
-            .and_then(|d| d.get("code_verifier"))
-            .and_then(|v| v.as_str())
-            .map(String::from);
-            
-        let code_challenge = data
-            .as_ref()
-            .and_then(|d| d.get("code_challenge"))
-            .and_then(|v| v.as_str())
-            .map(String::from);
-            
-        let dpop_nonce = data
-            .as_ref()
-            .and_then(|d| d.get("dpop_nonce"))
-            .and_then(|v| v.as_str())
-            .map(String::from);
+        let code_challenge = match &row.encrypted_code_challenge {
+            Some(encrypted) => Some(encryption::decrypt(encrypted, &app_state.encryption.key).await?),
+            None => None,
+        };
+        
+        let dpop_nonce = match &row.encrypted_dpop_nonce {
+            Some(encrypted) => Some(encryption::decrypt(encrypted, &app_state.encryption.key).await?),
+            None => None,
+        };
 
         return Ok(Some(OAuthSession {
             did: row.did,
@@ -326,7 +331,7 @@ pub async fn get_latest_nonce(app_state: &AppState, did: &str) -> cja::Result<Op
     // Find the most recent session for this DID that has a nonce
     let row = sqlx::query!(
         r#"
-        SELECT data FROM oauth_sessions 
+        SELECT encrypted_dpop_nonce FROM oauth_sessions 
         WHERE did = $1 
         ORDER BY updated_at_utc DESC 
         LIMIT 1
@@ -337,15 +342,11 @@ pub async fn get_latest_nonce(app_state: &AppState, did: &str) -> cja::Result<Op
     .await?;
 
     if let Some(row) = row {
-        
-        // Fall back to JSONB data for backward compatibility
-        let data: serde_json::Value = row.data.unwrap_or(serde_json::Value::Null);
-        let nonce = data
-            .get("dpop_nonce")
-            .and_then(|v| v.as_str())
-            .map(String::from);
-
-        return Ok(nonce);
+        // Decrypt the nonce if present
+        if let Some(encrypted_nonce) = &row.encrypted_dpop_nonce {
+            let nonce = encryption::decrypt(encrypted_nonce, &app_state.encryption.key).await?;
+            return Ok(Some(nonce));
+        }
     }
 
     Ok(None)
@@ -353,38 +354,17 @@ pub async fn get_latest_nonce(app_state: &AppState, did: &str) -> cja::Result<Op
 
 /// Updates a session's DPoP nonce
 pub async fn update_session_nonce(app_state: &AppState, session_id: Uuid, nonce: &str) -> cja::Result<()> {
-    // First get the current session data
-    let row = sqlx::query!(
-        r#"
-        SELECT data FROM oauth_sessions WHERE session_id = $1
-        "#,
-        session_id
-    )
-    .fetch_optional(&app_state.db)
-    .await?;
-
-    // Update the JSONB data
-    let mut data = serde_json::Value::Null;
-    if let Some(row) = row {
-        data = row.data.unwrap_or(serde_json::Value::Null);
-        
-        // Update the nonce in the data
-        if let Some(obj) = data.as_object_mut() {
-            obj.insert(
-                "dpop_nonce".to_string(),
-                serde_json::Value::String(nonce.to_string()),
-            );
-        }
-    }
-
-    // Update the session data
+    // Encrypt the nonce
+    let encrypted_nonce = encryption::encrypt(nonce, &app_state.encryption.key).await?;
+    
+    // Update the session with the encrypted nonce
     sqlx::query!(
         r#"
         UPDATE oauth_sessions
-        SET data = $1, updated_at_utc = NOW()
+        SET encrypted_dpop_nonce = $1, updated_at_utc = NOW()
         WHERE session_id = $2
         "#,
-        data,
+        encrypted_nonce,
         session_id
     )
     .execute(&app_state.db)
