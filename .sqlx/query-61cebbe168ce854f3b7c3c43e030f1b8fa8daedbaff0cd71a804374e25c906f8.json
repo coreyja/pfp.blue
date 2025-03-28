@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT did, state, token_endpoint, created_at, data\n            FROM oauth_sessions\n            WHERE session_id = $1\n            ",
+  "query": "\n        SELECT did, state, token_endpoint, created_at,\n               encrypted_code_verifier, encrypted_code_challenge, encrypted_dpop_nonce\n        FROM oauth_sessions\n        WHERE session_id = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -25,8 +25,18 @@
       },
       {
         "ordinal": 4,
-        "name": "data",
-        "type_info": "Jsonb"
+        "name": "encrypted_code_verifier",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "encrypted_code_challenge",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "encrypted_dpop_nonce",
+        "type_info": "Text"
       }
     ],
     "parameters": {
@@ -39,8 +49,10 @@
       true,
       false,
       false,
+      true,
+      true,
       true
     ]
   },
-  "hash": "3ca7d858e6c906d773b8097f51c1ba6b9b8d89cd2325ecd228d251cbb60a8313"
+  "hash": "61cebbe168ce854f3b7c3c43e030f1b8fa8daedbaff0cd71a804374e25c906f8"
 }

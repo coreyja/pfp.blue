@@ -1,6 +1,7 @@
 use std::env;
 use std::sync::Arc;
 
+use age::x25519::Identity;
 use atrium_xrpc_client::reqwest::{ReqwestClient, ReqwestClientBuilder};
 use sqlx::{postgres::PgPoolOptions, PgPool};
 
@@ -113,6 +114,28 @@ impl BlueskyOAuthConfig {
     }
 }
 
+/// This struct holds the age encryption keys used for encrypting sensitive data in the database
+#[derive(Clone)]
+pub struct EncryptionConfig {
+    pub key: Arc<Identity>,
+}
+
+impl EncryptionConfig {
+    pub fn from_env() -> cja::Result<Self> {
+        use color_eyre::eyre::eyre;
+
+        use std::str::FromStr;
+
+        let key_str = std::env::var("ENCRYPTION_KEY")
+            .map_err(|_| eyre!("ENCRYPTION_KEY environment variable not set"))?;
+
+        let key = Identity::from_str(&key_str)
+            .map_err(|e| eyre!("Failed to parse ENCRYPTION_KEY: {}", e))?;
+
+        Ok(Self { key: Arc::new(key) })
+    }
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub db: sqlx::Pool<sqlx::Postgres>,
@@ -121,6 +144,7 @@ pub struct AppState {
     pub protocol: String,
     pub bsky_client: Arc<ReqwestClient>,
     pub bsky_oauth: BlueskyOAuthConfig,
+    pub encryption: EncryptionConfig,
 }
 
 impl AppState {
@@ -145,6 +169,7 @@ impl AppState {
             .build();
 
         let bsky_oauth = BlueskyOAuthConfig::from_env()?;
+        let encryption = EncryptionConfig::from_env()?;
 
         Ok(Self {
             db: pool,
@@ -153,6 +178,7 @@ impl AppState {
             protocol: std::env::var("PROTO").unwrap_or_else(|_| "https".to_string()),
             bsky_client: Arc::new(client),
             bsky_oauth,
+            encryption,
         })
     }
 

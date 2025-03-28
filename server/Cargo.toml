@@ -6,6 +6,14 @@ default-run = "pfp-blue"
 
 build = "build.rs"
 
+[features]
+# Enable this feature once the encrypted_oauth migrations have been applied
+encrypted_oauth = []
+
+[[bin]]
+name = "generate-key"
+path = "src/bin/generate_key.rs"
+
 [dependencies]
 tokio = { version = "1.21", features = ["full"] }
 color-eyre = "0.6.2"
@@ -75,6 +83,7 @@ image = "0.24"
 imageproc = "0.23"
 regex = "1.10"
 infer = "0.15"
+age = { version = "0.11.1", features = ["armor"] }
 
 [build-dependencies]
 vergen = { version = "8.3.1", features = [
