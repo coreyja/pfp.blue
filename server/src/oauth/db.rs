@@ -9,18 +9,18 @@ use crate::encryption;
 /// Stores a new OAuth session in the database
 pub async fn store_session(app_state: &AppState, session: &OAuthSession) -> cja::Result<Uuid> {
     let session_id = Uuid::new_v4();
-    
+
     // Encrypt sensitive data
     let encrypted_code_verifier = match &session.code_verifier {
         Some(verifier) => Some(encryption::encrypt(verifier, &app_state.encryption.key).await?),
         None => None,
     };
-    
+
     let encrypted_code_challenge = match &session.code_challenge {
         Some(challenge) => Some(encryption::encrypt(challenge, &app_state.encryption.key).await?),
         None => None,
     };
-    
+
     let encrypted_dpop_nonce = match &session.dpop_nonce {
         Some(nonce) => Some(encryption::encrypt(nonce, &app_state.encryption.key).await?),
         None => None,
@@ -50,7 +50,10 @@ pub async fn store_session(app_state: &AppState, session: &OAuthSession) -> cja:
 }
 
 /// Retrieves an OAuth session by session ID
-pub async fn get_session(app_state: &AppState, session_id: Uuid) -> cja::Result<Option<OAuthSession>> {
+pub async fn get_session(
+    app_state: &AppState,
+    session_id: Uuid,
+) -> cja::Result<Option<OAuthSession>> {
     let row = sqlx::query!(
         r#"
         SELECT did, state, token_endpoint, created_at,
@@ -66,17 +69,23 @@ pub async fn get_session(app_state: &AppState, session_id: Uuid) -> cja::Result<
     if let Some(row) = row {
         // Decrypt the data from encrypted columns
         let code_verifier = match &row.encrypted_code_verifier {
-            Some(encrypted) => Some(encryption::decrypt(encrypted, &app_state.encryption.key).await?),
+            Some(encrypted) => {
+                Some(encryption::decrypt(encrypted, &app_state.encryption.key).await?)
+            }
             None => None,
         };
-        
+
         let code_challenge = match &row.encrypted_code_challenge {
-            Some(encrypted) => Some(encryption::decrypt(encrypted, &app_state.encryption.key).await?),
+            Some(encrypted) => {
+                Some(encryption::decrypt(encrypted, &app_state.encryption.key).await?)
+            }
             None => None,
         };
-        
+
         let dpop_nonce = match &row.encrypted_dpop_nonce {
-            Some(encrypted) => Some(encryption::decrypt(encrypted, &app_state.encryption.key).await?),
+            Some(encrypted) => {
+                Some(encryption::decrypt(encrypted, &app_state.encryption.key).await?)
+            }
             None => None,
         };
 
@@ -91,7 +100,7 @@ pub async fn get_session(app_state: &AppState, session_id: Uuid) -> cja::Result<
             dpop_nonce,
         }));
     }
-    
+
     Ok(None)
 }
 
@@ -148,7 +157,9 @@ pub async fn store_token(app_state: &AppState, token_set: &OAuthTokenSet) -> cja
     let encrypted_access_token =
         encryption::encrypt(&token_set.access_token, &app_state.encryption.key).await?;
     let encrypted_refresh_token = match &token_set.refresh_token {
-        Some(refresh_token) => Some(encryption::encrypt(refresh_token, &app_state.encryption.key).await?),
+        Some(refresh_token) => {
+            Some(encryption::encrypt(refresh_token, &app_state.encryption.key).await?)
+        }
         None => None,
     };
 
@@ -202,7 +213,8 @@ pub async fn get_token(app_state: &AppState, did: &str) -> cja::Result<Option<OA
 
     if let Some(row) = row {
         // Decrypt access token and refresh token
-        let access_token = encryption::decrypt(&row.access_token, &app_state.encryption.key).await?;
+        let access_token =
+            encryption::decrypt(&row.access_token, &app_state.encryption.key).await?;
         let refresh_token = match row.refresh_token {
             Some(ref encrypted_refresh_token) => {
                 Some(encryption::decrypt(encrypted_refresh_token, &app_state.encryption.key).await?)
@@ -248,7 +260,8 @@ pub async fn get_tokens_for_user(
 
     for row in encrypted_tokens {
         // Decrypt access token and refresh token for each token
-        let access_token = encryption::decrypt(&row.access_token, &app_state.encryption.key).await?;
+        let access_token =
+            encryption::decrypt(&row.access_token, &app_state.encryption.key).await?;
         let refresh_token = match row.refresh_token {
             Some(ref encrypted_refresh_token) => {
                 Some(encryption::decrypt(encrypted_refresh_token, &app_state.encryption.key).await?)
@@ -353,10 +366,14 @@ pub async fn get_latest_nonce(app_state: &AppState, did: &str) -> cja::Result<Op
 }
 
 /// Updates a session's DPoP nonce
-pub async fn update_session_nonce(app_state: &AppState, session_id: Uuid, nonce: &str) -> cja::Result<()> {
+pub async fn update_session_nonce(
+    app_state: &AppState,
+    session_id: Uuid,
+    nonce: &str,
+) -> cja::Result<()> {
     // Encrypt the nonce
     let encrypted_nonce = encryption::encrypt(nonce, &app_state.encryption.key).await?;
-    
+
     // Update the session with the encrypted nonce
     sqlx::query!(
         r#"
