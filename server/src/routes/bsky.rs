@@ -140,7 +140,7 @@ pub async fn authorize(
     );
 
     // Store the session in the database
-    let session_id = match oauth::db::store_session(&state.db, &session).await {
+    let session_id = match oauth::db::store_session(&state, &session).await {
         Ok(id) => id,
         Err(err) => {
             error!("Failed to store OAuth session: {:?}", err);
@@ -405,7 +405,7 @@ fn handle_missing_code_error(
 async fn get_session_id_and_data(
     state_param: Option<&str>,
     cookies: &Cookies,
-    db_pool: &sqlx::PgPool,
+    app_state: &AppState,
 ) -> Result<(Uuid, OAuthSession), (StatusCode, String)> {
     // Get the session ID from the state parameter or the cookie
     let session_id = match state_param
@@ -426,7 +426,7 @@ async fn get_session_id_and_data(
     };
 
     // Retrieve session data from the database
-    let session = match oauth::db::get_session(db_pool, session_id).await {
+    let session = match oauth::db::get_session(app_state, session_id).await {
         Ok(Some(session)) => session,
         Ok(None) => {
             error!("Session not found: {}", session_id);
@@ -464,7 +464,7 @@ async fn exchange_auth_code_for_token(
     code: &str,
     client_id: &str,
     redirect_uri: &str,
-    db_pool: &sqlx::PgPool,
+    app_state: &AppState,
 ) -> Result<oauth::TokenResponse, (StatusCode, String)> {
     let code_verifier = session.code_verifier.as_deref();
     let mut attempts = 0;
@@ -499,7 +499,7 @@ async fn exchange_auth_code_for_token(
                     {
                         // Save the new nonce in the database for this session
                         if let Err(e) =
-                            oauth::db::update_session_nonce(db_pool, session_id, &nonce).await
+                            oauth::db::update_session_nonce(app_state, session_id, &nonce).await
                         {
                             error!("Failed to update session nonce: {:?}", e);
                         } else {
@@ -701,7 +701,7 @@ pub async fn callback(
 
     // Get the session ID and data
     let (session_id, session) =
-        match get_session_id_and_data(params.state.as_deref(), &cookies, &state.db).await {
+        match get_session_id_and_data(params.state.as_deref(), &cookies, &state).await {
             Ok(result) => result,
             Err((status, message)) => {
                 return (status, message).into_response();
@@ -716,7 +716,7 @@ pub async fn callback(
         &code,
         &client_id,
         &redirect_uri,
-        &state.db,
+        &state,
     )
     .await
     {

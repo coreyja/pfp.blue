@@ -4,36 +4,23 @@ use sqlx::PgPool;
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
-// We need to ensure we're using the actual encryption module
-use self::encryption_helpers::*;
-
-// Create a local module with functions that call the external encryption functions
-mod encryption_helpers {
-    use age::x25519::Identity;
-    use std::sync::Arc;
-
-    pub async fn encrypt(data: &str, key: &Arc<Identity>) -> cja::Result<String> {
-        // Call the encryption function from the main crate
-        crate::encryption::encrypt(data, key).await
-    }
-
-    pub async fn decrypt(encrypted_base64: &str, key: &Arc<Identity>) -> cja::Result<String> {
-        // Call the decryption function from the main crate
-        crate::encryption::decrypt(encrypted_base64, key).await
-    }
-}
+use crate::encryption;
 
 /// Stores a new OAuth session in the database
-pub async fn store_session(pool: &PgPool, session: &OAuthSession) -> cja::Result<Uuid> {
+pub async fn store_session(app_state: &AppState, session: &OAuthSession) -> cja::Result<Uuid> {
     let session_id = Uuid::new_v4();
+    
+    // We'll encrypt sensitive data once the migration is applied
+    // For now we just use the JSONB column
 
-    // Store PKCE data and DPoP nonce in the data JSONB field
+    // For backward compatibility, also store in the JSONB field
     let data = serde_json::json!({
         "code_verifier": session.code_verifier,
         "code_challenge": session.code_challenge,
         "dpop_nonce": session.dpop_nonce
     });
 
+    // For now, we'll use the existing database schema until the migration is applied
     sqlx::query!(
         r#"
         INSERT INTO oauth_sessions (
@@ -47,14 +34,14 @@ pub async fn store_session(pool: &PgPool, session: &OAuthSession) -> cja::Result
         session.created_at as i64,
         data
     )
-    .execute(pool)
+    .execute(&app_state.db)
     .await?;
 
     Ok(session_id)
 }
 
 /// Retrieves an OAuth session by session ID
-pub async fn get_session(pool: &PgPool, session_id: Uuid) -> cja::Result<Option<OAuthSession>> {
+pub async fn get_session(app_state: &AppState, session_id: Uuid) -> cja::Result<Option<OAuthSession>> {
     let row = sqlx::query!(
         r#"
         SELECT did, state, token_endpoint, created_at, data
@@ -63,31 +50,32 @@ pub async fn get_session(pool: &PgPool, session_id: Uuid) -> cja::Result<Option<
         "#,
         session_id
     )
-    .fetch_optional(pool)
+    .fetch_optional(&app_state.db)
     .await?;
 
-    Ok(row.map(|row| {
-        // Extract PKCE data from the JSONB field
+    if let Some(row) = row {
+        // Extract data from JSONB
         let data: Option<serde_json::Value> = row.data;
+        
         let code_verifier = data
             .as_ref()
             .and_then(|d| d.get("code_verifier"))
             .and_then(|v| v.as_str())
             .map(String::from);
-
+            
         let code_challenge = data
             .as_ref()
             .and_then(|d| d.get("code_challenge"))
             .and_then(|v| v.as_str())
             .map(String::from);
-
+            
         let dpop_nonce = data
             .as_ref()
             .and_then(|d| d.get("dpop_nonce"))
             .and_then(|v| v.as_str())
             .map(String::from);
 
-        OAuthSession {
+        return Ok(Some(OAuthSession {
             did: row.did,
             state: row.state,
             token_endpoint: row.token_endpoint,
@@ -96,8 +84,10 @@ pub async fn get_session(pool: &PgPool, session_id: Uuid) -> cja::Result<Option<
             code_verifier,
             code_challenge,
             dpop_nonce,
-        }
-    }))
+        }));
+    }
+    
+    Ok(None)
 }
 
 /// Stores an OAuth token in the database with encryption
@@ -151,9 +141,9 @@ pub async fn store_token(app_state: &AppState, token_set: &OAuthTokenSet) -> cja
 
     // Encrypt sensitive token information
     let encrypted_access_token =
-        encrypt(&token_set.access_token, &app_state.encryption.key).await?;
+        encryption::encrypt(&token_set.access_token, &app_state.encryption.key).await?;
     let encrypted_refresh_token = match &token_set.refresh_token {
-        Some(refresh_token) => Some(encrypt(refresh_token, &app_state.encryption.key).await?),
+        Some(refresh_token) => Some(encryption::encrypt(refresh_token, &app_state.encryption.key).await?),
         None => None,
     };
 
@@ -207,10 +197,10 @@ pub async fn get_token(app_state: &AppState, did: &str) -> cja::Result<Option<OA
 
     if let Some(row) = row {
         // Decrypt access token and refresh token
-        let access_token = decrypt(&row.access_token, &app_state.encryption.key).await?;
+        let access_token = encryption::decrypt(&row.access_token, &app_state.encryption.key).await?;
         let refresh_token = match row.refresh_token {
             Some(ref encrypted_refresh_token) => {
-                Some(decrypt(encrypted_refresh_token, &app_state.encryption.key).await?)
+                Some(encryption::decrypt(encrypted_refresh_token, &app_state.encryption.key).await?)
             }
             None => None,
         };
@@ -253,10 +243,10 @@ pub async fn get_tokens_for_user(
 
     for row in encrypted_tokens {
         // Decrypt access token and refresh token for each token
-        let access_token = decrypt(&row.access_token, &app_state.encryption.key).await?;
+        let access_token = encryption::decrypt(&row.access_token, &app_state.encryption.key).await?;
         let refresh_token = match row.refresh_token {
             Some(ref encrypted_refresh_token) => {
-                Some(decrypt(encrypted_refresh_token, &app_state.encryption.key).await?)
+                Some(encryption::decrypt(encrypted_refresh_token, &app_state.encryption.key).await?)
             }
             None => None,
         };
@@ -332,7 +322,7 @@ pub async fn update_token_handle(pool: &PgPool, did: &str, handle: &str) -> cja:
 }
 
 /// Gets the most recent DPoP nonce for a DID
-pub async fn get_latest_nonce(pool: &PgPool, did: &str) -> cja::Result<Option<String>> {
+pub async fn get_latest_nonce(app_state: &AppState, did: &str) -> cja::Result<Option<String>> {
     // Find the most recent session for this DID that has a nonce
     let row = sqlx::query!(
         r#"
@@ -343,10 +333,12 @@ pub async fn get_latest_nonce(pool: &PgPool, did: &str) -> cja::Result<Option<St
         "#,
         did
     )
-    .fetch_optional(pool)
+    .fetch_optional(&app_state.db)
     .await?;
 
     if let Some(row) = row {
+        
+        // Fall back to JSONB data for backward compatibility
         let data: serde_json::Value = row.data.unwrap_or(serde_json::Value::Null);
         let nonce = data
             .get("dpop_nonce")
@@ -360,7 +352,7 @@ pub async fn get_latest_nonce(pool: &PgPool, did: &str) -> cja::Result<Option<St
 }
 
 /// Updates a session's DPoP nonce
-pub async fn update_session_nonce(pool: &PgPool, session_id: Uuid, nonce: &str) -> cja::Result<()> {
+pub async fn update_session_nonce(app_state: &AppState, session_id: Uuid, nonce: &str) -> cja::Result<()> {
     // First get the current session data
     let row = sqlx::query!(
         r#"
@@ -368,12 +360,14 @@ pub async fn update_session_nonce(pool: &PgPool, session_id: Uuid, nonce: &str) 
         "#,
         session_id
     )
-    .fetch_optional(pool)
+    .fetch_optional(&app_state.db)
     .await?;
 
+    // Update the JSONB data
+    let mut data = serde_json::Value::Null;
     if let Some(row) = row {
-        let mut data: serde_json::Value = row.data.unwrap_or(serde_json::Value::Null);
-
+        data = row.data.unwrap_or(serde_json::Value::Null);
+        
         // Update the nonce in the data
         if let Some(obj) = data.as_object_mut() {
             obj.insert(
@@ -381,25 +375,24 @@ pub async fn update_session_nonce(pool: &PgPool, session_id: Uuid, nonce: &str) 
                 serde_json::Value::String(nonce.to_string()),
             );
         }
-
-        // Update the session with the new data
-        sqlx::query!(
-            r#"
-            UPDATE oauth_sessions
-            SET data = $1, updated_at_utc = NOW()
-            WHERE session_id = $2
-            "#,
-            data,
-            session_id
-        )
-        .execute(pool)
-        .await?;
     }
+
+    // Update the session data
+    sqlx::query!(
+        r#"
+        UPDATE oauth_sessions
+        SET data = $1, updated_at_utc = NOW()
+        WHERE session_id = $2
+        "#,
+        data,
+        session_id
+    )
+    .execute(&app_state.db)
+    .await?;
 
     Ok(())
 }
 
-#[allow(dead_code)]
 pub async fn cleanup_expired_sessions(pool: &PgPool) -> cja::Result<u64> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)

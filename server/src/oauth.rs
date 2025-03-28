@@ -1144,7 +1144,7 @@ pub async fn refresh_token_if_needed(
     let client_id = state.client_id();
 
     // Try to get the latest DPoP nonce
-    let dpop_nonce = match db::get_latest_nonce(&state.db, &token.did).await {
+    let dpop_nonce = match db::get_latest_nonce(state, &token.did).await {
         Ok(nonce) => nonce,
         Err(err) => {
             error!("Failed to get DPoP nonce: {:?}", err);
