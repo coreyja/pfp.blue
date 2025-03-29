@@ -59,21 +59,20 @@ async fn exchange_auth_code_for_token(
                 last_error = Some(err.to_string());
 
                 // Check if the error contains a DPoP nonce error
-                if last_error.as_ref().unwrap().contains("use_dpop_nonce")
-                    || last_error.as_ref().unwrap().contains("nonce mismatch")
-                {
-                    // Try to extract the nonce from the error message
-                    if let Some(nonce) = extract_dpop_nonce_from_error(last_error.as_ref().unwrap())
-                    {
-                        // Save the new nonce in the database for this session
-                        if let Err(e) =
-                            oauth::db::update_session_nonce(app_state, session_id, &nonce).await
-                        {
-                            error!("Failed to update session nonce: {:?}", e);
-                        } else {
-                            // Continue to retry with the new nonce
-                            attempts += 1;
-                            continue;
+                if let Some(error_msg) = last_error.as_ref() {
+                    if error_msg.contains("use_dpop_nonce") || error_msg.contains("nonce mismatch") {
+                        // Try to extract the nonce from the error message
+                        if let Some(nonce) = extract_dpop_nonce_from_error(error_msg) {
+                            // Save the new nonce in the database for this session
+                            if let Err(e) =
+                                oauth::db::update_session_nonce(app_state, session_id, &nonce).await
+                            {
+                                error!("Failed to update session nonce: {:?}", e);
+                            } else {
+                                // Continue to retry with the new nonce
+                                attempts += 1;
+                                continue;
+                            }
                         }
                     }
                 }
