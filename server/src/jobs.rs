@@ -1,9 +1,12 @@
 use cja::jobs::Job;
-use color_eyre::eyre::{eyre, WrapErr};
-use serde::{Deserialize, Serialize};
+use color_eyre::eyre::eyre;
+use color_eyre::eyre::Context as _;
+use serde::Deserialize;
+use serde::Serialize;
 use std::collections::HashMap;
 use std::str::FromStr;
 use tracing::debug;
+use tracing::info;
 
 use crate::{
     oauth::{create_dpop_proof_with_ath, OAuthTokenSet},
@@ -161,9 +164,6 @@ impl Job<AppState> for UpdateProfileInfoJob {
     const NAME: &'static str = "UpdateProfileInfoJob";
 
     async fn run(&self, app_state: AppState) -> cja::Result<()> {
-        use color_eyre::eyre::eyre;
-        use tracing::{debug, error, info};
-
         // First, get the current token from the database with decryption
         let token = crate::oauth::get_valid_token_by_did(&self.did, &app_state)
             .await
@@ -178,7 +178,7 @@ impl Job<AppState> for UpdateProfileInfoJob {
 
         // Convert string DID to DID object
         let did = atrium_api::types::string::Did::new(self.did.clone())
-            .wrap_err_with(|| format!("Invalid DID format: {}", self.did))?;
+            .map_err(|e| eyre!("Invalid DID format: {}", e))?;
 
         // Resolve DID to document
         let did_document = crate::did::resolve_did_to_document(&did, xrpc_client)
