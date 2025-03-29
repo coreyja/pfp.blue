@@ -167,11 +167,7 @@ impl Job<AppState> for UpdateProfileInfoJob {
         // First, get the current token from the database with decryption
         let token = crate::oauth::get_valid_token_by_did(&self.did, &app_state)
             .await
-            .wrap_err_with(|| format!("Error retrieving token for DID {}", self.did))
-            .map_err(|err| {
-                error!("Error retrieving token for DID {}: {:?}", self.did, err);
-                err
-            })?;
+            .wrap_err_with(|| format!("Error retrieving token for DID {}", self.did))?;
 
         let client = reqwest::Client::new();
 
@@ -181,41 +177,24 @@ impl Job<AppState> for UpdateProfileInfoJob {
         ));
 
         // Convert string DID to DID object
-        let did = match atrium_api::types::string::Did::new(self.did.clone()) {
-            Ok(did) => did,
-            Err(err) => {
-                error!("Invalid DID format: {:?}", err);
-                return Err(eyre!("Invalid DID format: {}", err));
-            }
-        };
+        let did = atrium_api::types::string::Did::new(self.did.clone())
+            .wrap_err_with(|| format!("Invalid DID format: {}", self.did))?;
 
         // Resolve DID to document
-        let did_document = match crate::did::resolve_did_to_document(&did, xrpc_client).await {
-            Ok(doc) => doc,
-            Err(err) => {
-                error!("Failed to resolve DID document: {:?}", err);
-                return Err(eyre!("Failed to resolve DID document: {}", err));
-            }
-        };
+        let did_document = crate::did::resolve_did_to_document(&did, xrpc_client)
+            .await
+            .wrap_err_with(|| format!("Failed to resolve DID document for {}", self.did))?;
 
         // Find the PDS service endpoint
-        let services = match did_document.service.as_ref() {
-            Some(services) => services,
-            None => {
-                error!("No service endpoints found in DID document");
-                return Err(eyre!("No service endpoints found in DID document"));
-            }
-        };
+        let services = did_document
+            .service
+            .as_ref()
+            .ok_or_else(|| eyre!("No service endpoints found in DID document"))?;
 
-        let pds_service = match services.iter().find(|s| s.id == "#atproto_pds") {
-            Some(service) => service,
-            None => {
-                error!("No ATProto PDS service endpoint found in DID document");
-                return Err(eyre!(
-                    "No ATProto PDS service endpoint found in DID document"
-                ));
-            }
-        };
+        let pds_service = services
+            .iter()
+            .find(|s| s.id == "#atproto_pds")
+            .ok_or_else(|| eyre!("No ATProto PDS service endpoint found in DID document"))?;
 
         let pds_endpoint = &pds_service.service_endpoint;
         info!("Found PDS endpoint for DID {}: {}", self.did, pds_endpoint);
@@ -228,19 +207,19 @@ impl Job<AppState> for UpdateProfileInfoJob {
         // Start with no nonce and handle any in the error response
         // Create a DPoP proof for this API call using the PDS endpoint (no nonce initially)
         // Include access token hash (ath)
-        let dpop_proof = match create_dpop_proof_with_ath(
+        let dpop_proof = create_dpop_proof_with_ath(
             &app_state.bsky_oauth,
             "GET",
             &get_record_url,
             None,
             &token.access_token,
-        ) {
-            Ok(proof) => proof,
-            Err(err) => {
-                error!("Failed to create DPoP proof for profile job: {:?}", err);
-                return Err(err);
-            }
-        };
+        )
+        .wrap_err_with(|| {
+            format!(
+                "Failed to create DPoP proof for profile job for DID {}",
+                self.did
+            )
+        })?;
 
         // Make the API request to get user profile directly from their PDS
         let mut response_result = client
@@ -267,19 +246,19 @@ impl Job<AppState> for UpdateProfileInfoJob {
                     info!("Received new DPoP-Nonce in error response: {}", new_nonce);
 
                     // Create a new DPoP proof with the provided nonce and access token hash
-                    let new_dpop_proof = match create_dpop_proof_with_ath(
+                    let new_dpop_proof = create_dpop_proof_with_ath(
                         &app_state.bsky_oauth,
                         "GET",
                         &get_record_url,
                         Some(new_nonce),
                         &token.access_token,
-                    ) {
-                        Ok(proof) => proof,
-                        Err(err) => {
-                            error!("Failed to create DPoP proof with new nonce: {:?}", err);
-                            return Err(err);
-                        }
-                    };
+                    )
+                    .wrap_err_with(|| {
+                        format!(
+                            "Failed to create DPoP proof with new nonce for DID {}",
+                            self.did
+                        )
+                    })?;
 
                     // Retry the request with the new nonce
                     info!("Retrying profile retrieval with new DPoP-Nonce");
@@ -299,24 +278,15 @@ impl Job<AppState> for UpdateProfileInfoJob {
         }
 
         // Handle the final result
-        let response = response_result
-            .wrap_err("Network error when fetching profile")
-            .map_err(|err| {
-                error!("Failed to send profile request: {:?}", err);
-                err
-            })?;
+        let response = response_result.wrap_err("Network error when fetching profile")?;
 
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response
                 .text()
                 .await
-                .unwrap_or_else(|_| "Failed to read error response".to_string());
+                .wrap_err("Failed to read error response")?;
 
-            error!(
-                "Failed to fetch profile for {}: {} - {}",
-                &self.did, status, error_text
-            );
             return Err(eyre!(
                 "Failed to fetch profile: {} - {}",
                 status,
@@ -325,13 +295,10 @@ impl Job<AppState> for UpdateProfileInfoJob {
         }
 
         // Parse the response JSON
-        let profile_data = match response.json::<serde_json::Value>().await {
-            Ok(data) => data,
-            Err(err) => {
-                error!("Failed to parse profile response: {:?}", err);
-                return Err(eyre!("Failed to parse profile response: {}", err));
-            }
-        };
+        let profile_data = response
+            .json::<serde_json::Value>()
+            .await
+            .wrap_err_with(|| format!("Failed to parse profile response for DID {}", self.did))?;
 
         // Extract the display name and handle from the profile data
         let value = profile_data.get("value");
@@ -368,24 +335,23 @@ impl Job<AppState> for UpdateProfileInfoJob {
 
             if should_update {
                 // Update the display name in the database
-                match crate::oauth::db::update_token_display_name(
+                crate::oauth::db::update_token_display_name(
                     &app_state.db,
                     &self.did,
                     &display_name_str,
                 )
                 .await
-                {
-                    Ok(_) => {
-                        info!(
-                            "Updated display name for DID {}: {}",
-                            self.did, display_name_str
-                        );
-                    }
-                    Err(err) => {
-                        error!("Failed to update display name in database: {:?}", err);
-                        return Err(err);
-                    }
-                }
+                .wrap_err_with(|| {
+                    format!(
+                        "Failed to update display name in database for DID {}",
+                        self.did
+                    )
+                })?;
+
+                info!(
+                    "Updated display name for DID {}: {}",
+                    self.did, display_name_str
+                );
             } else {
                 debug!(
                     "Display name for DID {} already up to date: {}",
@@ -409,17 +375,13 @@ impl Job<AppState> for UpdateProfileInfoJob {
 
             if should_update {
                 // Update the handle in the database
-                match crate::oauth::db::update_token_handle(&app_state.db, &self.did, &handle_str)
+                crate::oauth::db::update_token_handle(&app_state.db, &self.did, &handle_str)
                     .await
-                {
-                    Ok(_) => {
-                        info!("Updated handle for DID {}: {}", self.did, handle_str);
-                    }
-                    Err(err) => {
-                        error!("Failed to update handle in database: {:?}", err);
-                        return Err(err);
-                    }
-                }
+                    .wrap_err_with(|| {
+                        format!("Failed to update handle in database for DID {}", self.did)
+                    })?;
+
+                info!("Updated handle for DID {}: {}", self.did, handle_str);
             } else {
                 debug!(
                     "Handle for DID {} already up to date: {}",
@@ -457,7 +419,7 @@ impl Job<AppState> for UpdateProfilePictureProgressJob {
         use tracing::{debug, error, info};
 
         // Get the token ID's DID first
-        let token_info = match sqlx::query!(
+        let token_info = sqlx::query!(
             r#"
             SELECT did FROM oauth_tokens WHERE id = $1
             "#,
@@ -465,14 +427,7 @@ impl Job<AppState> for UpdateProfilePictureProgressJob {
         )
         .fetch_optional(&app_state.db)
         .await?
-        {
-            Some(row) => row,
-            None => {
-                // No token found, can't proceed
-                error!("No token found for ID {} in job", self.token_id);
-                return Err(eyre!("No token found for ID"));
-            }
-        };
+        .ok_or_else(|| eyre!("No token found for ID {} in job", self.token_id))?;
 
         UpdateProfileInfoJob {
             did: token_info.did.clone(),
@@ -481,33 +436,22 @@ impl Job<AppState> for UpdateProfilePictureProgressJob {
         .await?;
 
         // Use our consolidated function to get a valid token
-        let token = match crate::oauth::get_valid_token_by_did(&token_info.did, &app_state).await {
-            Ok(token) => token,
-            Err(err) => {
-                error!(
-                    "Failed to get valid token for DID {}: {:?}",
-                    token_info.did, err
-                );
-                return Err(eyre!("Failed to get valid token: {}", err));
-            }
-        };
+        let token = crate::oauth::get_valid_token_by_did(&token_info.did, &app_state)
+            .await
+            .wrap_err_with(|| format!("Failed to get valid token for DID {}", token_info.did))?;
 
         // Get the progress settings for this token
-        let progress = match crate::profile_progress::ProfilePictureProgress::get_by_token_id(
+        let progress = crate::profile_progress::ProfilePictureProgress::get_by_token_id(
             &app_state.db,
             self.token_id,
         )
         .await?
-        {
-            Some(progress) => progress,
-            None => {
-                error!(
-                    "No progress settings found for token ID {} in job",
-                    self.token_id
-                );
-                return Err(eyre!("No progress settings found"));
-            }
-        };
+        .ok_or_else(|| {
+            eyre!(
+                "No progress settings found for token ID {} in job",
+                self.token_id
+            )
+        })?;
 
         // Check if the feature is enabled
         if !progress.enabled {
@@ -519,25 +463,24 @@ impl Job<AppState> for UpdateProfilePictureProgressJob {
         }
 
         // Get the original profile picture blob from our custom collection
-        let original_blob = match get_original_profile_picture(&app_state, &token).await {
-            Ok(blob) => blob,
-            Err(err) => {
-                error!("Failed to check for original profile picture: {:?}", err);
-                return Err(err);
-            }
-        };
+        let original_blob = get_original_profile_picture(&app_state, &token)
+            .await
+            .wrap_err_with(|| {
+                format!(
+                    "Failed to check for original profile picture for token ID {}",
+                    self.token_id
+                )
+            })?;
 
         // Extract the CID (link) from the blob object
         let original_blob_cid = if let Some(blob_ref) = original_blob.get("ref") {
-            if let Some(link) = blob_ref.get("$link").and_then(|l| l.as_str()) {
-                link.to_string()
-            } else {
-                error!("Original blob object has no valid $link field");
-                return Err(eyre!("Original blob object has no valid $link field"));
-            }
+            blob_ref
+                .get("$link")
+                .and_then(|l| l.as_str())
+                .map(|s| s.to_string())
+                .ok_or_else(|| eyre!("Original blob object has no valid $link field"))?
         } else {
-            error!("Original blob object has no ref field");
-            return Err(eyre!("Original blob object has no ref field"));
+            Err(eyre!("Original blob object has no ref field"))?
         };
 
         debug!("Using original blob CID: {}", original_blob_cid);
