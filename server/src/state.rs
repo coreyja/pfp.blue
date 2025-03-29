@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use age::x25519::Identity;
 use atrium_xrpc_client::reqwest::{ReqwestClient, ReqwestClientBuilder};
+use color_eyre::eyre::WrapErr;
 use sqlx::{postgres::PgPoolOptions, PgPool};
 
 #[derive(Clone)]
@@ -33,13 +34,11 @@ impl BlueskyOAuthConfig {
         use std::process::Command;
         use tempfile::NamedTempFile;
 
-        let decoded_private_key = match base64::Engine::decode(
+        let decoded_private_key = base64::Engine::decode(
             &base64::engine::general_purpose::STANDARD,
             &self.private_key,
-        ) {
-            Ok(key) => key,
-            Err(e) => return Err(eyre!("Failed to decode base64-encoded private key: {}", e)),
-        };
+        )
+        .wrap_err("Failed to decode base64-encoded private key")?;
 
         let key_preview = if decoded_private_key.len() > 30 {
             format!("{:?}...", &decoded_private_key[..30])
@@ -48,11 +47,11 @@ impl BlueskyOAuthConfig {
         };
 
         let mut private_temp_file =
-            NamedTempFile::new().map_err(|e| eyre!("Failed to create temporary file: {}", e))?;
+            NamedTempFile::new().wrap_err("Failed to create temporary file")?;
 
         private_temp_file
             .write_all(&decoded_private_key)
-            .map_err(|e| eyre!("Failed to write to temporary file: {}", e))?;
+            .wrap_err("Failed to write to temporary file")?;
 
         let private_output = Command::new("openssl")
             .arg("ec")
@@ -60,7 +59,7 @@ impl BlueskyOAuthConfig {
             .arg(private_temp_file.path())
             .arg("-noout")
             .output()
-            .map_err(|e| eyre!("Failed to execute OpenSSL on private key: {}", e))?;
+            .wrap_err("Failed to execute OpenSSL on private key")?;
 
         if !private_output.status.success() {
             let error = String::from_utf8_lossy(&private_output.stderr);
@@ -71,13 +70,11 @@ impl BlueskyOAuthConfig {
             ));
         }
 
-        let decoded_public_key = match base64::Engine::decode(
+        let decoded_public_key = base64::Engine::decode(
             &base64::engine::general_purpose::STANDARD,
             &self.public_key,
-        ) {
-            Ok(key) => key,
-            Err(e) => return Err(eyre!("Failed to decode base64-encoded public key: {}", e)),
-        };
+        )
+        .wrap_err("Failed to decode base64-encoded public key")?;
 
         let pub_key_preview = if decoded_public_key.len() > 30 {
             format!("{:?}...", &decoded_public_key[..30])
@@ -86,11 +83,11 @@ impl BlueskyOAuthConfig {
         };
 
         let mut public_temp_file = NamedTempFile::new()
-            .map_err(|e| eyre!("Failed to create temporary file for public key: {}", e))?;
+            .wrap_err("Failed to create temporary file for public key")?;
 
         public_temp_file
             .write_all(&decoded_public_key)
-            .map_err(|e| eyre!("Failed to write to temporary file for public key: {}", e))?;
+            .wrap_err("Failed to write to temporary file for public key")?;
 
         let public_output = Command::new("openssl")
             .arg("ec")
@@ -99,7 +96,7 @@ impl BlueskyOAuthConfig {
             .arg(public_temp_file.path())
             .arg("-noout")
             .output()
-            .map_err(|e| eyre!("Failed to execute OpenSSL on public key: {}", e))?;
+            .wrap_err("Failed to execute OpenSSL on public key")?;
 
         if !public_output.status.success() {
             let error = String::from_utf8_lossy(&public_output.stderr);

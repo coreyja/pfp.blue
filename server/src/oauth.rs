@@ -30,7 +30,7 @@ pub fn generate_jwk(public_key_base64: &str) -> cja::Result<Jwk> {
         &base64::engine::general_purpose::STANDARD,
         public_key_base64,
     )
-    .wrap_err_with(|| "Failed to decode base64-encoded public key".to_string())?;
+    .wrap_err("Failed to decode base64-encoded public key")?;
 
     // Log the first few bytes without revealing the whole key
     let key_preview = if decoded_key.len() > 30 {
@@ -42,7 +42,7 @@ pub fn generate_jwk(public_key_base64: &str) -> cja::Result<Jwk> {
 
     // Convert the decoded key bytes to a string for PEM parsing
     let key_str = std::str::from_utf8(&decoded_key)
-        .wrap_err_with(|| "Failed to convert decoded public key to string")?;
+        .wrap_err("Failed to convert decoded public key to string")?;
 
     // Parse the public key from PEM format
     let verifying_key = VerifyingKey::from_public_key_pem(key_str)
@@ -613,18 +613,16 @@ fn create_dpop_proof_impl(
         .map_err(|e| eyre!("Failed to create temporary file for private key: {}", e))?;
 
     // Decode base64-encoded private key
-    let decoded_key = match base64::Engine::decode(
+    let decoded_key = base64::Engine::decode(
         &base64::engine::general_purpose::STANDARD,
         &oauth_config.private_key,
-    ) {
-        Ok(key) => key,
-        Err(e) => return Err(eyre!("Failed to decode base64-encoded private key: {}", e)),
-    };
+    )
+    .wrap_err_with(|| "Failed to decode base64-encoded private key")?;
 
     // Write the decoded PEM-encoded private key to the file
     key_file
         .write_all(&decoded_key)
-        .map_err(|e| eyre!("Failed to write private key to temporary file: {}", e))?;
+        .wrap_err_with(|| "Failed to write private key to temporary file")?;
 
     // 6. Use OpenSSL to create the signature
     let output = Command::new("openssl")
@@ -635,7 +633,7 @@ fn create_dpop_proof_impl(
         .arg("-binary")
         .arg(message_file.path())
         .output()
-        .map_err(|e| eyre!("Failed to execute OpenSSL for signing: {}", e))?;
+        .wrap_err_with(|| "Failed to execute OpenSSL for signing")?;
 
     if !output.status.success() {
         let error = String::from_utf8_lossy(&output.stderr);
@@ -647,15 +645,8 @@ fn create_dpop_proof_impl(
     let signature_der = output.stdout;
 
     // 7. Convert DER-encoded signature to raw R||S format for JWT
-    let signature_raw = match der_signature_to_raw_signature(&signature_der) {
-        Ok(sig) => sig,
-        Err(e) => {
-            return Err(eyre!(
-                "Failed to convert DER signature to raw format: {}",
-                e
-            ))
-        }
-    };
+    let signature_raw = der_signature_to_raw_signature(&signature_der)
+        .wrap_err("Failed to convert DER signature to raw format")?;
 
     // 8. Base64URL-encode the raw signature
     let signature_b64 = base64_url_encode(&signature_raw);
@@ -773,7 +764,7 @@ pub async fn exchange_code_for_token(
             return response
                 .json::<TokenResponse>()
                 .await
-                .map_err(|e| eyre!("Failed to parse token response: {}", e));
+                .wrap_err("Failed to parse token response");
         } else {
             let status = response.status();
             let error_text = response

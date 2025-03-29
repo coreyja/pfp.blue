@@ -71,6 +71,54 @@ Jobs are processed in the background and will retry on failure.
 - Error messages: Be descriptive and actionable
 - Error propagation: Use `?` operator, avoid unwrap/expect in production code
 - Tracing: Use tracing macros for observability (info, debug, etc.)
+
+## Error Handling Guidelines
+
+We use `color-eyre` for error handling throughout the codebase. Follow these best practices:
+
+1. Always prefer using the `?` operator with `wrap_err` or `wrap_err_with` instead of match statements for error handling:
+
+```rust
+// GOOD
+let data = some_function().wrap_err("Failed to get data")?;
+
+// AVOID when only adding context
+let data = match some_function() {
+    Ok(d) => d,
+    Err(e) => return Err(eyre!("Failed to get data: {}", e)),
+};
+```
+
+2. Use `wrap_err` for static error messages:
+
+```rust
+// GOOD
+.wrap_err("Failed to decode file")?;
+
+// AVOID for static strings 
+.wrap_err_with(|| "Failed to decode file")?;
+```
+
+3. Use `wrap_err_with` only when you need to generate dynamic error messages:
+
+```rust
+// GOOD - Dynamic content in error message
+.wrap_err_with(|| format!("Failed to process file: {}", file_path))?;
+
+// GOOD - Expensive computation only done if there's an error
+.wrap_err_with(|| {
+    let details = compute_error_details();
+    format!("Failed with details: {}", details)
+})?;
+```
+
+4. Always ensure the `WrapErr` trait is imported:
+
+```rust
+use color_eyre::eyre::{eyre, WrapErr};
+```
+
+5. For web handlers that need to return custom responses, use more explicit error handling patterns.
 - Database queries: **Always** use the `sqlx::query!` and `sqlx::query_as!` macros instead of the non-macro versions. These macros provide compile-time SQL validation and type-checking, preventing runtime SQL errors.
 
 ## Database Schema
