@@ -6,6 +6,7 @@
 - Run: `cargo run`
 - Check: `cargo check`
 - Lint: `cargo clippy`
+- Fix auto-correctable lints: `cargo clippy --fix` (always try this first before manually fixing lints)
 - Format: `cargo fmt`
 - Test: `cargo test`
 - Test single: `cargo test <test_name>`
