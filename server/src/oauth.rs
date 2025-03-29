@@ -617,12 +617,12 @@ fn create_dpop_proof_impl(
         &base64::engine::general_purpose::STANDARD,
         &oauth_config.private_key,
     )
-    .wrap_err_with(|| "Failed to decode base64-encoded private key")?;
+    .wrap_err("Failed to decode base64-encoded private key")?;
 
     // Write the decoded PEM-encoded private key to the file
     key_file
         .write_all(&decoded_key)
-        .wrap_err_with(|| "Failed to write private key to temporary file")?;
+        .wrap_err("Failed to write private key to temporary file")?;
 
     // 6. Use OpenSSL to create the signature
     let output = Command::new("openssl")
@@ -633,7 +633,7 @@ fn create_dpop_proof_impl(
         .arg("-binary")
         .arg(message_file.path())
         .output()
-        .wrap_err_with(|| "Failed to execute OpenSSL for signing")?;
+        .wrap_err("Failed to execute OpenSSL for signing")?;
 
     if !output.status.success() {
         let error = String::from_utf8_lossy(&output.stderr);

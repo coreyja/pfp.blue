@@ -1,12 +1,12 @@
+use crate::errors::{ServerResult, WithStatus};
 use axum::{
     extract::{Query, State},
     http::StatusCode,
     response::{IntoResponse, Redirect},
     Json,
 };
-use color_eyre::eyre::{eyre, WrapErr};
-use crate::errors::{ServerResult, WithStatus};
 use cja::jobs::Job as _;
+use color_eyre::eyre::{eyre, WrapErr};
 use maud::html;
 use serde::Deserialize;
 use std::time::SystemTime;
@@ -19,7 +19,9 @@ use crate::{
     state::AppState,
 };
 
-pub async fn client_metadata(state: State<AppState>) -> crate::errors::ServerResult<Json<serde_json::Value>, StatusCode> {
+pub async fn client_metadata(
+    state: State<AppState>,
+) -> crate::errors::ServerResult<Json<serde_json::Value>, StatusCode> {
     let fqdn = format!("{}://{}", state.protocol, state.domain);
     // Use the consistent client ID
     let metadata_url = state.client_id();
@@ -84,19 +86,23 @@ pub async fn authorize(
     );
 
     // Resolve DID or handle using our helper function
-    let did = crate::did::resolve_did_or_handle(&params.did, state.bsky_client.clone()).await
+    let did = crate::did::resolve_did_or_handle(&params.did, state.bsky_client.clone())
+        .await
         .wrap_err_with(|| format!("Invalid DID or handle: {}", params.did))
         .with_status(StatusCode::BAD_REQUEST)?;
 
     // Get the DID document
-    let did_doc = crate::did::resolve_did_to_document(&did, state.bsky_client.clone()).await
+    let did_doc = crate::did::resolve_did_to_document(&did, state.bsky_client.clone())
+        .await
         .wrap_err_with(|| format!("Failed to resolve DID document for: {:?}", did))
         .with_status(StatusCode::BAD_REQUEST)?;
 
     // Get auth metadata for the DID
-    let auth_metadata = crate::did::document_to_auth_server_metadata(&did_doc, state.bsky_client.clone()).await
-        .wrap_err("Failed to get auth server metadata")
-        .with_status(StatusCode::INTERNAL_SERVER_ERROR)?;
+    let auth_metadata =
+        crate::did::document_to_auth_server_metadata(&did_doc, state.bsky_client.clone())
+            .await
+            .wrap_err("Failed to get auth server metadata")
+            .with_status(StatusCode::INTERNAL_SERVER_ERROR)?;
 
     // Create and store the OAuth session with the resolved DID
     let session = OAuthSession::new(
@@ -106,7 +112,8 @@ pub async fn authorize(
     );
 
     // Store the session in the database
-    let session_id = oauth::db::store_session(&state, &session).await
+    let session_id = oauth::db::store_session(&state, &session)
+        .await
         .wrap_err("Failed to store OAuth session")
         .with_status(StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -163,15 +170,15 @@ pub async fn fetch_blob_by_cid(
     );
 
     // Resolve the DID using our helper function
-    let did_obj =
-        crate::did::resolve_did_or_handle(did_or_handle, app_state.bsky_client.clone()).await
+    let did_obj = crate::did::resolve_did_or_handle(did_or_handle, app_state.bsky_client.clone())
+        .await
         .wrap_err_with(|| format!("Failed to resolve DID or handle: {}", did_or_handle))?;
     let did_str = did_obj.to_string();
 
     // Try to fetch the blob using our api module
     let client = reqwest::Client::new();
-    let pds_endpoint =
-        crate::api::find_pds_endpoint(&did_str, app_state.bsky_client.clone()).await
+    let pds_endpoint = crate::api::find_pds_endpoint(&did_str, app_state.bsky_client.clone())
+        .await
         .wrap_err_with(|| format!("Failed to find PDS endpoint for DID: {}", did_str))?;
 
     // Construct the getBlob URL using the PDS endpoint with the resolved DID
@@ -182,7 +189,10 @@ pub async fn fetch_blob_by_cid(
     info!("Requesting blob from PDS: {}", blob_url);
 
     // Create a request for the blob
-    let response = client.get(&blob_url).send().await
+    let response = client
+        .get(&blob_url)
+        .send()
+        .await
         .wrap_err_with(|| format!("Failed to send request to PDS for blob: {}", blob_url))?;
 
     if !response.status().is_success() {
@@ -206,7 +216,9 @@ pub async fn fetch_blob_by_cid(
         match client.get(&cdn_url).send().await {
             Ok(cdn_response) => {
                 if cdn_response.status().is_success() {
-                    let blob_data = cdn_response.bytes().await
+                    let blob_data = cdn_response
+                        .bytes()
+                        .await
                         .wrap_err("Failed to get response bytes from CDN fallback")?
                         .to_vec();
                     info!(
@@ -235,7 +247,9 @@ pub async fn fetch_blob_by_cid(
         }
     } else {
         // Success! Get the image data
-        let blob_data = response.bytes().await
+        let blob_data = response
+            .bytes()
+            .await
             .wrap_err("Failed to get response bytes from PDS")?
             .to_vec();
         info!(
