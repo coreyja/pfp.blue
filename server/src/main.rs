@@ -10,6 +10,7 @@ mod components;
 mod cron;
 mod did;
 mod encryption;
+mod errors;
 mod jobs;
 mod oauth;
 mod profile_progress;
