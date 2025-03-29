@@ -151,7 +151,7 @@ mod tests {
         Ok(())
     }
 
-    use crate::jobs::generate_progress_image;
+    use crate::jobs::helpers::generate_progress_image;
     use std::fs;
     use std::path::Path;
 
