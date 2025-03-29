@@ -1,15 +1,21 @@
 use crate::{
     auth::{AdminUser, AuthUser, OptionalUser},
+    components::layout::Page,
+    errors::{ServerError, ServerResult, WithRedirect},
     profile_progress::ProfilePictureProgress,
     state::AppState,
 };
-use axum::extract::{Form, State};
 use axum::{
+    extract::{Form, State},
+    response::Response,
+};
+use axum::{
+    http::StatusCode,
     response::{IntoResponse, Redirect},
     routing::{get, post},
 };
 use cja::jobs::Job as _;
-use color_eyre::eyre::eyre;
+use color_eyre::eyre::{eyre, WrapErr};
 use serde::Deserialize;
 use std::collections::HashMap;
 use tower_cookies::{Cookie, Cookies};
@@ -50,9 +56,9 @@ pub fn routes(app_state: AppState) -> axum::Router {
 }
 
 /// Root page handler - displays the homepage
-async fn root_page(optional_user: OptionalUser) -> impl IntoResponse {
+async fn root_page(optional_user: OptionalUser) -> Page {
     use crate::components::{
-        layout::{Card, Page},
+        layout::Card,
         profile::feature_card::{FeatureCard, FeatureCardColor},
         ui::{
             button::{Button, ButtonSize},
@@ -137,7 +143,6 @@ async fn root_page(optional_user: OptionalUser) -> impl IntoResponse {
         title: "pfp.blue - Bluesky Profile Manager".to_string(),
         content: Box::new(Card::new(content).with_max_width("max-w-md")),
     }
-    .render()
 }
 
 /// Login page handler - displays the login form
@@ -251,43 +256,35 @@ async fn toggle_profile_progress(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
     Form(params): Form<ToggleProfileProgressParams>,
-) -> impl IntoResponse {
+) -> ServerResult<Response, Redirect> {
     // Validate token ownership and get token ID
-    let token_id = match validate_token_ownership(&state, &params.token_id, user.user_id).await {
-        Ok(id) => id,
-        Err(e) => {
-            error!("Token ownership validation failed: {}", e);
-            return Redirect::to("/me").into_response();
-        }
-    };
+    let token_id = validate_token_ownership(&state, &params.token_id, user.user_id)
+        .await
+        .wrap_err("Failed to validate token ownership")
+        .with_redirect(Redirect::to("/me"))?;
 
     // Get or create the profile progress settings
-    let result =
-        ProfilePictureProgress::get_or_create(&state.db, token_id, params.enabled.is_some()).await;
+    let mut settings =
+        ProfilePictureProgress::get_or_create(&state.db, token_id, params.enabled.is_some())
+            .await
+            .wrap_err("Failed to get or create profile progress settings")
+            .with_redirect(Redirect::to("/me"))?;
 
-    match result {
-        Ok(mut settings) => {
-            // Update the enabled status
-            if let Err(err) = settings
-                .update_enabled(&state.db, params.enabled.is_some())
-                .await
-            {
-                error!("Failed to update profile progress settings: {:?}", err);
-            } else {
-                info!(
-                    "Updated profile progress settings for token {}: enabled={}",
-                    token_id,
-                    params.enabled.is_some()
-                );
-            }
-        }
-        Err(err) => {
-            error!("Failed to get/create profile progress settings: {:?}", err);
-        }
-    }
+    // Update the enabled status
+    settings
+        .update_enabled(&state.db, params.enabled.is_some())
+        .await
+        .wrap_err("Failed to update profile progress settings")
+        .with_redirect(Redirect::to("/me"))?;
+
+    info!(
+        "Updated profile progress settings for token {}: enabled={}",
+        token_id,
+        params.enabled.is_some()
+    );
 
     // Redirect back to profile page
-    Redirect::to("/me").into_response()
+    Ok(Redirect::to("/me").into_response())
 }
 
 /// Parameters for setting original profile picture
@@ -302,18 +299,15 @@ async fn set_original_profile_picture(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
     Form(params): Form<SetOriginalProfilePictureParams>,
-) -> impl IntoResponse {
+) -> ServerResult<Redirect, Redirect> {
     // Validate token ownership and get token ID
-    let token_id = match validate_token_ownership(&state, &params.token_id, user.user_id).await {
-        Ok(id) => id,
-        Err(e) => {
-            error!("Token ownership validation failed: {}", e);
-            return Redirect::to("/me").into_response();
-        }
-    };
+    let token_id = validate_token_ownership(&state, &params.token_id, user.user_id)
+        .await
+        .wrap_err("Failed to validate token ownership")
+        .with_redirect(Redirect::to("/me"))?;
 
     // Get the token information to fetch the blob and save to PDS
-    let token_result = sqlx::query!(
+    let row = sqlx::query!(
         r#"
         SELECT * FROM oauth_tokens
         WHERE id = $1
@@ -321,10 +315,13 @@ async fn set_original_profile_picture(
         token_id
     )
     .fetch_optional(&state.db)
-    .await;
+    .await
+    .wrap_err("Database error when fetching token")
+    .with_redirect(Redirect::to("/me"))?;
 
-    let token = match token_result {
-        Ok(Some(row)) => {
+    // Check if the token was found
+    let token = match row {
+        Some(row) => {
             // Create OAuthTokenSet from the database row
             crate::oauth::OAuthTokenSet {
                 did: row.did.clone(),
@@ -339,73 +336,59 @@ async fn set_original_profile_picture(
                 user_id: Some(row.user_id),
             }
         }
-        Ok(None) => {
-            error!("Token not found: {}", token_id);
-            return Redirect::to("/me").into_response();
-        }
-        Err(e) => {
-            error!("Database error when fetching token: {:?}", e);
-            return Redirect::to("/me").into_response();
+        None => {
+            return Err(ServerError(
+                eyre!("Token not found: {}", token_id),
+                Redirect::to("/me"),
+            ));
         }
     };
 
     // Get or create profile progress settings (don't store the blob CID anymore)
-    let result = ProfilePictureProgress::get_or_create(
+    let _settings = ProfilePictureProgress::get_or_create(
         &state.db, token_id, true, // Enable when setting an original profile picture
     )
-    .await;
+    .await
+    .wrap_err("Failed to get or create profile progress settings")
+    .with_redirect(Redirect::to("/me"))?;
 
-    match result {
-        Ok(_settings) => {
-            // Fetch the original blob to get its contents
-            match crate::routes::bsky::fetch_blob_by_cid(&token.did, &params.blob_cid, &state).await
-            {
-                Ok(blob_data) => {
-                    // Upload the blob to get a proper blob object
-                    match crate::jobs::upload_image_to_bluesky(&state, &token, &blob_data).await {
-                        Ok(blob_object) => {
-                            // Save the blob object to our custom PDS collection
-                            match crate::jobs::save_original_profile_picture(
-                                &state,
-                                &token,
-                                blob_object,
-                            )
-                            .await
-                            {
-                                Ok(_) => {
-                                    info!(
-                                        "Saved original profile picture to PDS collection for DID {}",
-                                        token.did
-                                    );
+    // Fetch the original blob to get its contents
+    let blob_data = crate::routes::bsky::fetch_blob_by_cid(&token.did, &params.blob_cid, &state)
+        .await
+        .wrap_err("Failed to fetch blob data")
+        .with_redirect(Redirect::to("/me"))?;
 
-                                    // Enqueue a job to update the profile picture
-                                    enqueue_profile_picture_update_job(&state, token_id).await;
-                                }
-                                Err(err) => {
-                                    error!(
-                                        "Failed to save original profile picture to PDS: {:?}",
-                                        err
-                                    );
-                                }
-                            }
-                        }
-                        Err(err) => {
-                            error!("Failed to upload original profile picture blob: {:?}", err);
-                        }
-                    }
-                }
-                Err(err) => {
-                    error!("Failed to fetch blob data: {:?}", err);
-                }
-            }
-        }
-        Err(err) => {
-            error!("Failed to get/create profile progress settings: {:?}", err);
-        }
+    // Upload the blob to get a proper blob object
+    let blob_object = crate::jobs::helpers::upload_image_to_bluesky(&state, &token, &blob_data)
+        .await
+        .wrap_err("Failed to upload original profile picture blob")
+        .with_redirect(Redirect::to("/me"))?;
+
+    // Save the blob object to our custom PDS collection
+    crate::jobs::helpers::save_original_profile_picture(&state, &token, blob_object)
+        .await
+        .wrap_err("Failed to save original profile picture to PDS")
+        .with_redirect(Redirect::to("/me"))?;
+
+    info!(
+        "Saved original profile picture to PDS collection for DID {}",
+        token.did
+    );
+
+    // Enqueue a job to update the profile picture
+    let job = crate::jobs::UpdateProfilePictureProgressJob::new(token_id);
+    if let Err(e) = job
+        .enqueue(state.clone(), "enabled_profile_progress".to_string())
+        .await
+    {
+        error!("Failed to enqueue profile picture update job: {:?}", e);
+        // Even if job enqueueing fails, we continue - it's not critical
+    } else {
+        info!("Enqueued profile picture update job for token {}", token_id);
     }
 
     // Redirect back to profile page
-    Redirect::to("/me").into_response()
+    Ok(Redirect::to("/me"))
 }
 
 /// Helper function to validate token ownership and return token ID
@@ -420,39 +403,35 @@ async fn validate_token_ownership(state: &AppState, did: &str, user_id: Uuid) ->
     )
     .fetch_optional(&state.db)
     .await
-    .map_err(|e| {
-        error!("Database error when checking token ownership: {:?}", e);
-        eyre!("Database error: {}", e)
+    .wrap_err_with(|| {
+        format!(
+            "Database error when checking token ownership for DID: {}",
+            did
+        )
     })?;
 
     match token_result {
         Some(row) => Ok(row.id),
         None => {
             error!("Attempted to access token not belonging to user: {}", did);
-            Err(eyre!("Token not found or not owned by user"))
+            Err(eyre!(
+                "Token {} not found or not owned by user {}",
+                did,
+                user_id
+            ))
         }
     }
 }
 
-/// Helper function to enqueue a profile picture update job
-async fn enqueue_profile_picture_update_job(state: &AppState, token_id: Uuid) {
-    let job = crate::jobs::UpdateProfilePictureProgressJob::new(token_id);
-    if let Err(e) = job
-        .enqueue(state.clone(), "enabled_profile_progress".to_string())
-        .await
-    {
-        error!("Failed to enqueue profile picture update job: {:?}", e);
-    } else {
-        info!("Enqueued profile picture update job for token {}", token_id);
-    }
-}
-
 /// Logout route - clears authentication cookies and redirects to home
-async fn logout(State(state): State<AppState>, cookies: Cookies) -> impl IntoResponse {
+async fn logout(
+    State(state): State<AppState>,
+    cookies: Cookies,
+) -> ServerResult<impl IntoResponse, StatusCode> {
     // End the session
-    if let Err(e) = crate::auth::end_session(&state.db, &cookies).await {
-        error!("Error ending session: {:?}", e);
-    }
+    crate::auth::end_session(&state.db, &cookies)
+        .await
+        .wrap_err("Failed to end user session")?;
 
     // Also clear the old legacy cookie if it exists
     if let Some(_cookie) = cookies.get(bsky::AUTH_DID_COOKIE) {
@@ -468,7 +447,7 @@ async fn logout(State(state): State<AppState>, cookies: Cookies) -> impl IntoRes
 
     // Redirect to home page
     info!("User logged out successfully");
-    Redirect::to("/")
+    Ok(Redirect::to("/"))
 }
 
 /// Admin panel page - shows available jobs and provides a UI to run them
