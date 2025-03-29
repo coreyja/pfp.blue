@@ -70,11 +70,9 @@ impl BlueskyOAuthConfig {
             ));
         }
 
-        let decoded_public_key = base64::Engine::decode(
-            &base64::engine::general_purpose::STANDARD,
-            &self.public_key,
-        )
-        .wrap_err("Failed to decode base64-encoded public key")?;
+        let decoded_public_key =
+            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &self.public_key)
+                .wrap_err("Failed to decode base64-encoded public key")?;
 
         let pub_key_preview = if decoded_public_key.len() > 30 {
             format!("{:?}...", &decoded_public_key[..30])
@@ -82,8 +80,8 @@ impl BlueskyOAuthConfig {
             format!("{:?}", decoded_public_key)
         };
 
-        let mut public_temp_file = NamedTempFile::new()
-            .wrap_err("Failed to create temporary file for public key")?;
+        let mut public_temp_file =
+            NamedTempFile::new().wrap_err("Failed to create temporary file for public key")?;
 
         public_temp_file
             .write_all(&decoded_public_key)

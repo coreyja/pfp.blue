@@ -14,8 +14,8 @@ use axum::{
     response::{IntoResponse, Redirect},
     routing::{get, post},
 };
-use color_eyre::eyre::{eyre, WrapErr};
 use cja::jobs::Job as _;
+use color_eyre::eyre::{eyre, WrapErr};
 use serde::Deserialize;
 use std::collections::HashMap;
 use tower_cookies::{Cookie, Cookies};
@@ -258,22 +258,25 @@ async fn toggle_profile_progress(
     Form(params): Form<ToggleProfileProgressParams>,
 ) -> ServerResult<Response, Redirect> {
     // Validate token ownership and get token ID
-    let token_id = validate_token_ownership(&state, &params.token_id, user.user_id).await
+    let token_id = validate_token_ownership(&state, &params.token_id, user.user_id)
+        .await
         .wrap_err("Failed to validate token ownership")
         .with_redirect(Redirect::to("/me"))?;
 
     // Get or create the profile progress settings
-    let mut settings = ProfilePictureProgress::get_or_create(&state.db, token_id, params.enabled.is_some())
-        .await
-        .wrap_err("Failed to get or create profile progress settings")
-        .with_redirect(Redirect::to("/me"))?;
-        
+    let mut settings =
+        ProfilePictureProgress::get_or_create(&state.db, token_id, params.enabled.is_some())
+            .await
+            .wrap_err("Failed to get or create profile progress settings")
+            .with_redirect(Redirect::to("/me"))?;
+
     // Update the enabled status
-    settings.update_enabled(&state.db, params.enabled.is_some())
+    settings
+        .update_enabled(&state.db, params.enabled.is_some())
         .await
         .wrap_err("Failed to update profile progress settings")
         .with_redirect(Redirect::to("/me"))?;
-        
+
     info!(
         "Updated profile progress settings for token {}: enabled={}",
         token_id,
@@ -298,7 +301,8 @@ async fn set_original_profile_picture(
     Form(params): Form<SetOriginalProfilePictureParams>,
 ) -> ServerResult<Redirect, Redirect> {
     // Validate token ownership and get token ID
-    let token_id = validate_token_ownership(&state, &params.token_id, user.user_id).await
+    let token_id = validate_token_ownership(&state, &params.token_id, user.user_id)
+        .await
         .wrap_err("Failed to validate token ownership")
         .with_redirect(Redirect::to("/me"))?;
 
@@ -314,7 +318,7 @@ async fn set_original_profile_picture(
     .await
     .wrap_err("Database error when fetching token")
     .with_redirect(Redirect::to("/me"))?;
-    
+
     // Check if the token was found
     let token = match row {
         Some(row) => {
@@ -334,8 +338,8 @@ async fn set_original_profile_picture(
         }
         None => {
             return Err(ServerError(
-                eyre!("Token not found: {}", token_id), 
-                Redirect::to("/me")
+                eyre!("Token not found: {}", token_id),
+                Redirect::to("/me"),
             ));
         }
     };
@@ -347,22 +351,25 @@ async fn set_original_profile_picture(
     .await
     .wrap_err("Failed to get or create profile progress settings")
     .with_redirect(Redirect::to("/me"))?;
-    
+
     // Fetch the original blob to get its contents
-    let blob_data = crate::routes::bsky::fetch_blob_by_cid(&token.did, &params.blob_cid, &state).await
+    let blob_data = crate::routes::bsky::fetch_blob_by_cid(&token.did, &params.blob_cid, &state)
+        .await
         .wrap_err("Failed to fetch blob data")
         .with_redirect(Redirect::to("/me"))?;
-    
+
     // Upload the blob to get a proper blob object
-    let blob_object = crate::jobs::upload_image_to_bluesky(&state, &token, &blob_data).await
+    let blob_object = crate::jobs::upload_image_to_bluesky(&state, &token, &blob_data)
+        .await
         .wrap_err("Failed to upload original profile picture blob")
         .with_redirect(Redirect::to("/me"))?;
-    
+
     // Save the blob object to our custom PDS collection
-    crate::jobs::save_original_profile_picture(&state, &token, blob_object).await
+    crate::jobs::save_original_profile_picture(&state, &token, blob_object)
+        .await
         .wrap_err("Failed to save original profile picture to PDS")
         .with_redirect(Redirect::to("/me"))?;
-    
+
     info!(
         "Saved original profile picture to PDS collection for DID {}",
         token.did
@@ -379,7 +386,7 @@ async fn set_original_profile_picture(
     } else {
         info!("Enqueued profile picture update job for token {}", token_id);
     }
-    
+
     // Redirect back to profile page
     Ok(Redirect::to("/me"))
 }
@@ -396,17 +403,25 @@ async fn validate_token_ownership(state: &AppState, did: &str, user_id: Uuid) ->
     )
     .fetch_optional(&state.db)
     .await
-    .wrap_err_with(|| format!("Database error when checking token ownership for DID: {}", did))?;
+    .wrap_err_with(|| {
+        format!(
+            "Database error when checking token ownership for DID: {}",
+            did
+        )
+    })?;
 
     match token_result {
         Some(row) => Ok(row.id),
         None => {
             error!("Attempted to access token not belonging to user: {}", did);
-            Err(eyre!("Token {} not found or not owned by user {}", did, user_id))
+            Err(eyre!(
+                "Token {} not found or not owned by user {}",
+                did,
+                user_id
+            ))
         }
     }
 }
-
 
 /// Logout route - clears authentication cookies and redirects to home
 async fn logout(
@@ -414,7 +429,8 @@ async fn logout(
     cookies: Cookies,
 ) -> ServerResult<impl IntoResponse, StatusCode> {
     // End the session
-    crate::auth::end_session(&state.db, &cookies).await
+    crate::auth::end_session(&state.db, &cookies)
+        .await
         .wrap_err("Failed to end user session")?;
 
     // Also clear the old legacy cookie if it exists
