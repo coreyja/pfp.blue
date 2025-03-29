@@ -67,7 +67,7 @@ mod tests {
 
         // Verify we got back our original data
         assert_eq!(decrypted, original);
-        
+
         Ok(())
     }
 }

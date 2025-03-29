@@ -14,7 +14,10 @@ use crate::{
     state::AppState,
 };
 
-use super::{utils::{self, extract_dpop_nonce_from_error, handle_missing_code_error, handle_oauth_error}, AUTH_DID_COOKIE};
+use super::{
+    utils::{self, extract_dpop_nonce_from_error, handle_missing_code_error, handle_oauth_error},
+    AUTH_DID_COOKIE,
+};
 
 #[derive(Deserialize)]
 pub struct CallbackParams {
@@ -60,7 +63,8 @@ async fn exchange_auth_code_for_token(
 
                 // Check if the error contains a DPoP nonce error
                 if let Some(error_msg) = last_error.as_ref() {
-                    if error_msg.contains("use_dpop_nonce") || error_msg.contains("nonce mismatch") {
+                    if error_msg.contains("use_dpop_nonce") || error_msg.contains("nonce mismatch")
+                    {
                         // Try to extract the nonce from the error message
                         if let Some(nonce) = extract_dpop_nonce_from_error(error_msg) {
                             // Save the new nonce in the database for this session

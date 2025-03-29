@@ -231,8 +231,7 @@ impl cja::app_state::AppState for AppState {
 pub async fn setup_db_pool() -> cja::Result<PgPool> {
     const MIGRATION_LOCK_ID: i64 = 0xDB_DB_DB_DB_DB_DB_DB;
 
-    let database_url = std::env::var("DATABASE_URL")
-        .wrap_err("DATABASE_URL must be set")?;
+    let database_url = std::env::var("DATABASE_URL").wrap_err("DATABASE_URL must be set")?;
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect(&database_url)

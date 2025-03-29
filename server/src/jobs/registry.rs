@@ -1,13 +1,9 @@
+use cja::jobs::Job;
 use std::collections::HashMap;
 use std::str::FromStr;
-use cja::jobs::Job;
 
+use crate::jobs::job_types::{NoopJob, UpdateProfileInfoJob, UpdateProfilePictureProgressJob};
 use crate::state::AppState;
-use crate::jobs::job_types::{
-    NoopJob,
-    UpdateProfileInfoJob,
-    UpdateProfilePictureProgressJob,
-};
 
 /// Helper function to get a list of all available job types
 pub fn get_available_jobs() -> Vec<&'static str> {
