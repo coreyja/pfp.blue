@@ -2,7 +2,6 @@ use std::fmt::{Debug, Display};
 
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Redirect};
-use maud::Render;
 
 #[derive(Debug)]
 pub struct ServerError<R: IntoResponse>(pub(crate) cja::color_eyre::Report, pub(crate) R);
