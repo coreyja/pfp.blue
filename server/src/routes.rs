@@ -359,13 +359,13 @@ async fn set_original_profile_picture(
         .with_redirect(Redirect::to("/me"))?;
 
     // Upload the blob to get a proper blob object
-    let blob_object = crate::jobs::upload_image_to_bluesky(&state, &token, &blob_data)
+    let blob_object = crate::jobs::helpers::upload_image_to_bluesky(&state, &token, &blob_data)
         .await
         .wrap_err("Failed to upload original profile picture blob")
         .with_redirect(Redirect::to("/me"))?;
 
     // Save the blob object to our custom PDS collection
-    crate::jobs::save_original_profile_picture(&state, &token, blob_object)
+    crate::jobs::helpers::save_original_profile_picture(&state, &token, blob_object)
         .await
         .wrap_err("Failed to save original profile picture to PDS")
         .with_redirect(Redirect::to("/me"))?;
