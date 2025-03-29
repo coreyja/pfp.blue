@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use age::x25519::Identity;
 use atrium_xrpc_client::reqwest::{ReqwestClient, ReqwestClientBuilder};
-use color_eyre::eyre::WrapErr;
+use color_eyre::eyre::{eyre, WrapErr};
 use sqlx::{postgres::PgPoolOptions, PgPool};
 
 #[derive(Clone)]
@@ -159,7 +159,7 @@ impl AppState {
                     .timeout(std::time::Duration::from_millis(1000))
                     .use_rustls_tls()
                     .build()
-                    .unwrap(),
+                    .wrap_err("Failed to build reqwest client")?,
             )
             .build();
 
@@ -231,7 +231,8 @@ impl cja::app_state::AppState for AppState {
 pub async fn setup_db_pool() -> cja::Result<PgPool> {
     const MIGRATION_LOCK_ID: i64 = 0xDB_DB_DB_DB_DB_DB_DB;
 
-    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let database_url = std::env::var("DATABASE_URL")
+        .wrap_err("DATABASE_URL must be set")?;
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect(&database_url)
@@ -256,7 +257,7 @@ pub async fn setup_db_pool() -> cja::Result<PgPool> {
                 tracing::info!("Failed to unlock migration lock");
             }
         }
-        None => panic!("Failed to unlock migration lock"),
+        None => return Err(eyre!("Failed to unlock migration lock")),
     }
 
     Ok(pool)

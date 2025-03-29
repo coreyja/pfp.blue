@@ -2,6 +2,8 @@ use cja::{
     server::run_server,
     setup::{setup_sentry, setup_tracing},
 };
+#[cfg(test)]
+use color_eyre::eyre::WrapErr;
 use tracing::info;
 
 mod api;
@@ -90,7 +92,11 @@ async fn spawn_application_tasks(
 
 /// Check if a feature is enabled based on environment variables
 fn is_feature_enabled(feature: &str) -> bool {
-    std::env::var(format!("{}_DISABLED", feature)).unwrap_or_else(|_| "false".to_string()) != "true"
+    let env_var_name = format!("{}_DISABLED", feature);
+    let value = std::env::var(&env_var_name)
+        .unwrap_or_else(|_| "false".to_string());
+    
+    value != "true"
 }
 
 #[cfg(test)]
@@ -100,53 +106,65 @@ mod tests {
 
     #[test]
     fn test_is_feature_enabled_when_env_var_not_set() -> cja::Result<()> {
+        // Use a unique feature name for this test
+        let test_feature = "UNIQUE_TEST_FEATURE_FOR_NOT_SET_TEST";
+        
         // Ensure the environment variable is not set
-        env::remove_var("TEST_FEATURE_DISABLED");
+        env::remove_var(format!("{}_DISABLED", test_feature));
 
         // Feature should be enabled when env var is not set
-        assert!(is_feature_enabled("TEST_FEATURE"));
+        assert!(is_feature_enabled(test_feature));
 
         Ok(())
     }
 
     #[test]
     fn test_is_feature_enabled_when_env_var_is_false() -> cja::Result<()> {
+        // Use a unique feature name for this test
+        let test_feature = "UNIQUE_TEST_FEATURE_FOR_FALSE_TEST";
+        
         // Set the environment variable to "false"
-        env::set_var("TEST_FEATURE_DISABLED", "false");
+        env::set_var(format!("{}_DISABLED", test_feature), "false");
 
         // Feature should be enabled when env var is "false"
-        assert!(is_feature_enabled("TEST_FEATURE"));
+        assert!(is_feature_enabled(test_feature));
 
         // Clean up
-        env::remove_var("TEST_FEATURE_DISABLED");
+        env::remove_var(format!("{}_DISABLED", test_feature));
 
         Ok(())
     }
 
     #[test]
     fn test_is_feature_disabled_when_env_var_is_true() -> cja::Result<()> {
+        // Use a unique feature name for this test to avoid interference
+        let test_feature = "UNIQUE_TEST_FEATURE_FOR_DISABLED_TEST";
+        
         // Set the environment variable to "true"
-        env::set_var("TEST_FEATURE_DISABLED", "true");
+        env::set_var(format!("{}_DISABLED", test_feature), "true");
 
         // Feature should be disabled when env var is "true"
-        assert!(!is_feature_enabled("TEST_FEATURE"));
+        assert!(!is_feature_enabled(test_feature));
 
         // Clean up
-        env::remove_var("TEST_FEATURE_DISABLED");
+        env::remove_var(format!("{}_DISABLED", test_feature));
 
         Ok(())
     }
 
     #[test]
     fn test_is_feature_enabled_with_other_values() -> cja::Result<()> {
+        // Use a unique feature name for this test
+        let test_feature = "UNIQUE_TEST_FEATURE_FOR_OTHER_VALUES_TEST";
+        
         // Set the environment variable to something other than "true"
-        env::set_var("TEST_FEATURE_DISABLED", "yes");
+        env::set_var(format!("{}_DISABLED", test_feature), "yes");
 
         // Feature should be enabled when env var is not exactly "true"
-        assert!(is_feature_enabled("TEST_FEATURE"));
+        assert!(is_feature_enabled(test_feature));
 
         // Clean up
-        env::remove_var("TEST_FEATURE_DISABLED");
+        env::remove_var(format!("{}_DISABLED", test_feature));
 
         Ok(())
     }
@@ -156,12 +174,13 @@ mod tests {
     use std::path::Path;
 
     #[tokio::test]
-    async fn test_generate_progress_images() {
+    async fn test_generate_progress_images() -> cja::Result<()> {
         // This test generates sample progress images for visual inspection
 
         let test_dir = Path::new("./test-output");
         if !test_dir.exists() {
-            fs::create_dir_all(test_dir).expect("Failed to create test output directory");
+            fs::create_dir_all(test_dir)
+                .wrap_err("Failed to create test output directory")?;
         }
 
         // Load a sample image
@@ -204,11 +223,11 @@ mod tests {
                 &mut std::io::Cursor::new(&mut original_buffer),
                 image::ImageFormat::Png,
             )
-            .expect("Failed to encode original image");
+            .wrap_err("Failed to encode original image")?;
 
         // Save the original image
         fs::write(test_dir.join("original.png"), &original_buffer)
-            .expect("Failed to save original image");
+            .wrap_err("Failed to save original image")?;
 
         // Test progress values
         let progress_values = [0.0, 0.25, 0.5, 0.75, 1.0];
@@ -217,11 +236,12 @@ mod tests {
             // Use the actual generate_progress_image function from the codebase
             let progress_image_data = generate_progress_image(&original_buffer, progress)
                 .await
-                .expect("Failed to generate progress image");
+                .wrap_err("Failed to generate progress image")?;
 
             // Save the generated image
             let filename = format!("progress_{:.2}.png", progress);
-            fs::write(test_dir.join(filename), &progress_image_data).expect("Failed to save image");
+            fs::write(test_dir.join(filename), &progress_image_data)
+                .wrap_err("Failed to save image")?;
 
             println!(
                 "Generated progress image with progress value: {:.2}",
@@ -231,7 +251,9 @@ mod tests {
 
         println!(
             "Test images generated in {:?}",
-            test_dir.canonicalize().unwrap()
+            test_dir.canonicalize().wrap_err("Failed to canonicalize test directory path")?
         );
+        
+        Ok(())
     }
 }

@@ -1,7 +1,32 @@
-use color_eyre::eyre::eyre;
+use color_eyre::eyre::{eyre, Result, WrapErr};
 use reqwest::Client;
 use serde_json::Value;
 use tracing::{debug, error, info};
+use std::sync::Arc;
+
+/// Helper function to resolve DID to PDS endpoint with improved error handling
+async fn resolve_did_to_pds(did_str: &str) -> Result<String> {
+    let xrpc_client = Arc::new(atrium_xrpc_client::reqwest::ReqwestClient::new(
+        "https://bsky.social",
+    ));
+
+    // Convert string DID to DID object
+    let did = atrium_api::types::string::Did::new(did_str.to_string())
+        .map_err(|e| eyre!("Invalid DID format for {}: {}", did_str, e))?;
+
+    // Resolve DID to document
+    let did_document = crate::did::resolve_did_to_document(&did, xrpc_client).await
+        .wrap_err_with(|| format!("Failed to resolve DID document for {}", did_str))?;
+
+    // Find the PDS service endpoint
+    let services = did_document.service.as_ref()
+        .ok_or_else(|| eyre!("No service endpoints found in DID document for {}", did_str))?;
+
+    let pds_service = services.iter().find(|s| s.id == "#atproto_pds")
+        .ok_or_else(|| eyre!("No ATProto PDS service endpoint found in DID document for {}", did_str))?;
+
+    Ok(pds_service.service_endpoint.clone())
+}
 
 use crate::{
     oauth::{create_dpop_proof_with_ath, OAuthTokenSet},
@@ -10,49 +35,7 @@ use crate::{
 
 /// Helper function to find PDS endpoint for a user
 pub async fn find_pds_endpoint(token: &OAuthTokenSet) -> cja::Result<String> {
-    // First, resolve the DID document to find PDS endpoint
-    let xrpc_client = std::sync::Arc::new(atrium_xrpc_client::reqwest::ReqwestClient::new(
-        "https://bsky.social",
-    ));
-
-    // Convert string DID to DID object
-    let did = match atrium_api::types::string::Did::new(token.did.clone()) {
-        Ok(did) => did,
-        Err(err) => {
-            error!("Invalid DID format: {:?}", err);
-            return Err(eyre!("Invalid DID format: {}", err));
-        }
-    };
-
-    // Resolve DID to document
-    let did_document = match crate::did::resolve_did_to_document(&did, xrpc_client).await {
-        Ok(doc) => doc,
-        Err(err) => {
-            error!("Failed to resolve DID document: {:?}", err);
-            return Err(eyre!("Failed to resolve DID document: {}", err));
-        }
-    };
-
-    // Find the PDS service endpoint
-    let services = match did_document.service.as_ref() {
-        Some(services) => services,
-        None => {
-            error!("No service endpoints found in DID document");
-            return Err(eyre!("No service endpoints found in DID document"));
-        }
-    };
-
-    let pds_service = match services.iter().find(|s| s.id == "#atproto_pds") {
-        Some(service) => service,
-        None => {
-            error!("No ATProto PDS service endpoint found in DID document");
-            return Err(eyre!(
-                "No ATProto PDS service endpoint found in DID document"
-            ));
-        }
-    };
-
-    Ok(pds_service.service_endpoint.clone())
+    resolve_did_to_pds(&token.did).await
 }
 
 /// Extract progress from display name
@@ -60,8 +43,11 @@ pub async fn find_pds_endpoint(token: &OAuthTokenSet) -> cja::Result<String> {
 pub fn extract_progress_from_display_name(display_name: &str) -> Option<(f64, f64)> {
     use regex::Regex;
 
+    // These regex patterns are constants, so we can unwrap safely
+    // For production code, we'd use once_cell or lazy_static to compile them once
     // Try to match X/Y format
-    let fraction_re = Regex::new(r"(\d+)/(\d+)").unwrap();
+    let fraction_re = Regex::new(r"(\d+)/(\d+)")
+        .expect("Invalid fraction regex pattern - this should never happen");
     if let Some(captures) = fraction_re.captures(display_name) {
         if let (Ok(numerator), Ok(denominator)) =
             (captures[1].parse::<f64>(), captures[2].parse::<f64>())
@@ -73,7 +59,8 @@ pub fn extract_progress_from_display_name(display_name: &str) -> Option<(f64, f6
     }
 
     // Try to match X% or X.Y% format
-    let percentage_re = Regex::new(r"(\d+(?:\.\d+)?)%").unwrap();
+    let percentage_re = Regex::new(r"(\d+(?:\.\d+)?)%")
+        .expect("Invalid percentage regex pattern - this should never happen");
     if let Some(captures) = percentage_re.captures(display_name) {
         if let Ok(percentage) = captures[1].parse::<f64>() {
             // Only accept non-negative percentages
@@ -99,10 +86,8 @@ pub async fn generate_progress_image(
     debug!("Generating progress image");
 
     // Load the original image
-    let original_img = match image::load_from_memory(original_image_data) {
-        Ok(img) => img,
-        Err(err) => return Err(eyre!("Failed to load image: {}", err)),
-    };
+    let original_img = image::load_from_memory(original_image_data)
+        .wrap_err("Failed to load image")?;
 
     // Get dimensions of the original image
     let width = original_img.width();
@@ -245,10 +230,10 @@ pub async fn generate_progress_image(
     // Convert the final image to bytes
     let mut buffer = Vec::new();
     let mut cursor = Cursor::new(&mut buffer);
-    match final_img.write_to(&mut cursor, ImageFormat::Png) {
-        Ok(_) => Ok(buffer),
-        Err(err) => Err(eyre!("Failed to encode image: {}", err)),
-    }
+    final_img.write_to(&mut cursor, ImageFormat::Png)
+        .wrap_err("Failed to encode final image to PNG")?;
+    
+    Ok(buffer)
 }
 
 /// Upload an image to Bluesky and return the blob object
@@ -281,49 +266,10 @@ pub async fn upload_image_to_bluesky(
         }
     };
 
-    // First, resolve the DID document to find PDS endpoint
-    let xrpc_client = std::sync::Arc::new(atrium_xrpc_client::reqwest::ReqwestClient::new(
-        "https://bsky.social",
-    ));
-
-    // Convert string DID to DID object
-    let did = match atrium_api::types::string::Did::new(token.did.clone()) {
-        Ok(did) => did,
-        Err(err) => {
-            error!("Invalid DID format: {:?}", err);
-            return Err(eyre!("Invalid DID format: {}", err));
-        }
-    };
-
-    // Resolve DID to document
-    let did_document = match crate::did::resolve_did_to_document(&did, xrpc_client).await {
-        Ok(doc) => doc,
-        Err(err) => {
-            error!("Failed to resolve DID document: {:?}", err);
-            return Err(eyre!("Failed to resolve DID document: {}", err));
-        }
-    };
-
-    // Find the PDS service endpoint
-    let services = match did_document.service.as_ref() {
-        Some(services) => services,
-        None => {
-            error!("No service endpoints found in DID document");
-            return Err(eyre!("No service endpoints found in DID document"));
-        }
-    };
-
-    let pds_service = match services.iter().find(|s| s.id == "#atproto_pds") {
-        Some(service) => service,
-        None => {
-            error!("No ATProto PDS service endpoint found in DID document");
-            return Err(eyre!(
-                "No ATProto PDS service endpoint found in DID document"
-            ));
-        }
-    };
-
-    let pds_endpoint = &pds_service.service_endpoint;
+    // Find PDS endpoint using our helper function
+    let pds_endpoint = resolve_did_to_pds(&token.did).await
+        .wrap_err_with(|| format!("Failed to find PDS endpoint for {}", token.did))?;
+    
     info!("Found PDS endpoint for upload: {}", pds_endpoint);
 
     // Construct the full URL to the PDS endpoint
@@ -389,14 +335,15 @@ pub async fn upload_image_to_bluesky(
     }
 
     // Unwrap the final result
-    let response = response_result?;
+    let response = response_result.wrap_err("Network error when uploading image to Bluesky")?;
 
     if !response.status().is_success() {
         let status = response.status();
         let error_text = response
             .text()
             .await
-            .unwrap_or_else(|_| "Failed to read error response".to_string());
+            .wrap_err("Failed to read error response")
+            .unwrap_or_else(|e| format!("Failed to read error response: {}", e));
 
         error!("Failed to upload blob: {} - {}", status, error_text);
         return Err(eyre!("Failed to upload blob: {} - {}", status, error_text));
@@ -434,10 +381,8 @@ pub async fn save_original_profile_picture(
     let client = Client::new();
 
     // Find PDS endpoint for this user
-    let pds_endpoint = match find_pds_endpoint(token).await {
-        Ok(endpoint) => endpoint,
-        Err(err) => return Err(err),
-    };
+    let pds_endpoint = find_pds_endpoint(token).await
+        .wrap_err_with(|| format!("Failed to find PDS endpoint for {}", token.did))?;
 
     // Construct the full URL to the PDS endpoint for putRecord
     let put_record_url = format!("{}/xrpc/com.atproto.repo.putRecord", pds_endpoint);
@@ -509,14 +454,16 @@ pub async fn save_original_profile_picture(
     }
 
     // Unwrap the final result
-    let put_response = put_response_result?;
+    let put_response = put_response_result
+        .wrap_err("Network error when saving original profile picture")?;
 
     if !put_response.status().is_success() {
         let status = put_response.status();
         let error_text = put_response
             .text()
             .await
-            .unwrap_or_else(|_| "Failed to read error response".to_string());
+            .wrap_err("Failed to read error response")
+            .unwrap_or_else(|e| format!("Failed to read error response: {}", e));
 
         error!(
             "Failed to save original profile picture: {} - {}",
@@ -545,10 +492,8 @@ pub async fn get_original_profile_picture(
     let client = Client::new();
 
     // Find PDS endpoint for this user
-    let pds_endpoint = match find_pds_endpoint(token).await {
-        Ok(endpoint) => endpoint,
-        Err(err) => return Err(err),
-    };
+    let pds_endpoint = find_pds_endpoint(token).await
+        .wrap_err_with(|| format!("Failed to find PDS endpoint for {}", token.did))?;
 
     // Construct the full URL to the PDS endpoint for getRecord
     let get_record_url = format!("{}/xrpc/com.atproto.repo.getRecord", pds_endpoint);
@@ -613,7 +558,8 @@ pub async fn get_original_profile_picture(
     }
 
     // Unwrap the final result
-    let get_response = get_response_result?;
+    let get_response = get_response_result
+        .wrap_err("Network error when retrieving original profile picture")?;
 
     // If record doesn't exist, return None (not an error)
     if get_response.status() == reqwest::StatusCode::NOT_FOUND {
@@ -621,7 +567,7 @@ pub async fn get_original_profile_picture(
             "No original profile picture record found for DID: {}",
             token.did
         );
-        return Err(eyre!("No original profile picture record found"));
+        return Err(eyre!("No original profile picture record found for DID: {}", token.did));
     }
 
     if !get_response.status().is_success() {
@@ -629,7 +575,8 @@ pub async fn get_original_profile_picture(
         let error_text = get_response
             .text()
             .await
-            .unwrap_or_else(|_| "Failed to read error response".to_string());
+            .wrap_err("Failed to read error response")
+            .unwrap_or_else(|e| format!("Failed to read error response: {}", e));
 
         error!(
             "Failed to get original profile picture: {} - {}",
@@ -673,49 +620,10 @@ pub async fn update_profile_with_image(
     // First, we need to get the current profile to avoid losing other fields
     let client = Client::new();
 
-    // First, resolve the DID document to find PDS endpoint
-    let xrpc_client = std::sync::Arc::new(atrium_xrpc_client::reqwest::ReqwestClient::new(
-        "https://bsky.social",
-    ));
-
-    // Convert string DID to DID object
-    let did = match atrium_api::types::string::Did::new(token.did.clone()) {
-        Ok(did) => did,
-        Err(err) => {
-            error!("Invalid DID format: {:?}", err);
-            return Err(eyre!("Invalid DID format: {}", err));
-        }
-    };
-
-    // Resolve DID to document
-    let did_document = match crate::did::resolve_did_to_document(&did, xrpc_client).await {
-        Ok(doc) => doc,
-        Err(err) => {
-            error!("Failed to resolve DID document: {:?}", err);
-            return Err(eyre!("Failed to resolve DID document: {}", err));
-        }
-    };
-
-    // Find the PDS service endpoint
-    let services = match did_document.service.as_ref() {
-        Some(services) => services,
-        None => {
-            error!("No service endpoints found in DID document");
-            return Err(eyre!("No service endpoints found in DID document"));
-        }
-    };
-
-    let pds_service = match services.iter().find(|s| s.id == "#atproto_pds") {
-        Some(service) => service,
-        None => {
-            error!("No ATProto PDS service endpoint found in DID document");
-            return Err(eyre!(
-                "No ATProto PDS service endpoint found in DID document"
-            ));
-        }
-    };
-
-    let pds_endpoint = &pds_service.service_endpoint;
+    // Find PDS endpoint using our helper function
+    let pds_endpoint = resolve_did_to_pds(&token.did).await
+        .wrap_err_with(|| format!("Failed to find PDS endpoint for {}", token.did))?;
+    
     info!("Found PDS endpoint for profile update: {}", pds_endpoint);
 
     // Construct the full URL to the PDS endpoint for getRecord
@@ -782,14 +690,16 @@ pub async fn update_profile_with_image(
     }
 
     // Unwrap the final result
-    let get_response = get_response_result?;
+    let get_response = get_response_result
+        .wrap_err("Network error when retrieving profile")?;
 
     if !get_response.status().is_success() {
         let status = get_response.status();
         let error_text = get_response
             .text()
             .await
-            .unwrap_or_else(|_| "Failed to read error response".to_string());
+            .wrap_err("Failed to read error response")
+            .unwrap_or_else(|e| format!("Failed to read error response: {}", e));
 
         error!("Failed to get profile: {} - {}", status, error_text);
         return Err(eyre!("Failed to get profile: {} - {}", status, error_text));
@@ -878,14 +788,16 @@ pub async fn update_profile_with_image(
     }
 
     // Unwrap the final result
-    let put_response = put_response_result?;
+    let put_response = put_response_result
+        .wrap_err("Network error when updating profile with new image")?;
 
     if !put_response.status().is_success() {
         let status = put_response.status();
         let error_text = put_response
             .text()
             .await
-            .unwrap_or_else(|_| "Failed to read error response".to_string());
+            .wrap_err("Failed to read error response")
+            .unwrap_or_else(|e| format!("Failed to read error response: {}", e));
 
         error!("Failed to update profile: {} - {}", status, error_text);
         return Err(eyre!(

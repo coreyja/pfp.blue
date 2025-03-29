@@ -63,6 +63,7 @@ impl OAuthTokenSet {
     pub fn from_token_response(response: TokenResponse, did: String) -> Self {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
+            .wrap_err("Failed to calculate duration since epoch")
             .unwrap_or_default()
             .as_secs();
 
@@ -109,6 +110,7 @@ impl OAuthTokenSet {
     pub fn is_expired(&self) -> bool {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
+            .wrap_err("Failed to calculate duration since epoch")
             .unwrap_or_default()
             .as_secs();
 
@@ -165,7 +167,8 @@ pub fn create_client_assertion(
         iss: client_id.to_string(),
         sub: client_id.to_string(),
         // Use the configured Bluesky audience or default
-        aud: std::env::var("APPVIEW_URL").unwrap_or_else(|_| "https://bsky.social".to_string()),
+        aud: std::env::var("APPVIEW_URL")
+            .unwrap_or_else(|_| "https://bsky.social".to_string()),
         jti: uuid::Uuid::new_v4().to_string(),
         exp: now + 300, // 5 minutes in the future
         iat: now,
@@ -256,15 +259,8 @@ pub fn create_client_assertion(
     let signature_der = output.stdout;
 
     // 6. Convert DER-encoded signature to raw R||S format for JWT
-    let signature_raw = match der_signature_to_raw_signature(&signature_der) {
-        Ok(sig) => sig,
-        Err(e) => {
-            return Err(eyre!(
-                "Failed to convert DER signature to raw format: {}",
-                e
-            ))
-        }
-    };
+    let signature_raw = der_signature_to_raw_signature(&signature_der)
+        .wrap_err("Failed to convert DER signature to raw format")?;
 
     // 7. Base64URL-encode the raw signature
     let signature_b64 = base64_url_encode(&signature_raw);
@@ -351,10 +347,11 @@ pub async fn exchange_code_for_token(
             .timeout(std::time::Duration::from_secs(10))
             .send()
             .await
+            .wrap_err_with(|| format!("Token request network error to endpoint {}", token_endpoint))
         {
             Ok(resp) => resp,
             Err(e) => {
-                last_error = Some(eyre!("Token request network error: {}", e));
+                last_error = Some(e);
                 retries -= 1;
                 if retries > 0 {
                     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
@@ -388,7 +385,8 @@ pub async fn exchange_code_for_token(
             let error_text = response
                 .text()
                 .await
-                .unwrap_or_else(|_| "Failed to read error response".to_string());
+                .wrap_err("Failed to read error response text")
+                .unwrap_or_else(|e| format!("Failed to read error response: {}", e));
 
             // Log detailed error information
             tracing::error!(
@@ -502,10 +500,11 @@ pub async fn refresh_token(
             .timeout(std::time::Duration::from_secs(10))
             .send()
             .await
+            .wrap_err_with(|| format!("Token refresh network error to endpoint {}", token_endpoint))
         {
             Ok(resp) => resp,
             Err(e) => {
-                last_error = Some(eyre!("Token refresh network error: {}", e));
+                last_error = Some(e);
                 retries -= 1;
                 if retries > 0 {
                     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
@@ -533,13 +532,14 @@ pub async fn refresh_token(
             return response
                 .json::<TokenResponse>()
                 .await
-                .map_err(|e| eyre!("Failed to parse refresh token response: {}", e));
+                .wrap_err("Failed to parse refresh token response");
         } else {
             let status = response.status();
             let error_text = response
                 .text()
                 .await
-                .unwrap_or_else(|_| "Failed to read error response".to_string());
+                .wrap_err("Failed to read refresh token error response text")
+                .unwrap_or_else(|e| format!("Failed to read error response: {}", e));
 
             // Log detailed error information
             tracing::error!(
@@ -656,8 +656,6 @@ pub async fn refresh_token_if_needed(
     state: &crate::state::AppState,
     token_endpoint: &str,
 ) -> cja::Result<Option<OAuthTokenSet>> {
-    use tracing::{error, info};
-
     // Only refresh if token is expired and we have a refresh token
     if !token.is_expired() || token.refresh_token.is_none() {
         return Ok(None);
@@ -669,14 +667,15 @@ pub async fn refresh_token_if_needed(
     // Try to get the latest DPoP nonce
     let dpop_nonce = match crate::oauth::db::get_latest_nonce(state, &token.did).await {
         Ok(nonce) => nonce,
-        Err(err) => {
-            error!("Failed to get DPoP nonce: {:?}", err);
+        Err(e) => {
+            // Log the error but continue with None
+            tracing::warn!("Failed to get DPoP nonce: {:?}", e);
             None
         }
     };
 
     // Request a new token
-    match refresh_token(
+    let token_response = refresh_token(
         &state.bsky_oauth,
         token_endpoint,
         &client_id,
@@ -684,64 +683,58 @@ pub async fn refresh_token_if_needed(
         dpop_nonce.as_deref(),
     )
     .await
+    .wrap_err_with(|| format!("Failed to refresh token for DID {}", token.did))?;
+    
+    // Create a new token set preserving the user ID and display name
+    let new_token = OAuthTokenSet::from_token_response_with_jwk(
+        &token_response,
+        token.did.clone(),
+        &state.bsky_oauth.public_key,
+    )
+    .wrap_err_with(|| format!("Failed to create token set with JWK for DID {}", token.did))
+    .map_or_else(
+        |_err| {
+            // Fallback to standard token creation
+            let mut standard_token =
+                OAuthTokenSet::from_token_response(token_response, token.did.clone());
+            standard_token.user_id = token.user_id;
+            standard_token.display_name = token.display_name.clone();
+            standard_token.handle = token.handle.clone();
+            standard_token
+        },
+        |new_token| {
+            // Set user ID, display name, and handle from original token
+            let mut token_with_id = new_token.clone();
+            token_with_id.user_id = token.user_id;
+            token_with_id.display_name = token.display_name.clone();
+            token_with_id.handle = token.handle.clone();
+            token_with_id
+        }
+    );
+
+    // Store the new token with encryption
+    crate::oauth::db::store_token(state, &new_token).await
+        .wrap_err_with(|| format!("Failed to store refreshed token for DID {}", token.did))?;
+
+    // Also fetch profile to update display name if needed
+    use cja::jobs::Job;
+    if let Err(err) = crate::jobs::UpdateProfileInfoJob::from_token(&new_token)
+        .enqueue(state.clone(), "token_refresh".to_string())
+        .await
     {
-        Ok(token_response) => {
-            // Create a new token set preserving the user ID and display name
-            let new_token = match OAuthTokenSet::from_token_response_with_jwk(
-                &token_response,
-                token.did.clone(),
-                &state.bsky_oauth.public_key,
-            ) {
-                Ok(new_token) => {
-                    // Set user ID, display name, and handle from original token
-                    let mut token_with_id = new_token.clone();
-                    token_with_id.user_id = token.user_id;
-                    token_with_id.display_name = token.display_name.clone();
-                    token_with_id.handle = token.handle.clone();
-                    token_with_id
-                }
-                Err(err) => {
-                    error!("Failed to create token set with JWK: {:?}", err);
-                    // Fallback to standard token creation
-                    let mut standard_token =
-                        OAuthTokenSet::from_token_response(token_response, token.did.clone());
-                    standard_token.user_id = token.user_id;
-                    standard_token.display_name = token.display_name.clone();
-                    standard_token.handle = token.handle.clone();
-                    standard_token
-                }
-            };
-
-            // Store the new token with encryption
-            if let Err(err) = crate::oauth::db::store_token(state, &new_token).await {
-                error!("Failed to store refreshed token: {:?}", err);
-                return Err(eyre!("Failed to store refreshed token: {:?}", err));
-            }
-
-            // Also fetch profile to update display name if needed
-            use cja::jobs::Job;
-            if let Err(err) = crate::jobs::UpdateProfileInfoJob::from_token(&new_token)
-                .enqueue(state.clone(), "token_refresh".to_string())
-                .await
-            {
-                error!(
-                    "Failed to enqueue display name update job after token refresh: {:?}",
-                    err
-                );
-            } else {
-                info!(
-                    "Queued display name update job after token refresh for {}",
-                    new_token.did
-                );
-            }
-
-            Ok(Some(new_token))
-        }
-        Err(err) => {
-            error!("Failed to refresh token: {:?}", err);
-            Err(eyre!("Failed to refresh token: {:?}", err))
-        }
+        // Just log this error but continue - not fatal
+        tracing::warn!(
+            "Failed to enqueue display name update job after token refresh: {:?}",
+            err
+        );
+    } else {
+        tracing::info!(
+            "Queued display name update job after token refresh for {}",
+            new_token.did
+        );
     }
+
+    Ok(Some(new_token))
 }
 
 /// Get a token by DID and refresh it if needed
@@ -750,13 +743,10 @@ pub async fn get_valid_token_by_did(
     did: &str,
     state: &crate::state::AppState,
 ) -> cja::Result<OAuthTokenSet> {
-    use tracing::{error, info};
 
     // Get the token from the database with decryption
-    let token = match crate::oauth::db::get_token(state, did).await? {
-        Some(token) => token,
-        None => return Err(eyre!("No token found for DID: {}", did)),
-    };
+    let token = crate::oauth::db::get_token(state, did).await?
+        .ok_or_else(|| eyre!("No token found for DID: {}", did))?;
 
     // If token is not expired, just return it
     if !token.is_expired() {
@@ -768,14 +758,16 @@ pub async fn get_valid_token_by_did(
     let token_endpoint = resolve_token_endpoint_for_did(did, state).await?;
 
     // Then try to refresh
-    match refresh_token_if_needed(&token, state, &token_endpoint).await? {
+    let refreshed_token_result = refresh_token_if_needed(&token, state, &token_endpoint).await?;
+    
+    match refreshed_token_result {
         Some(refreshed_token) => {
-            info!("Token for DID {} was refreshed", did);
+            tracing::info!("Token for DID {} was refreshed", did);
             Ok(refreshed_token)
         }
         None => {
             // This shouldn't happen since we already checked the token is expired
-            error!("Token wasn't refreshed despite being expired");
+            tracing::warn!("Token wasn't refreshed despite being expired");
             Ok(token) // Return the original token as a fallback
         }
     }

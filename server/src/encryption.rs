@@ -48,7 +48,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_encrypt_decrypt_roundtrip() {
+    async fn test_encrypt_decrypt_roundtrip() -> Result<()> {
         // Generate a test identity
         let identity = Identity::generate();
         let key = Arc::new(identity);
@@ -57,15 +57,17 @@ mod tests {
         let original = "This is sensitive data that needs to be encrypted";
 
         // Encrypt with armoring
-        let encrypted = encrypt(original, &key).await.unwrap();
+        let encrypted = encrypt(original, &key).await?;
 
         // Verify it's not the same as the original (it's encrypted and armored)
         assert_ne!(encrypted, original);
 
         // Decrypt
-        let decrypted = decrypt(&encrypted, &key).await.unwrap();
+        let decrypted = decrypt(&encrypted, &key).await?;
 
         // Verify we got back our original data
         assert_eq!(decrypted, original);
+        
+        Ok(())
     }
 }
