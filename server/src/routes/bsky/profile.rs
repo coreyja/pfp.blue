@@ -1,8 +1,4 @@
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::IntoResponse,
-};
+use axum::{extract::State, http::StatusCode, response::IntoResponse};
 use cja::jobs::Job;
 use maud::html;
 use sqlx::Row;
@@ -10,7 +6,10 @@ use std::time::SystemTime;
 use tower_cookies::Cookies;
 use tracing::error;
 
-use crate::{oauth::{self, OAuthTokenSet}, state::AppState};
+use crate::{
+    oauth::{self, OAuthTokenSet},
+    state::AppState,
+};
 
 /// Profile page that requires authentication
 pub async fn profile(

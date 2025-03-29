@@ -1,6 +1,6 @@
+use color_eyre::eyre::{eyre, WrapErr};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
-use color_eyre::eyre::{eyre, WrapErr};
 
 /// JWT payload for token requests
 #[derive(Debug, Serialize)]
@@ -126,12 +126,12 @@ pub fn create_client_assertion(
     token_endpoint: &str,
     client_id: &str,
 ) -> cja::Result<String> {
-    use std::io::Write;
-    use std::process::Command;
-    use tempfile::NamedTempFile;
     use crate::oauth::utils::base64_url_encode;
     use crate::oauth::utils::der_signature_to_raw_signature;
     use jsonwebtoken::Algorithm;
+    use std::io::Write;
+    use std::process::Command;
+    use tempfile::NamedTempFile;
 
     // Debug info
     let key_preview = if oauth_config.private_key.len() > 10 {
@@ -167,8 +167,7 @@ pub fn create_client_assertion(
         iss: client_id.to_string(),
         sub: client_id.to_string(),
         // Use the configured Bluesky audience or default
-        aud: std::env::var("APPVIEW_URL")
-            .unwrap_or_else(|_| "https://bsky.social".to_string()),
+        aud: std::env::var("APPVIEW_URL").unwrap_or_else(|_| "https://bsky.social".to_string()),
         jti: uuid::Uuid::new_v4().to_string(),
         exp: now + 300, // 5 minutes in the future
         iat: now,
@@ -684,7 +683,7 @@ pub async fn refresh_token_if_needed(
     )
     .await
     .wrap_err_with(|| format!("Failed to refresh token for DID {}", token.did))?;
-    
+
     // Create a new token set preserving the user ID and display name
     let new_token = OAuthTokenSet::from_token_response_with_jwk(
         &token_response,
@@ -709,11 +708,12 @@ pub async fn refresh_token_if_needed(
             token_with_id.display_name = token.display_name.clone();
             token_with_id.handle = token.handle.clone();
             token_with_id
-        }
+        },
     );
 
     // Store the new token with encryption
-    crate::oauth::db::store_token(state, &new_token).await
+    crate::oauth::db::store_token(state, &new_token)
+        .await
         .wrap_err_with(|| format!("Failed to store refreshed token for DID {}", token.did))?;
 
     // Also fetch profile to update display name if needed
@@ -743,9 +743,9 @@ pub async fn get_valid_token_by_did(
     did: &str,
     state: &crate::state::AppState,
 ) -> cja::Result<OAuthTokenSet> {
-
     // Get the token from the database with decryption
-    let token = crate::oauth::db::get_token(state, did).await?
+    let token = crate::oauth::db::get_token(state, did)
+        .await?
         .ok_or_else(|| eyre!("No token found for DID: {}", did))?;
 
     // If token is not expired, just return it
@@ -759,7 +759,7 @@ pub async fn get_valid_token_by_did(
 
     // Then try to refresh
     let refreshed_token_result = refresh_token_if_needed(&token, state, &token_endpoint).await?;
-    
+
     match refreshed_token_result {
         Some(refreshed_token) => {
             tracing::info!("Token for DID {} was refreshed", did);

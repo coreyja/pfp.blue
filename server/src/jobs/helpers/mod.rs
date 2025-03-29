@@ -1,8 +1,8 @@
 use color_eyre::eyre::{eyre, Result, WrapErr};
 use reqwest::Client;
 use serde_json::Value;
-use tracing::{debug, error, info};
 use std::sync::Arc;
+use tracing::{debug, error, info};
 
 /// Helper function to resolve DID to PDS endpoint with improved error handling
 async fn resolve_did_to_pds(did_str: &str) -> Result<String> {
@@ -15,15 +15,25 @@ async fn resolve_did_to_pds(did_str: &str) -> Result<String> {
         .map_err(|e| eyre!("Invalid DID format for {}: {}", did_str, e))?;
 
     // Resolve DID to document
-    let did_document = crate::did::resolve_did_to_document(&did, xrpc_client).await
+    let did_document = crate::did::resolve_did_to_document(&did, xrpc_client)
+        .await
         .wrap_err_with(|| format!("Failed to resolve DID document for {}", did_str))?;
 
     // Find the PDS service endpoint
-    let services = did_document.service.as_ref()
+    let services = did_document
+        .service
+        .as_ref()
         .ok_or_else(|| eyre!("No service endpoints found in DID document for {}", did_str))?;
 
-    let pds_service = services.iter().find(|s| s.id == "#atproto_pds")
-        .ok_or_else(|| eyre!("No ATProto PDS service endpoint found in DID document for {}", did_str))?;
+    let pds_service = services
+        .iter()
+        .find(|s| s.id == "#atproto_pds")
+        .ok_or_else(|| {
+            eyre!(
+                "No ATProto PDS service endpoint found in DID document for {}",
+                did_str
+            )
+        })?;
 
     Ok(pds_service.service_endpoint.clone())
 }
@@ -86,8 +96,8 @@ pub async fn generate_progress_image(
     debug!("Generating progress image");
 
     // Load the original image
-    let original_img = image::load_from_memory(original_image_data)
-        .wrap_err("Failed to load image")?;
+    let original_img =
+        image::load_from_memory(original_image_data).wrap_err("Failed to load image")?;
 
     // Get dimensions of the original image
     let width = original_img.width();
@@ -230,9 +240,10 @@ pub async fn generate_progress_image(
     // Convert the final image to bytes
     let mut buffer = Vec::new();
     let mut cursor = Cursor::new(&mut buffer);
-    final_img.write_to(&mut cursor, ImageFormat::Png)
+    final_img
+        .write_to(&mut cursor, ImageFormat::Png)
         .wrap_err("Failed to encode final image to PNG")?;
-    
+
     Ok(buffer)
 }
 
@@ -267,9 +278,10 @@ pub async fn upload_image_to_bluesky(
     };
 
     // Find PDS endpoint using our helper function
-    let pds_endpoint = resolve_did_to_pds(&token.did).await
+    let pds_endpoint = resolve_did_to_pds(&token.did)
+        .await
         .wrap_err_with(|| format!("Failed to find PDS endpoint for {}", token.did))?;
-    
+
     info!("Found PDS endpoint for upload: {}", pds_endpoint);
 
     // Construct the full URL to the PDS endpoint
@@ -381,7 +393,8 @@ pub async fn save_original_profile_picture(
     let client = Client::new();
 
     // Find PDS endpoint for this user
-    let pds_endpoint = find_pds_endpoint(token).await
+    let pds_endpoint = find_pds_endpoint(token)
+        .await
         .wrap_err_with(|| format!("Failed to find PDS endpoint for {}", token.did))?;
 
     // Construct the full URL to the PDS endpoint for putRecord
@@ -454,8 +467,8 @@ pub async fn save_original_profile_picture(
     }
 
     // Unwrap the final result
-    let put_response = put_response_result
-        .wrap_err("Network error when saving original profile picture")?;
+    let put_response =
+        put_response_result.wrap_err("Network error when saving original profile picture")?;
 
     if !put_response.status().is_success() {
         let status = put_response.status();
@@ -492,7 +505,8 @@ pub async fn get_original_profile_picture(
     let client = Client::new();
 
     // Find PDS endpoint for this user
-    let pds_endpoint = find_pds_endpoint(token).await
+    let pds_endpoint = find_pds_endpoint(token)
+        .await
         .wrap_err_with(|| format!("Failed to find PDS endpoint for {}", token.did))?;
 
     // Construct the full URL to the PDS endpoint for getRecord
@@ -558,8 +572,8 @@ pub async fn get_original_profile_picture(
     }
 
     // Unwrap the final result
-    let get_response = get_response_result
-        .wrap_err("Network error when retrieving original profile picture")?;
+    let get_response =
+        get_response_result.wrap_err("Network error when retrieving original profile picture")?;
 
     // If record doesn't exist, return None (not an error)
     if get_response.status() == reqwest::StatusCode::NOT_FOUND {
@@ -567,7 +581,10 @@ pub async fn get_original_profile_picture(
             "No original profile picture record found for DID: {}",
             token.did
         );
-        return Err(eyre!("No original profile picture record found for DID: {}", token.did));
+        return Err(eyre!(
+            "No original profile picture record found for DID: {}",
+            token.did
+        ));
     }
 
     if !get_response.status().is_success() {
@@ -621,9 +638,10 @@ pub async fn update_profile_with_image(
     let client = Client::new();
 
     // Find PDS endpoint using our helper function
-    let pds_endpoint = resolve_did_to_pds(&token.did).await
+    let pds_endpoint = resolve_did_to_pds(&token.did)
+        .await
         .wrap_err_with(|| format!("Failed to find PDS endpoint for {}", token.did))?;
-    
+
     info!("Found PDS endpoint for profile update: {}", pds_endpoint);
 
     // Construct the full URL to the PDS endpoint for getRecord
@@ -690,8 +708,7 @@ pub async fn update_profile_with_image(
     }
 
     // Unwrap the final result
-    let get_response = get_response_result
-        .wrap_err("Network error when retrieving profile")?;
+    let get_response = get_response_result.wrap_err("Network error when retrieving profile")?;
 
     if !get_response.status().is_success() {
         let status = get_response.status();
@@ -788,8 +805,8 @@ pub async fn update_profile_with_image(
     }
 
     // Unwrap the final result
-    let put_response = put_response_result
-        .wrap_err("Network error when updating profile with new image")?;
+    let put_response =
+        put_response_result.wrap_err("Network error when updating profile with new image")?;
 
     if !put_response.status().is_success() {
         let status = put_response.status();
