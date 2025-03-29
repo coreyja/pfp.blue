@@ -1,4 +1,3 @@
-use axum::response::IntoResponse;
 use cja::jobs::Job;
 use color_eyre::eyre::{eyre, WrapErr};
 use serde::{Deserialize, Serialize};
