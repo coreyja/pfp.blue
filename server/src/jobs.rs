@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::str::FromStr;
 use tracing::debug;
+use color_eyre::eyre::{eyre, WrapErr};
 
 use crate::{
     oauth::{create_dpop_proof_with_ath, OAuthTokenSet},
@@ -164,13 +165,12 @@ impl Job<AppState> for UpdateProfileInfoJob {
         use tracing::{debug, error, info};
 
         // First, get the current token from the database with decryption
-        let token = match crate::oauth::get_valid_token_by_did(&self.did, &app_state).await {
-            Ok(token) => token,
-            Err(err) => {
+        let token = crate::oauth::get_valid_token_by_did(&self.did, &app_state).await
+            .wrap_err_with(|| format!("Error retrieving token for DID {}", self.did))
+            .map_err(|err| {
                 error!("Error retrieving token for DID {}: {:?}", self.did, err);
-                return Err(err);
-            }
-        };
+                err
+            })?;
 
         let client = reqwest::Client::new();
 
@@ -298,13 +298,12 @@ impl Job<AppState> for UpdateProfileInfoJob {
         }
 
         // Handle the final result
-        let response = match response_result {
-            Ok(resp) => resp,
-            Err(err) => {
+        let response = response_result
+            .wrap_err("Network error when fetching profile")
+            .map_err(|err| {
                 error!("Failed to send profile request: {:?}", err);
-                return Err(eyre!("Network error when fetching profile: {}", err));
-            }
-        };
+                err
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
