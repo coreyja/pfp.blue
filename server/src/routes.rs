@@ -1,9 +1,14 @@
 use crate::{
     auth::{AdminUser, AuthUser, OptionalUser},
+    components::layout::Page,
+    errors::{ServerError, ServerResult},
     profile_progress::ProfilePictureProgress,
     state::AppState,
 };
-use axum::extract::{Form, State};
+use axum::{
+    extract::{Form, State},
+    response::Response,
+};
 use axum::{
     response::{IntoResponse, Redirect},
     routing::{get, post},
@@ -50,9 +55,9 @@ pub fn routes(app_state: AppState) -> axum::Router {
 }
 
 /// Root page handler - displays the homepage
-async fn root_page(optional_user: OptionalUser) -> impl IntoResponse {
+async fn root_page(optional_user: OptionalUser) -> Page {
     use crate::components::{
-        layout::{Card, Page},
+        layout::Card,
         profile::feature_card::{FeatureCard, FeatureCardColor},
         ui::{
             button::{Button, ButtonSize},
@@ -137,7 +142,6 @@ async fn root_page(optional_user: OptionalUser) -> impl IntoResponse {
         title: "pfp.blue - Bluesky Profile Manager".to_string(),
         content: Box::new(Card::new(content).with_max_width("max-w-md")),
     }
-    .render()
 }
 
 /// Login page handler - displays the login form
@@ -251,7 +255,7 @@ async fn toggle_profile_progress(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
     Form(params): Form<ToggleProfileProgressParams>,
-) -> impl IntoResponse {
+) -> Response {
     // Validate token ownership and get token ID
     let token_id = match validate_token_ownership(&state, &params.token_id, user.user_id).await {
         Ok(id) => id,
@@ -302,13 +306,13 @@ async fn set_original_profile_picture(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
     Form(params): Form<SetOriginalProfilePictureParams>,
-) -> impl IntoResponse {
+) -> Redirect {
     // Validate token ownership and get token ID
     let token_id = match validate_token_ownership(&state, &params.token_id, user.user_id).await {
         Ok(id) => id,
         Err(e) => {
             error!("Token ownership validation failed: {}", e);
-            return Redirect::to("/me").into_response();
+            return Redirect::to("/me");
         }
     };
 
@@ -341,11 +345,11 @@ async fn set_original_profile_picture(
         }
         Ok(None) => {
             error!("Token not found: {}", token_id);
-            return Redirect::to("/me").into_response();
+            return Redirect::to("/me");
         }
         Err(e) => {
             error!("Database error when fetching token: {:?}", e);
-            return Redirect::to("/me").into_response();
+            return Redirect::to("/me");
         }
     };
 
@@ -405,7 +409,7 @@ async fn set_original_profile_picture(
     }
 
     // Redirect back to profile page
-    Redirect::to("/me").into_response()
+    Redirect::to("/me")
 }
 
 /// Helper function to validate token ownership and return token ID
@@ -448,11 +452,12 @@ async fn enqueue_profile_picture_update_job(state: &AppState, token_id: Uuid) {
 }
 
 /// Logout route - clears authentication cookies and redirects to home
-async fn logout(State(state): State<AppState>, cookies: Cookies) -> impl IntoResponse {
+async fn logout(
+    State(state): State<AppState>,
+    cookies: Cookies,
+) -> ServerResult<impl IntoResponse, impl IntoResponse> {
     // End the session
-    if let Err(e) = crate::auth::end_session(&state.db, &cookies).await {
-        error!("Error ending session: {:?}", e);
-    }
+    crate::auth::end_session(&state.db, &cookies).await?;
 
     // Also clear the old legacy cookie if it exists
     if let Some(_cookie) = cookies.get(bsky::AUTH_DID_COOKIE) {
@@ -468,7 +473,7 @@ async fn logout(State(state): State<AppState>, cookies: Cookies) -> impl IntoRes
 
     // Redirect to home page
     info!("User logged out successfully");
-    Redirect::to("/")
+    Ok(Redirect::to("/"))
 }
 
 /// Admin panel page - shows available jobs and provides a UI to run them
