@@ -118,8 +118,76 @@ let data = match some_function() {
 use color_eyre::eyre::{eyre, WrapErr};
 ```
 
-5. For web handlers that need to return custom responses, use more explicit error handling patterns.
-- Database queries: **Always** use the `sqlx::query!` and `sqlx::query_as!` macros instead of the non-macro versions. These macros provide compile-time SQL validation and type-checking, preventing runtime SQL errors.
+5. For web handlers, use the `ServerResult` type alias to handle errors consistently:
+
+```rust
+// Handler function signature pattern
+async fn my_handler(
+    State(state): State<AppState>,
+    // ... other parameters
+) -> ServerResult<impl IntoResponse, StatusCode> {
+    // Function logic
+    let result = some_operation().await
+        .wrap_err("Failed to perform operation")?;
+    
+    Ok(result.into_response())
+}
+```
+
+For handlers that need to return redirects on error:
+
+```rust
+async fn profile_handler(
+    // ... parameters
+) -> ServerResult<impl IntoResponse, Redirect> {
+    let user_data = get_user_data().await
+        .wrap_err("Failed to get user data")
+        .with_redirect(Redirect::to("/login"))?;
+    
+    Ok(render_profile(user_data).into_response())
+}
+```
+
+6. Use the following traits for converting errors to appropriate responses:
+
+```rust
+// For StatusCode responses
+.with_status(StatusCode::BAD_REQUEST)?
+
+// For Redirect responses
+.with_redirect(Redirect::to("/error-page"))?
+```
+
+Important: Always import the necessary types and traits:
+
+```rust
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Redirect};
+use crate::errors::{ServerResult, ServerError, WithStatus, WithRedirect};
+use color_eyre::eyre::{eyre, WrapErr};
+```
+
+The `ServerResult` type alias is defined as:
+
+```rust
+// Type alias for server handler results
+pub type ServerResult<S, F> = Result<S, ServerError<F>>;
+
+// ServerError wraps an eyre::Report with a response type
+pub struct ServerError<R: IntoResponse>(pub(crate) cja::color_eyre::Report, pub(crate) R);
+```
+
+This pattern allows us to:
+1. Include detailed error information (via Report)
+2. Specify exactly what kind of response should be returned on error
+3. Maintain type safety throughout our error handling
+
+Remember the difference between `wrap_err` and `with_status`/`with_redirect`:
+- `wrap_err` adds context to the error for debugging and logging
+- `with_status`/`with_redirect` converts the error into an appropriate HTTP response
+- Typically use them together: `operation().wrap_err("context").with_status(StatusCode::BAD_REQUEST)?`
+
+7. Database queries: **Always** use the `sqlx::query!` and `sqlx::query_as!` macros instead of the non-macro versions. These macros provide compile-time SQL validation and type-checking, preventing runtime SQL errors.
 
 ## Database Schema
 
