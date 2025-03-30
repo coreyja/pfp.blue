@@ -26,6 +26,12 @@ impl Render for Page {
     }
 }
 
+impl axum::response::IntoResponse for Page {
+    fn into_response(self) -> axum::response::Response {
+        self.render().into_response()
+    }
+}
+
 pub struct Card {
     pub content: Box<dyn Render>,
     pub max_width: Option<String>,

@@ -3,39 +3,6 @@ set -euo pipefail
 
 # Script to run end-to-end tests for local development
 
-# Function to clean up processes on exit
-cleanup() {
-  echo -e "\n🧹 Cleaning up processes..."
-  
-  # Kill any running Overmind processes
-  if pgrep -f "overmind start -f" > /dev/null; then
-    echo "🛑 Stopping Overmind processes..."
-    pkill -f "overmind start -f" || true
-  fi
-  
-  # Kill any lingering test server processes
-  for proc in "pds" "plc-directory" "appview" "pfp-blue"; do
-    if pgrep -f "cargo run --bin $proc" > /dev/null; then
-      echo "🛑 Stopping $proc process..."
-      pkill -f "cargo run --bin $proc" || true
-    fi
-  done
-
-  # Remove any stale socket files
-  if [ -f ./.overmind.sock ]; then
-    echo "🗑️  Removing stale Overmind socket file..."
-    rm -f ./.overmind.sock
-  fi
-
-  echo "✅ Cleanup complete"
-}
-
-# Set up trap to ensure cleanup on exit
-trap cleanup EXIT INT TERM
-
-# Run cleanup at the start to ensure we're starting fresh
-cleanup
-
 # Default options
 TEST_MODE="headed"    # Run in headed mode by default
 USE_FIXTURES=true     # Use fixture servers by default
