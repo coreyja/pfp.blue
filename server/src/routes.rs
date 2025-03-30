@@ -86,13 +86,13 @@ async fn root_page(optional_user: OptionalUser, State(state): State<AppState>) -
                     row.display_name
                         .unwrap_or_else(|| format!("@{}", row.did))
                         .replace("@", "")
-                },
+                }
                 _ => "there".to_string(),
             };
 
             // Personalized greeting with display name
             let greeting_text = format!("Welcome back, @{}!", display_name);
-            
+
             // Action buttons for logged in users
             let action_buttons = maud::html! {
                 (Button::primary("Go to My Profile")
@@ -102,14 +102,14 @@ async fn root_page(optional_user: OptionalUser, State(state): State<AppState>) -
                     .size(ButtonSize::Large)
                     .render())
             };
-            
+
             // Wider card for logged in users with more content
             (greeting_text, action_buttons, "max-w-lg")
-        },
+        }
         None => {
             // Welcome message for non-logged in users
             let greeting_text = "Welcome to pfp.blue!".to_string();
-            
+
             // Login buttons for non-logged in users
             let action_buttons = maud::html! {
                 div class="space-y-4" {
@@ -119,8 +119,8 @@ async fn root_page(optional_user: OptionalUser, State(state): State<AppState>) -
                         .full_width(true)
                         .size(ButtonSize::Large)
                         .render())
-                        
-                    p class="text-sm text-gray-500" { 
+
+                    p class="text-sm text-gray-500" {
                         "New to Bluesky? "
                         a href="https://bsky.app" target="_blank" class="text-indigo-600 hover:text-indigo-800 underline" {
                             "Visit Bluesky"
@@ -128,9 +128,9 @@ async fn root_page(optional_user: OptionalUser, State(state): State<AppState>) -
                     }
                 }
             };
-            
+
             (greeting_text, action_buttons, "max-w-md")
-        },
+        }
     };
 
     let content = maud::html! {
@@ -187,14 +187,14 @@ async fn root_page(optional_user: OptionalUser, State(state): State<AppState>) -
                     ).render())
                 }
             }
-            
+
             // Coming soon section - improved for mobile
             div class="mt-8 sm:mt-10 p-4 sm:p-5 bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg sm:rounded-xl border border-purple-100 shadow-sm" {
                 h3 class="text-base sm:text-lg font-medium text-purple-800" { "Coming Soon" }
                 p class="text-xs sm:text-sm text-gray-700 mt-1 sm:mt-2" { "More profile customization options and enhanced features!" }
-                
+
                 div class="mt-3 sm:mt-4 flex justify-center space-x-2 sm:space-x-3" {
-                    a href="https://github.com/coreyja/pfp.blue" target="_blank" 
+                    a href="https://github.com/coreyja/pfp.blue" target="_blank"
                       class="inline-flex items-center px-3 sm:px-4 py-1 sm:py-1.5 text-xs sm:text-sm font-medium rounded-full bg-purple-100 text-purple-700 hover:bg-purple-200 transition-colors" {
                         // GitHub icon
                         svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1.5" viewBox="0 0 24 24" fill="currentColor" {
@@ -202,8 +202,8 @@ async fn root_page(optional_user: OptionalUser, State(state): State<AppState>) -
                         }
                         "Star on GitHub"
                     }
-                    
-                    a href="https://bsky.app/profile/pfp.blue" target="_blank" 
+
+                    a href="https://bsky.app/profile/pfp.blue" target="_blank"
                       class="inline-flex items-center px-3 sm:px-4 py-1 sm:py-1.5 text-xs sm:text-sm font-medium rounded-full bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors" {
                         // Bluesky icon
                         svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1.5" viewBox="0 0 24 24" fill="currentColor" {

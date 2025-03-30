@@ -344,11 +344,11 @@ async fn display_profile_multi(
                             div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-3 gap-2" {
                                 div class="flex-1" {
                                     p class="font-medium text-gray-900 text-sm sm:text-base" { "Profile Picture Progress Visualization" }
-                                    p class="text-xs sm:text-sm text-gray-500 mt-1" { 
+                                    p class="text-xs sm:text-sm text-gray-500 mt-1" {
                                         "This feature automatically updates your profile picture to show progress from your display name."
                                     }
                                 }
-                                
+
                                 // Status indicator
                                 div class="sm:ml-4 flex-shrink-0" {
                                     @if progress_enabled {
@@ -362,11 +362,11 @@ async fn display_profile_multi(
                                     }
                                 }
                             }
-                            
+
                             // Form with single button
                             form action="/profile_progress/toggle" method="post" class="mt-2" {
                                 input type="hidden" name="token_id" value=(primary_token.did) {}
-                                
+
                                 @if progress_enabled {
                                     // When enabled, show a button to disable
                                     (Button::primary("Disable Progress Visualization")

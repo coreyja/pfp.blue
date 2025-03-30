@@ -96,7 +96,10 @@ impl Job<AppState> for UpdateProfilePictureProgressJob {
             Err(eyre!("Original blob object has no ref field"))?
         };
 
-        debug!("Using original blob CID from PDS: {}", pds_original_blob_cid);
+        debug!(
+            "Using original blob CID from PDS: {}",
+            pds_original_blob_cid
+        );
 
         // Extract progress fraction or percentage from display_name
         let (numerator, denominator) = match &token.display_name {
