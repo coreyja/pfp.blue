@@ -149,6 +149,7 @@ pub struct ToggleSwitch {
 }
 
 impl ToggleSwitch {
+    #[allow(dead_code)]
     pub fn new(name: &str, label: &str, checked: bool) -> Self {
         Self {
             name: name.to_string(),
@@ -158,6 +159,7 @@ impl ToggleSwitch {
         }
     }
 
+    #[allow(dead_code)]
     pub fn description(mut self, description: &str) -> Self {
         self.description = Some(description.to_string());
         self

@@ -9,6 +9,7 @@ pub enum ButtonVariant {
     Link,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum ButtonSize {
     Small,
@@ -63,6 +64,7 @@ impl Button {
         self
     }
 
+    #[allow(dead_code)]
     pub fn primary(text: &str) -> Self {
         Self {
             text: text.to_string(),
@@ -71,6 +73,7 @@ impl Button {
         }
     }
 
+    #[allow(dead_code)]
     pub fn secondary(text: &str) -> Self {
         Self {
             text: text.to_string(),
