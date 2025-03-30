@@ -46,18 +46,24 @@ test.describe('Profile page', () => {
     expect(bodyText).toContain('Profile Picture Progress');
   });
   
-  // We can add back the multiple accounts test later when we have fixture support for it
-  test('shows all linked accounts when multiple accounts are connected', async ({ page, mockAuthenticatedUser }) => {
+  // Test for the account dropdown component
+  test('shows account management dropdown', async ({ page, mockAuthenticatedUser }) => {
     test.skip(!process.env.USE_FIXTURES, 'This test only runs when fixtures are enabled');
     
     await mockAuthenticatedUser(page);
     await page.goto('/me');
     
-    // Check for account section
-    const accountSection = page.locator('text=Bluesky Account');
-    await expect(accountSection).toBeVisible();
+    // Check for account section heading
+    const accountHeading = page.getByRole('heading', { name: 'Your Bluesky Account' });
+    await expect(accountHeading).toBeVisible();
     
-    // In a future enhancement, we could update the fixtures to support multiple accounts
+    // Check for the account dropdown
+    const accountDropdown = page.locator('details.relative');
+    await expect(accountDropdown).toBeVisible();
+    
+    // Verify the "Add Account" option is available
+    const addAccountLink = page.getByRole('link', { name: 'Add Account' });
+    await expect(addAccountLink).toBeVisible();
   });
 });
 

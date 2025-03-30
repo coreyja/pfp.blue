@@ -108,6 +108,7 @@ pub async fn authorize(
 #[derive(Deserialize)]
 pub struct SetPrimaryAccountParams {
     pub did: String,
+    pub redirect: Option<String>,
 }
 
 /// Set a specific Bluesky account as the primary one
@@ -171,6 +172,7 @@ pub async fn set_primary_account(
             .into_response();
     }
 
-    // Redirect back to profile page
-    Redirect::to("/me").into_response()
+    // Redirect back to provided path or profile page
+    let redirect_path = params.redirect.unwrap_or_else(|| "/me".to_string());
+    Redirect::to(&redirect_path).into_response()
 }

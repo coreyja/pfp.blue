@@ -202,14 +202,13 @@ async fn display_profile_multi(
     all_tokens: Vec<OAuthTokenSet>,
 ) -> maud::Markup {
     use crate::components::{
-        form::{Form, InputField, ToggleSwitch},
+        form::ToggleSwitch,
         layout::Page,
-        profile::AccountCard,
         ui::{
+            account_dropdown::AccountDropdown,
             badge::{Badge, BadgeColor},
-            button::{Button, ButtonSize, IconPosition},
+            button::{Button, ButtonSize},
             heading::Heading,
-            icon::Icon,
             nav_buttons::{NavButton, NavButtonIcon, NavButtons},
         },
     };
@@ -320,37 +319,18 @@ async fn display_profile_multi(
 
                 // Authentication status section removed for production - only show user-facing info
 
-                // Linked accounts section using AccountCard component
-                div class="mb-8" {
-                    (Heading::h3("Linked Bluesky Accounts"))
-
-                    div class="space-y-3" {
-                        @for token in &all_tokens {
-                            (AccountCard::new(&token.did, token.expires_at)
-                                .handle(token.display_name.as_deref().unwrap_or(""))
-                                .is_primary(token.did == primary_token.did))
-                        }
+                // Account dropdown section
+                div class="mb-8 flex flex-col items-center" {
+                    div class="flex items-center gap-3 mb-4" {
+                        (Heading::h3("Your Bluesky Account"))
+                        
+                        // Account dropdown with all linked accounts
+                        (AccountDropdown::new(all_tokens.clone(), &primary_token.did, "/me"))
                     }
-
-                    // Add new account form using Form, InputField and Button components
-                    div class="mt-6 bg-gradient-to-r from-indigo-50 to-blue-50 rounded-xl p-5 border border-dashed border-indigo-200" {
-                        (Form::new(
-                            "/oauth/bsky/authorize",
-                            "get",
-                            html! {
-                                div class="flex flex-col sm:flex-row gap-2 items-center" {
-                                    div class="w-full sm:flex-grow" {
-                                        (InputField::new("did")
-                                            .placeholder("Enter Bluesky handle or DID")
-                                            .icon(Icon::user()))
-                                    }
-
-                                    (Button::primary("Link Account")
-                                        .button_type("submit")
-                                        .icon(Icon::plus().into_string(), IconPosition::Left))
-                                }
-                            }
-                        ).extra_classes("m-0"))
+                    
+                    // Helpful text explaining account switching
+                    p class="text-gray-600 text-sm text-center max-w-md mb-4" {
+                        "You can easily switch between your linked Bluesky accounts using the dropdown menu above."
                     }
                 }
 
@@ -453,10 +433,10 @@ async fn display_profile_multi(
                 (NavButtons::new()
                     .add_button(NavButton::new("Home", "/")
                         .with_icon(NavButtonIcon::Home))
+                    .add_button(NavButton::new("Add Account", "/oauth/bsky/authorize")
+                        .with_icon(NavButtonIcon::Plus))
                     .add_button(NavButton::new("Logout", "/logout")
-                        .with_icon(NavButtonIcon::Logout))
-                    .add_button(NavButton::new("Switch User", "/login")
-                        .with_icon(NavButtonIcon::Login)))
+                        .with_icon(NavButtonIcon::Logout)))
             }
         }
     };
