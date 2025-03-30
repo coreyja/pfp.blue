@@ -13,12 +13,12 @@ impl Render for Page {
                 script src="https://unpkg.com/@tailwindcss/browser@4" {}
             }
 
-            // Main container with gradient background
-            div class="min-h-screen bg-gradient-to-br from-blue-100 via-indigo-50 to-purple-100 py-8 px-4 sm:px-6 lg:px-8" {
+            // Main container - fullscreen on mobile, gradient background on larger screens
+            div class="min-h-screen bg-white md:bg-gradient-to-br md:from-blue-100 md:via-indigo-50 md:to-purple-100 py-4 md:py-8 px-0 sm:px-4 md:px-6 lg:px-8" {
                 (self.content.render())
 
                 // Footer credit
-                div class="mt-8 text-center text-gray-500 text-sm" {
+                div class="mt-6 md:mt-8 text-center text-gray-500 text-sm" {
                     p { "© 2025 pfp.blue - Bluesky Profile Management" }
                 }
             }

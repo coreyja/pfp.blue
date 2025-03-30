@@ -262,7 +262,7 @@ async fn display_profile_multi(
 
     // Create profile display content
     let content = html! {
-        div class="max-w-3xl mx-auto bg-white rounded-xl md:rounded-2xl shadow-xl overflow-hidden" {
+        div class="w-full md:max-w-3xl md:mx-auto bg-white overflow-hidden md:rounded-2xl md:shadow-xl" {
             // Profile header with fun curves
             div class="relative h-32 sm:h-40 md:h-48 bg-gradient-to-r from-blue-500 to-indigo-600" {
                 div class="absolute left-0 right-0 bottom-0" {
