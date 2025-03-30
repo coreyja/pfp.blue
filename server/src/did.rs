@@ -76,44 +76,11 @@ pub async fn resolve_did_to_document(
 
     let resolve_result = resolver.resolve(did).await;
 
-    // In e2e tests, let's create a fake document when using fixture-user.test
-    if resolve_result.is_err()
-        && did.as_str() == "did:plc:abcdefg"
-        && std::env::var("USE_FIXTURES").unwrap_or_default() == "1"
-    {
-        let err = resolve_result.unwrap_err();
-        error!(
-            "PLC resolution failed, but using fixture user, creating fake document: {}",
-            err
-        );
-        return create_test_fixture_document(did);
-    }
-
     // Handle the normal case
     let document = resolve_result
         .wrap_err_with(|| format!("Failed to resolve DID document for {}", did.as_str()))?;
     info!("Successfully resolved DID document for {}", did.as_str());
     Ok(document)
-}
-
-/// Creates a test fixture document for e2e testing
-fn create_test_fixture_document(did: &Did) -> cja::Result<DidDocument> {
-    let pds_url = std::env::var("PDS_URL").unwrap_or_else(|_| "http://localhost:3001".to_string());
-
-    // Create a minimal valid document for fixtures
-    let doc = DidDocument {
-        context: Some(vec!["https://w3id.org/did/v1".to_string()]),
-        id: did.as_str().to_string(),
-        also_known_as: Some(vec!["at://fixture-user.test".to_string()]),
-        service: Some(vec![Service {
-            id: "#atproto_pds".to_string(),
-            service_endpoint: pds_url,
-            r#type: "AtprotoPersonalDataServer".to_string(),
-        }]),
-        verification_method: Some(vec![]),
-    };
-
-    Ok(doc)
 }
 
 /// Helper to extract PDS Service from a DID document
