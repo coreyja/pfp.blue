@@ -56,7 +56,7 @@ impl Render for Card {
         let width_class = self.max_width.as_deref().unwrap_or("max-w-md");
 
         html! {
-            div class={(width_class) " mx-auto bg-white rounded-2xl shadow-xl overflow-hidden"} {
+            div class={(width_class) " mx-auto bg-white rounded-lg sm:rounded-xl md:rounded-2xl border border-gray-100 shadow-md sm:shadow-lg md:shadow-xl overflow-hidden w-full transition-all duration-300"} {
                 (self.content.render())
             }
         }

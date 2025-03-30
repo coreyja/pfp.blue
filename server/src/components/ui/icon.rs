@@ -67,4 +67,11 @@ const LOGOUT_ICON: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" class="h-5 
 
 const LOGIN_ICON: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" /></svg>"#;
 
-const APP_LOGO_ICON: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-500"><circle cx="12" cy="8" r="5"></circle><path d="M20 21v-2a7 7 0 0 0-14 0v2"></path><line x1="12" y1="8" x2="12" y2="8"></line><path d="M3 20h18a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1H9L3 12v7a1 1 0 0 0 1 1z"></path></svg>"#;
+const APP_LOGO_ICON: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-12 h-12 sm:w-16 sm:h-16 text-indigo-600">
+  <path d="M12 2.5a5.5 5.5 0 0 1 3.096 10.047A8 8 0 0 1 19 19.95V20a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-.05a8 8 0 0 1 3.904-7.403A5.5 5.5 0 0 1 12 2.5z" fill="none" />
+  <path d="M14 10l-4 2" stroke-width="1.5" />
+  <path d="M10 8l4 2" stroke-width="1.5" />  
+  <circle cx="12" cy="8" r="2.5" fill="currentColor" opacity="0.2" />
+  <circle cx="10" cy="10" r="1" fill="currentColor" />
+  <circle cx="14" cy="12" r="1" fill="currentColor" />
+</svg>"#;
