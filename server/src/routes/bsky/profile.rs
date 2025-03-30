@@ -302,14 +302,7 @@ async fn display_profile_multi(
                     }
                 }
 
-                // Tabs for different sections
-                div class="border-b border-gray-200 mb-6" {
-                    div class="flex overflow-x-auto" {
-                        button class="px-4 py-2 text-indigo-600 border-b-2 border-indigo-600 font-medium" { "Accounts" }
-                        button class="px-4 py-2 text-gray-500 hover:text-indigo-600" { "Activity" }
-                        button class="px-4 py-2 text-gray-500 hover:text-indigo-600" { "Settings" }
-                    }
-                }
+                // Non-functional tabs removed - we'll implement real tabs when they have functionality
 
                 // Authentication status section removed for production - only show user-facing info
 
