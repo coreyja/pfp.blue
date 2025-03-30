@@ -35,15 +35,15 @@ impl Render for AccountDropdown {
                             }
                         }
 
-                        // Dropdown arrow icon
+                        // Dropdown arrow icon - points up since menu opens upward
                         svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 ml-1 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" {
-                            path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" {}
+                            path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" {}
                         }
                     }
                 }
 
-                // Dropdown content
-                div class="origin-top-right absolute right-0 mt-2 w-[calc(100vw-2rem)] sm:w-64 max-w-[320px] rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none z-10 divide-y divide-gray-100" {
+                // Dropdown content - appears from bottom in the footer
+                div class="origin-bottom-right absolute right-0 bottom-full mb-2 w-[calc(100vw-2rem)] sm:w-64 max-w-[320px] rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none z-10 divide-y divide-gray-100" {
                     // Fixed position to avoid layout shifts with view-transitions
                     div class="py-1" {
                         // Account list section
