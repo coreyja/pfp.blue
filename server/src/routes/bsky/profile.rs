@@ -2,7 +2,6 @@ use axum::{extract::State, http::StatusCode, response::IntoResponse};
 use cja::jobs::Job;
 use maud::html;
 use sqlx::Row;
-use std::time::SystemTime;
 use tower_cookies::Cookies;
 use tracing::error;
 
@@ -297,9 +296,9 @@ async fn display_profile_multi(
 
                     // Profile info
                     div class="text-center md:text-left" {
-                        (Heading::h1(&display_name))
+                        h1 class="text-4xl font-bold mb-3 text-gray-800" title=(primary_token.did) { (display_name) }
                         // We just display the display name now, no need to show handle separately
-                        p class="text-sm text-gray-500 mb-4 max-w-md truncate" { (primary_token.did) }
+                        // DID is shown as a tooltip on the display name instead of directly
 
                         // Playful badges
                         div class="flex flex-wrap justify-center md:justify-start gap-2 mt-2" {
@@ -319,39 +318,7 @@ async fn display_profile_multi(
                     }
                 }
 
-                // Token info card using Heading and Badge components
-                div class="bg-indigo-50 rounded-xl p-4 mb-6" {
-                    (Heading::h3("Authentication Status")
-                        .with_color("text-indigo-800"))
-
-                    div class="grid grid-cols-1 md:grid-cols-2 gap-4" {
-                        div class="bg-white rounded-lg p-3 shadow-sm" {
-                            p class="text-sm text-gray-500" { "Token Expires In" }
-                            p class="text-lg font-semibold" {
-                                ({
-                                    let now = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
-                                    if primary_token.expires_at > now {
-                                        primary_token.expires_at - now
-                                    } else {
-                                        0
-                                    }
-                                }) " seconds"
-                            }
-                        }
-                        div class="bg-white rounded-lg p-3 shadow-sm" {
-                            p class="text-sm text-gray-500" { "Refresh Token" }
-                            @if primary_token.refresh_token.is_some() {
-                                div class="flex items-center mt-1" {
-                                    (Badge::new("Available", BadgeColor::Green).rounded(true))
-                                }
-                            } @else {
-                                div class="flex items-center mt-1" {
-                                    (Badge::new("Not Available", BadgeColor::Red).rounded(true))
-                                }
-                            }
-                        }
-                    }
-                }
+                // Authentication status section removed for production - only show user-facing info
 
                 // Linked accounts section using AccountCard component
                 div class="mb-8" {
@@ -387,20 +354,7 @@ async fn display_profile_multi(
                     }
                 }
 
-                // Profile data section with improved styling
-                @if let Some(profile_data) = &profile_info.profile_data {
-                    div class="mb-8" {
-                        (Heading::h3("Profile Data"))
-                        details class="bg-gray-50 rounded-lg border border-gray-200" {
-                            summary class="cursor-pointer font-medium text-gray-700 p-4 hover:bg-gray-100" { "View Raw JSON" }
-                            pre class="bg-gray-900 text-gray-100 p-4 rounded-b-lg overflow-x-auto text-sm" {
-                                code {
-                                    (serde_json::to_string_pretty(profile_data).unwrap_or_else(|_| "Failed to format profile data".to_string()))
-                                }
-                            }
-                        }
-                    }
-                }
+                // Raw profile data section removed for production
 
                 // Profile Picture Progress feature
                 div class="mb-8" {
@@ -453,10 +407,9 @@ async fn display_profile_multi(
 
                             input type="hidden" name="token_id" value=(primary_token.did) {}
 
-                            @if let Some(original_cid) = &progress_settings.1 {
+                            @if progress_settings.1.is_some() {
                                 div class="mb-4 flex items-center" {
-                                    p class="text-sm text-gray-600 mr-2" { "Current original: " }
-                                    code class="bg-gray-100 px-2 py-1 rounded text-sm" { (original_cid) }
+                                    p class="text-sm text-gray-600" { "You have set an original profile picture" }
                                 }
                             }
 

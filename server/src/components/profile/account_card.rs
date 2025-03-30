@@ -1,5 +1,4 @@
 use maud::{html, Markup, Render};
-use std::time::SystemTime;
 
 pub struct AccountCard {
     pub did: String,
@@ -31,18 +30,7 @@ impl AccountCard {
         self
     }
 
-    fn get_expires_in_seconds(&self) -> u64 {
-        let now = SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-
-        if self.expires_at > now {
-            self.expires_at - now
-        } else {
-            0
-        }
-    }
+    // Expiration display removed for production
 }
 
 impl Render for AccountCard {
@@ -61,12 +49,11 @@ impl Render for AccountCard {
                 div class="flex flex-col sm:flex-row sm:items-center justify-between" {
                     div class="mb-2 sm:mb-0" {
                         @if let Some(handle) = &self.handle {
-                            p class="font-medium text-gray-900 mb-1 truncate max-w-xs" { "@" (handle) }
-                            p class="text-xs text-gray-500 mb-1 truncate max-w-xs" { (self.did) }
+                            p class="font-medium text-gray-900 mb-1 truncate max-w-xs" title=(self.did) { "@" (handle) }
                         } @else {
-                            p class="font-medium text-gray-900 mb-1 truncate max-w-xs" { (self.did) }
+                            p class="font-medium text-gray-900 mb-1 truncate max-w-xs" title=(self.did) { "did:..." (self.did.chars().skip(self.did.len().saturating_sub(8)).collect::<String>()) }
                         }
-                        p class="text-sm text-gray-500" { "Expires in: " (self.get_expires_in_seconds()) " seconds" }
+                        // Don't show expiration time to users
                     }
 
                     @if !self.is_primary {
