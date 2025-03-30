@@ -75,10 +75,12 @@ test.describe('Authentication flow', () => {
     // We need to check for "Logout" text
     expect(bodyText).toMatch(/logout|log out/i);
     
-    // Find the logout link
-    const logoutLink = page.locator('a').filter({ hasText: /logout|log out/i });
+    // First open the account dropdown which contains the logout button
+    const accountDropdown = page.locator('details.relative');
+    await accountDropdown.click();
     
-    // Click the logout link
+    // Now find and click the logout link inside the dropdown
+    const logoutLink = page.getByText('Logout');
     await logoutLink.click();
     
     // Simply verify that we're no longer on the profile page

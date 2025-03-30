@@ -82,8 +82,9 @@ impl Render for AccountDropdown {
                         }
                     }
                     
-                    // Add new account section
+                    // Actions section
                     div class="py-1" {
+                        // Add new account option
                         a href="/oauth/bsky/authorize" class="flex items-center px-4 py-2 text-sm text-indigo-700 hover:bg-indigo-50 transition-colors duration-150" {
                             // Plus icon
                             div class="w-5 text-indigo-600 mr-3" {
@@ -92,6 +93,17 @@ impl Render for AccountDropdown {
                                 }
                             }
                             span { "Link new account" }
+                        }
+                        
+                        // Logout option
+                        a href="/logout" class="flex items-center px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors duration-150" {
+                            // Logout icon
+                            div class="w-5 text-red-600 mr-3" {
+                                svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" {
+                                    path fill-rule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 001 1h12a1 1 0 001-1V7.414l-1.707-1.707A1 1 0 0014 5.414V4a1 1 0 00-1-1H3zm11.293 1.293a1 1 0 00-1.414 0L11 6.586V14h4v-7.414l-1.707-1.707zM10 14V7a1 1 0 00-1-1H5a1 1 0 00-1 1v7h6zm-6 4a3 3 0 103-3H3v3z" clip-rule="evenodd" {}
+                                }
+                            }
+                            span { "Logout" }
                         }
                     }
                 }

@@ -206,9 +206,9 @@ async fn display_profile_multi(
         layout::Page,
         ui::{
             account_dropdown::AccountDropdown,
-            button::{Button, ButtonSize},
+            button::{Button, ButtonSize, ButtonVariant, IconPosition},
             heading::Heading,
-            nav_buttons::{NavButton, NavButtonIcon, NavButtons},
+            icon::Icon,
         },
     };
     use maud::Render;
@@ -306,19 +306,9 @@ async fn display_profile_multi(
 
                 // Authentication status section removed for production - only show user-facing info
 
-                // Account dropdown section
+                // Account section header - account dropdown moved to footer
                 div class="mb-8 flex flex-col items-center" {
-                    div class="flex items-center gap-3 mb-4" {
-                        (Heading::h3("Your Bluesky Account"))
-                        
-                        // Account dropdown with all linked accounts
-                        (AccountDropdown::new(all_tokens.clone(), &primary_token.did, "/me"))
-                    }
-                    
-                    // Helpful text explaining account switching
-                    p class="text-gray-600 text-sm text-center max-w-md mb-4" {
-                        "You can easily switch between your linked Bluesky accounts using the dropdown menu above."
-                    }
+                    (Heading::h3("Your Bluesky Account"))
                 }
 
                 // Raw profile data section removed for production
@@ -416,14 +406,17 @@ async fn display_profile_multi(
                     }
                 }
 
-                // Action buttons footer using our new component
-                (NavButtons::new()
-                    .add_button(NavButton::new("Home", "/")
-                        .with_icon(NavButtonIcon::Home))
-                    .add_button(NavButton::new("Add Account", "/oauth/bsky/authorize")
-                        .with_icon(NavButtonIcon::Plus))
-                    .add_button(NavButton::new("Logout", "/logout")
-                        .with_icon(NavButtonIcon::Logout)))
+                // Footer navigation with account switcher
+                div class="flex flex-wrap justify-center gap-4 pt-4 border-t border-gray-200" {
+                    // Home button
+                    (Button::new("Home")
+                        .variant(ButtonVariant::Link)
+                        .href("/")
+                        .icon(Icon::home().into_string(), IconPosition::Left))
+                    
+                    // Account dropdown in the footer
+                    (AccountDropdown::new(all_tokens.clone(), &primary_token.did, "/me"))
+                }
             }
         }
     };

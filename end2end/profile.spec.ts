@@ -46,7 +46,7 @@ test.describe('Profile page', () => {
     expect(bodyText).toContain('Profile Picture Progress');
   });
   
-  // Test for the account dropdown component
+  // Test for the account dropdown in the footer
   test('shows account management dropdown', async ({ page, mockAuthenticatedUser }) => {
     test.skip(!process.env.USE_FIXTURES, 'This test only runs when fixtures are enabled');
     
@@ -57,12 +57,15 @@ test.describe('Profile page', () => {
     const accountHeading = page.getByRole('heading', { name: 'Your Bluesky Account' });
     await expect(accountHeading).toBeVisible();
     
-    // Check for the account dropdown
+    // Check for the account dropdown (now in the footer)
     const accountDropdown = page.locator('details.relative');
     await expect(accountDropdown).toBeVisible();
     
-    // Verify the "Add Account" option is available
-    const addAccountLink = page.getByRole('link', { name: 'Add Account' });
+    // Open the dropdown to reveal its options
+    await accountDropdown.click();
+    
+    // Check for the "Link new account" option
+    const addAccountLink = page.getByText('Link new account');
     await expect(addAccountLink).toBeVisible();
   });
 });
