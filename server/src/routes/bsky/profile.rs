@@ -262,38 +262,38 @@ async fn display_profile_multi(
 
     // Create profile display content
     let content = html! {
-        div class="max-w-3xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden" {
+        div class="max-w-3xl mx-auto bg-white rounded-xl md:rounded-2xl shadow-xl overflow-hidden" {
             // Profile header with fun curves
-            div class="relative h-48 bg-gradient-to-r from-blue-500 to-indigo-600" {
+            div class="relative h-32 sm:h-40 md:h-48 bg-gradient-to-r from-blue-500 to-indigo-600" {
                 div class="absolute left-0 right-0 bottom-0" {
-                    (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 100" class="w-full h-20 fill-white"><path d="M0,64L80,69.3C160,75,320,85,480,80C640,75,800,53,960,42.7C1120,32,1280,32,1360,32L1440,32L1440,100L1360,100C1280,100,1120,100,960,100C800,100,640,100,480,100C320,100,160,100,80,100L0,100Z"></path></svg>"#))
+                    (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 100" class="w-full h-16 sm:h-20 fill-white"><path d="M0,64L80,69.3C160,75,320,85,480,80C640,75,800,53,960,42.7C1120,32,1280,32,1360,32L1440,32L1440,100L1360,100C1280,100,1120,100,960,100C800,100,640,100,480,100C320,100,160,100,80,100L0,100Z"></path></svg>"#))
                 }
             }
 
-            // Profile content
-            div class="px-6 py-8 -mt-20 relative z-10" {
+            // Profile content - more condensed padding on mobile
+            div class="px-4 sm:px-6 py-6 sm:py-8 -mt-16 sm:-mt-20 relative z-10" {
                 // Avatar and name section
-                div class="flex flex-col md:flex-row items-center mb-8" {
-                    // Avatar with playful border
-                    div class="relative mb-4 md:mb-0 md:mr-6" {
+                div class="flex flex-col md:flex-row items-center mb-6 md:mb-8" {
+                    // Avatar with playful border - smaller on mobile
+                    div class="relative mb-3 md:mb-0 md:mr-6" {
                         @if let Some(img_src) = &avatar_base64 {
-                            div class="rounded-full w-36 h-36 border-4 border-white shadow-lg overflow-hidden bg-white" {
+                            div class="rounded-full w-28 h-28 sm:w-32 sm:h-32 md:w-36 md:h-36 border-4 border-white shadow-lg overflow-hidden bg-white" {
                                 img src=(img_src) alt="Profile Picture" class="w-full h-full object-cover" {}
                             }
                         } @else {
-                            div class="rounded-full w-36 h-36 border-4 border-white shadow-lg overflow-hidden bg-gradient-to-br from-blue-300 to-indigo-300 flex items-center justify-center text-white font-bold" {
+                            div class="rounded-full w-28 h-28 sm:w-32 sm:h-32 md:w-36 md:h-36 border-4 border-white shadow-lg overflow-hidden bg-gradient-to-br from-blue-300 to-indigo-300 flex items-center justify-center text-white font-bold" {
                                 "No Image"
                             }
                         }
-                        // Fun decorative element
-                        div class="absolute -bottom-2 -right-2 w-10 h-10 rounded-full bg-yellow-400 shadow-md border-2 border-white flex items-center justify-center text-white text-xl" {
+                        // Fun decorative element - smaller on mobile
+                        div class="absolute -bottom-2 -right-2 w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-yellow-400 shadow-md border-2 border-white flex items-center justify-center text-white text-lg sm:text-xl" {
                             "👋"
                         }
                     }
 
-                    // Profile info
-                    div class="text-center md:text-left" {
-                        h1 class="text-4xl font-bold mb-3 text-gray-800" title=(primary_token.did) { (display_name) }
+                    // Profile info - adapt font sizes for mobile
+                    div class="text-center md:text-left max-w-full overflow-hidden" {
+                        h1 class="text-2xl sm:text-3xl md:text-4xl font-bold mb-2 md:mb-3 text-gray-800 truncate" title=(primary_token.did) { (display_name) }
                         // We just display the display name now, no need to show handle separately
                         // DID is shown as a tooltip on the display name instead of directly
 
@@ -306,17 +306,17 @@ async fn display_profile_multi(
                 // Authentication status section removed for production - only show user-facing info
 
                 // Account section header - account dropdown moved to footer
-                div class="mb-8 flex flex-col items-center" {
+                div class="mb-6 md:mb-8 flex flex-col items-center" {
                     (Heading::h3("Your Bluesky Account"))
                 }
 
                 // Raw profile data section removed for production
 
                 // Profile Picture Progress feature
-                div class="mb-8" {
+                div class="mb-6 md:mb-8" {
                     (Heading::h3("Profile Picture Progress"))
-                    div class="bg-indigo-50 rounded-xl p-5 border border-indigo-200" {
-                        p class="text-gray-700 mb-4" {
+                    div class="bg-indigo-50 rounded-lg sm:rounded-xl p-4 sm:p-5 border border-indigo-200" {
+                        p class="text-gray-700 mb-4 text-sm sm:text-base" {
                             "This feature automatically updates your profile picture to show progress from your display name. "
                             "Use a fraction (e.g. 3/10) or percentage (e.g. 30%) in your display name, and we'll visualize it!"
                         }
@@ -339,18 +339,18 @@ async fn display_profile_multi(
                         };
 
                         // Profile Progress Feature Status with Button
-                        div class="mb-4 p-3 bg-white rounded-lg shadow-sm" {
+                        div class="mb-4 p-3 sm:p-4 bg-white rounded-lg shadow-sm" {
                             // Feature description and current status
-                            div class="flex justify-between items-center mb-3" {
+                            div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-3 gap-2" {
                                 div class="flex-1" {
-                                    p class="font-medium text-gray-900" { "Profile Picture Progress Visualization" }
-                                    p class="text-sm text-gray-500 mt-1" { 
+                                    p class="font-medium text-gray-900 text-sm sm:text-base" { "Profile Picture Progress Visualization" }
+                                    p class="text-xs sm:text-sm text-gray-500 mt-1" { 
                                         "This feature automatically updates your profile picture to show progress from your display name."
                                     }
                                 }
                                 
                                 // Status indicator
-                                div class="ml-4 flex-shrink-0" {
+                                div class="sm:ml-4 flex-shrink-0" {
                                     @if progress_enabled {
                                         span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800" {
                                             "Enabled"
@@ -376,7 +376,7 @@ async fn display_profile_multi(
                                 } @else {
                                     // When disabled, show a button to enable with explanation
                                     input type="hidden" name="enabled" value="true" {}
-                                    (Button::primary("Enable & Save Current Profile Picture as Base")
+                                    (Button::primary("Enable & Save Current Profile Picture")
                                         .button_type("submit")
                                         .full_width(true))
                                 }
@@ -385,14 +385,14 @@ async fn display_profile_multi(
 
                         // Original profile picture display (only if feature is enabled)
                         @if progress_enabled {
-                            div class="p-3 bg-white rounded-lg shadow-sm" {
-                                p class="font-medium text-gray-900 mb-2" { "Base Profile Picture" }
-                                p class="text-sm text-gray-500 mb-4" { "When you enable this feature, your current profile picture is saved as the base for progress visualization." }
+                            div class="p-3 sm:p-4 bg-white rounded-lg shadow-sm" {
+                                p class="font-medium text-gray-900 mb-2 text-sm sm:text-base" { "Base Profile Picture" }
+                                p class="text-xs sm:text-sm text-gray-500 mb-3" { "When you enable this feature, your current profile picture is saved as the base for progress visualization." }
 
-                                div class="flex items-center space-x-4" {
+                                div class="flex flex-wrap items-center gap-4 justify-center sm:justify-start" {
                                     // Display the current profile picture
                                     @if let Some(img_src) = &avatar_base64 {
-                                        div class="w-16 h-16 rounded-full overflow-hidden bg-white" {
+                                        div class="w-14 h-14 sm:w-16 sm:h-16 rounded-full overflow-hidden bg-white" {
                                             img src=(img_src) alt="Current Profile Picture" class="w-full h-full object-cover" {}
                                         }
                                     }
@@ -407,7 +407,7 @@ async fn display_profile_multi(
                                                     @let img_src = format!("data:{};base64,{}", mime_type, base64_data);
 
                                                     div class="flex flex-col items-center" {
-                                                        div class="w-16 h-16 rounded-full overflow-hidden border-2 border-green-200 bg-white" {
+                                                        div class="w-14 h-14 sm:w-16 sm:h-16 rounded-full overflow-hidden border-2 border-green-200 bg-white" {
                                                             img src=(img_src) alt="Base Profile Picture" class="w-full h-full object-cover" {}
                                                         }
                                                         p class="text-xs text-gray-600 mt-1" { "Base Image" }
@@ -421,17 +421,17 @@ async fn display_profile_multi(
                         }
 
                         // Show how to format display name
-                        div class="mt-4 p-3 bg-white rounded-lg shadow-sm" {
-                            p class="font-medium text-gray-900 mb-2" { "How to format your display name" }
-                            div class="space-y-2 text-sm text-gray-600" {
+                        div class="mt-3 sm:mt-4 p-3 sm:p-4 bg-white rounded-lg shadow-sm" {
+                            p class="font-medium text-gray-900 mb-2 text-sm sm:text-base" { "How to format your display name" }
+                            div class="space-y-2 text-xs sm:text-sm text-gray-600" {
                                 p { "Your current display name: "
-                                    strong { (display_name) }
+                                    strong class="break-all" { (display_name) }
                                 }
                                 p { "To show progress, add one of these patterns to your display name:" }
-                                ul class="list-disc list-inside ml-2 space-y-1" {
-                                    li { "Fraction: " code class="bg-gray-100 px-1" { "My Name 3/10" } " — Shows 30% progress" }
-                                    li { "Percentage: " code class="bg-gray-100 px-1" { "My Name 30%" } " — Shows 30% progress" }
-                                    li { "Decimal: " code class="bg-gray-100 px-1" { "My Name 30.5%" } " — Shows 30.5% progress" }
+                                ul class="list-disc list-inside ml-0 sm:ml-2 space-y-1" {
+                                    li { "Fraction: " code class="bg-gray-100 px-1 text-xs" { "My Name 3/10" } " — Shows 30% progress" }
+                                    li { "Percentage: " code class="bg-gray-100 px-1 text-xs" { "My Name 30%" } " — Shows 30% progress" }
+                                    li { "Decimal: " code class="bg-gray-100 px-1 text-xs" { "My Name 30.5%" } " — Shows 30.5% progress" }
                                 }
                             }
                         }
@@ -439,7 +439,7 @@ async fn display_profile_multi(
                 }
 
                 // Footer navigation with account switcher
-                div class="flex flex-wrap justify-center gap-4 pt-4 border-t border-gray-200" {
+                div class="flex flex-wrap justify-center gap-3 sm:gap-4 pt-3 sm:pt-4 mt-2 border-t border-gray-200" {
                     // Home button
                     (Button::new("Home")
                         .variant(ButtonVariant::Link)

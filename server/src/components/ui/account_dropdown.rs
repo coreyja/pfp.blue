@@ -22,12 +22,12 @@ impl Render for AccountDropdown {
         html! {
             // CSS-only dropdown using the details/summary elements
             details class="relative inline-block text-left" {
-                summary class="inline-flex justify-center w-full px-4 py-2 text-sm font-medium text-indigo-700 bg-indigo-50 border border-indigo-300 rounded-md shadow-sm hover:bg-indigo-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 cursor-pointer" {
+                summary class="inline-flex justify-center w-full px-3 sm:px-4 py-2 text-sm font-medium text-indigo-700 bg-indigo-50 border border-indigo-300 rounded-md shadow-sm hover:bg-indigo-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 cursor-pointer" {
                     // Show current primary account handle
                     @let primary_token = self.tokens.iter().find(|t| t.did == self.primary_did).unwrap_or(&self.tokens[0]);
-                    span class="flex items-center gap-2" {
+                    span class="flex items-center gap-1 sm:gap-2" {
                         // Display name/handle with a dropdown arrow
-                        span class="text-md font-medium" {
+                        span class="text-sm sm:text-md font-medium max-w-[120px] sm:max-w-[180px] truncate" {
                             @if let Some(display_name) = &primary_token.display_name {
                                 "@" (display_name)
                             } @else {
@@ -36,14 +36,14 @@ impl Render for AccountDropdown {
                         }
 
                         // Dropdown arrow icon
-                        svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" {
+                        svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 ml-1 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" {
                             path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" {}
                         }
                     }
                 }
 
                 // Dropdown content
-                div class="origin-top-right absolute right-0 mt-2 w-64 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none z-10 divide-y divide-gray-100" {
+                div class="origin-top-right absolute right-0 mt-2 w-[calc(100vw-2rem)] sm:w-64 max-w-[320px] rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none z-10 divide-y divide-gray-100" {
                     // Fixed position to avoid layout shifts with view-transitions
                     div class="py-1" {
                         // Account list section
@@ -54,10 +54,10 @@ impl Render for AccountDropdown {
 
                             // For each account, show a menu item
                             a href={"/oauth/bsky/set-primary?did=" (token.did) "&redirect=" (self.current_path)}
-                              class="flex items-center px-4 py-2 text-sm hover:bg-gray-100 transition-colors duration-150" {
+                              class="flex items-center px-3 sm:px-4 py-2 text-sm hover:bg-gray-100 transition-colors duration-150" {
 
                                 // Show a checkmark for currently active account
-                                div class="w-5 text-indigo-600 mr-3" {
+                                div class="w-5 text-indigo-600 mr-2 sm:mr-3 flex-shrink-0" {
                                     @if is_current {
                                         svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" {
                                             path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" {}
@@ -66,8 +66,8 @@ impl Render for AccountDropdown {
                                 }
 
                                 // Account information
-                                div {
-                                    div class="font-medium" {
+                                div class="min-w-0 flex-1" {
+                                    div class="font-medium truncate" {
                                         @if let Some(display_name) = &token.display_name {
                                             "@" (display_name)
                                         } @else {
@@ -85,9 +85,9 @@ impl Render for AccountDropdown {
                     // Actions section
                     div class="py-1" {
                         // Add new account option
-                        a href="/oauth/bsky/authorize" class="flex items-center px-4 py-2 text-sm text-indigo-700 hover:bg-indigo-50 transition-colors duration-150" {
+                        a href="/oauth/bsky/authorize" class="flex items-center px-3 sm:px-4 py-2 text-sm text-indigo-700 hover:bg-indigo-50 transition-colors duration-150" {
                             // Plus icon
-                            div class="w-5 text-indigo-600 mr-3" {
+                            div class="w-5 text-indigo-600 mr-2 sm:mr-3 flex-shrink-0" {
                                 svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" {
                                     path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" {}
                                 }
@@ -96,9 +96,9 @@ impl Render for AccountDropdown {
                         }
 
                         // Logout option
-                        a href="/logout" class="flex items-center px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors duration-150" {
+                        a href="/logout" class="flex items-center px-3 sm:px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors duration-150" {
                             // Logout icon
-                            div class="w-5 text-red-600 mr-3" {
+                            div class="w-5 text-red-600 mr-2 sm:mr-3 flex-shrink-0" {
                                 svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" {
                                     path fill-rule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 001 1h12a1 1 0 001-1V7.414l-1.707-1.707A1 1 0 0014 5.414V4a1 1 0 00-1-1H3zm11.293 1.293a1 1 0 00-1.414 0L11 6.586V14h4v-7.414l-1.707-1.707zM10 14V7a1 1 0 00-1-1H5a1 1 0 00-1 1v7h6zm-6 4a3 3 0 103-3H3v3z" clip-rule="evenodd" {}
                                 }
