@@ -8,7 +8,6 @@ use cja::jobs::Job as _;
 use color_eyre::eyre::eyre;
 use maud::html;
 use serde::Deserialize;
-use sqlx::Row;
 use std::time::SystemTime;
 use tower_cookies::{Cookie, Cookies};
 use tracing::{error, info};
@@ -1412,21 +1411,20 @@ async fn display_profile_multi(
                         }
 
                         // Get profile progress settings for this token
-                        @let progress_settings = match sqlx::query(
+                        @let progress_settings = match sqlx::query!(
                             r#"
-                            SELECT p.* FROM profile_picture_progress p
+                            SELECT p.enabled FROM profile_picture_progress p
                             JOIN oauth_tokens t ON p.token_id = t.id
                             WHERE t.did = $1
-                            "#
-                        ).bind(&primary_token.did)
+                            "#,
+                            primary_token.did
+                        )
                           .fetch_optional(&state.db)
                           .await {
                             Ok(Some(row)) => {
-                                let enabled: bool = row.get("enabled");
-                                let original_blob_cid: Option<String> = row.get("original_blob_cid");
-                                (enabled, original_blob_cid)
+                                row.enabled
                             },
-                            _ => (false, None),
+                            _ => false,
                         };
 
                         // Toggle switch for enabling/disabling using our ToggleSwitch component
@@ -1436,7 +1434,7 @@ async fn display_profile_multi(
                             (ToggleSwitch::new(
                                 "enabled",
                                 "Enable Progress Visualization",
-                                progress_settings.0
+                                progress_settings
                             ).description("Automatically update your profile picture based on progress in your display name"))
 
                             div class="mt-3 flex justify-end" {
@@ -1452,13 +1450,6 @@ async fn display_profile_multi(
                             p class="text-sm text-gray-500 mb-4" { "Select the profile picture to use as the base for progress visualization" }
 
                             input type="hidden" name="token_id" value=(primary_token.did) {}
-
-                            @if let Some(original_cid) = &progress_settings.1 {
-                                div class="mb-4 flex items-center" {
-                                    p class="text-sm text-gray-600 mr-2" { "Current original: " }
-                                    code class="bg-gray-100 px-2 py-1 rounded text-sm" { (original_cid) }
-                                }
-                            }
 
                             @if let Some(img_src) = &avatar_base64 {
                                 div class="flex items-center space-x-4" {
