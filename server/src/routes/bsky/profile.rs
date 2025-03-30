@@ -206,7 +206,6 @@ async fn display_profile_multi(
         layout::Page,
         ui::{
             account_dropdown::AccountDropdown,
-            badge::{Badge, BadgeColor},
             button::{Button, ButtonSize},
             heading::Heading,
             nav_buttons::{NavButton, NavButtonIcon, NavButtons},
@@ -299,12 +298,7 @@ async fn display_profile_multi(
                         // We just display the display name now, no need to show handle separately
                         // DID is shown as a tooltip on the display name instead of directly
 
-                        // Playful badges
-                        div class="flex flex-wrap justify-center md:justify-start gap-2 mt-2" {
-                            (Badge::new("Profile", BadgeColor::Blue).rounded(true))
-                            (Badge::new("Bluesky", BadgeColor::Green).rounded(true))
-                            (Badge::new("pfp.blue", BadgeColor::Purple).rounded(true))
-                        }
+                        // Remove decorative badge pills as they don't convey meaningful information
                     }
                 }
 
