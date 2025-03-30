@@ -1,5 +1,5 @@
-use maud::{html, Markup, Render};
 use crate::oauth::OAuthTokenSet;
+use maud::{html, Markup, Render};
 
 pub struct AccountDropdown {
     pub tokens: Vec<OAuthTokenSet>,
@@ -27,35 +27,35 @@ impl Render for AccountDropdown {
                     @let primary_token = self.tokens.iter().find(|t| t.did == self.primary_did).unwrap_or(&self.tokens[0]);
                     span class="flex items-center gap-2" {
                         // Display name/handle with a dropdown arrow
-                        span class="text-md font-medium" { 
+                        span class="text-md font-medium" {
                             @if let Some(display_name) = &primary_token.display_name {
                                 "@" (display_name)
                             } @else {
                                 "Account"
                             }
                         }
-                        
+
                         // Dropdown arrow icon
                         svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" {
                             path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" {}
                         }
                     }
                 }
-                
+
                 // Dropdown content
                 div class="origin-top-right absolute right-0 mt-2 w-64 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none z-10 divide-y divide-gray-100" {
                     // Fixed position to avoid layout shifts with view-transitions
                     div class="py-1" {
                         // Account list section
                         div class="px-4 py-2 text-xs text-gray-500 uppercase tracking-wider" { "Your Accounts" }
-                        
+
                         @for token in &self.tokens {
                             @let is_current = token.did == self.primary_did;
-                            
+
                             // For each account, show a menu item
                             a href={"/oauth/bsky/set-primary?did=" (token.did) "&redirect=" (self.current_path)}
                               class="flex items-center px-4 py-2 text-sm hover:bg-gray-100 transition-colors duration-150" {
-                                
+
                                 // Show a checkmark for currently active account
                                 div class="w-5 text-indigo-600 mr-3" {
                                     @if is_current {
@@ -64,7 +64,7 @@ impl Render for AccountDropdown {
                                         }
                                     }
                                 }
-                                
+
                                 // Account information
                                 div {
                                     div class="font-medium" {
@@ -81,7 +81,7 @@ impl Render for AccountDropdown {
                             }
                         }
                     }
-                    
+
                     // Actions section
                     div class="py-1" {
                         // Add new account option
@@ -94,7 +94,7 @@ impl Render for AccountDropdown {
                             }
                             span { "Link new account" }
                         }
-                        
+
                         // Logout option
                         a href="/logout" class="flex items-center px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors duration-150" {
                             // Logout icon

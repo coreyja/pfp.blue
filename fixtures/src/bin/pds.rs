@@ -109,59 +109,53 @@ async fn get_record(
 
     match collection.as_str() {
         // Handle profile record
-        "app.bsky.actor.profile" => {
-            (
-                axum::http::StatusCode::OK,
-                Json(json!({
-                    "uri": "at://did:plc:abcdefg/app.bsky.actor.profile/self",
-                    "cid": "bafyreib3hg56hnxcysikiv5rsr2okgujajrjrpz4kpf7se52jgygyz7d7u",
-                    "value": {
-                        "$type": "app.bsky.actor.profile",
-                        "displayName": "Fixture User",
-                        "description": "This is a test user from the fixture server",
-                        "avatar": {
-                            "$type": "blob",
-                            "ref": {
-                                "$link": "bafyreib3hg56hnxcysikiv5rsr2okgujajrjrpz4kpf7se52jgygyz7d7u"
-                            },
-                            "mimeType": "image/jpeg",
-                            "size": 12345
-                        }
-                    }
-                }))
-            )
-        },
-        // Handle our custom collection for original profile pictures
-        "blue.pfp.unmodifiedPfp" => {
-            (
-                axum::http::StatusCode::OK,
-                Json(json!({
-                    "uri": "at://did:plc:abcdefg/blue.pfp.unmodifiedPfp/self",
-                    "cid": "bafyreib3hg56hnxcysikiv5rsr2okgujajrjrpz4kpf7se52jgygyz7d7u",
-                    "value": {
-                        "avatar": {
-                            "$type": "blob",
-                            "ref": {
-                                "$link": "bafyreib3hg56hnxcysikiv5rsr2okgujajrjrpz4kpf7se52jgygyz7d7u"
-                            },
-                            "mimeType": "image/jpeg",
-                            "size": 12345
+        "app.bsky.actor.profile" => (
+            axum::http::StatusCode::OK,
+            Json(json!({
+                "uri": "at://did:plc:abcdefg/app.bsky.actor.profile/self",
+                "cid": "bafyreib3hg56hnxcysikiv5rsr2okgujajrjrpz4kpf7se52jgygyz7d7u",
+                "value": {
+                    "$type": "app.bsky.actor.profile",
+                    "displayName": "Fixture User",
+                    "description": "This is a test user from the fixture server",
+                    "avatar": {
+                        "$type": "blob",
+                        "ref": {
+                            "$link": "bafyreib3hg56hnxcysikiv5rsr2okgujajrjrpz4kpf7se52jgygyz7d7u"
                         },
-                        "createdAt": "2025-03-15T12:00:00.000Z"
+                        "mimeType": "image/jpeg",
+                        "size": 12345
                     }
-                }))
-            )
-        },
+                }
+            })),
+        ),
+        // Handle our custom collection for original profile pictures
+        "blue.pfp.unmodifiedPfp" => (
+            axum::http::StatusCode::OK,
+            Json(json!({
+                "uri": "at://did:plc:abcdefg/blue.pfp.unmodifiedPfp/self",
+                "cid": "bafyreib3hg56hnxcysikiv5rsr2okgujajrjrpz4kpf7se52jgygyz7d7u",
+                "value": {
+                    "avatar": {
+                        "$type": "blob",
+                        "ref": {
+                            "$link": "bafyreib3hg56hnxcysikiv5rsr2okgujajrjrpz4kpf7se52jgygyz7d7u"
+                        },
+                        "mimeType": "image/jpeg",
+                        "size": 12345
+                    },
+                    "createdAt": "2025-03-15T12:00:00.000Z"
+                }
+            })),
+        ),
         // Default to not found for other collections
-        _ => {
-            (
-                axum::http::StatusCode::NOT_FOUND,
-                Json(json!({
-                    "error": "Record not found",
-                    "message": format!("No record found for collection: {}", collection)
-                }))
-            )
-        }
+        _ => (
+            axum::http::StatusCode::NOT_FOUND,
+            Json(json!({
+                "error": "Record not found",
+                "message": format!("No record found for collection: {}", collection)
+            })),
+        ),
     }
 }
 
@@ -175,7 +169,7 @@ async fn get_blob() -> impl IntoResponse {
         0xCF, 0xC0, 0x00, 0x00, 0x03, 0x01, 0x01, 0x00, 0x18, 0xDD, 0x8D, 0xB0, 0x00, 0x00, 0x00,
         0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
     ];
-    
+
     (
         [(axum::http::header::CONTENT_TYPE, "image/png")],
         image_data,

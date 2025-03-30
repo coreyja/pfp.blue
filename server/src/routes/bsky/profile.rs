@@ -246,7 +246,7 @@ async fn display_profile_multi(
     // We don't need handle anymore since we use display_name
 
     // Extract avatar information and encode as base64 if available
-    let avatar_blob_cid = profile_info.avatar.as_ref().map(|a| a.cid.clone());
+    let _avatar_blob_cid = profile_info.avatar.as_ref().map(|a| a.cid.clone());
 
     // Encode avatar as base64 if available
     let avatar_base64 = if let Some(avatar) = &profile_info.avatar {
@@ -323,9 +323,9 @@ async fn display_profile_multi(
                         }
 
                         // Get profile progress settings for this token
-                        @let progress_settings = match sqlx::query(
+                        @let progress_enabled = match sqlx::query(
                             r#"
-                            SELECT p.* FROM profile_picture_progress p
+                            SELECT p.enabled FROM profile_picture_progress p
                             JOIN oauth_tokens t ON p.token_id = t.id
                             WHERE t.did = $1
                             "#
@@ -334,10 +334,9 @@ async fn display_profile_multi(
                           .await {
                             Ok(Some(row)) => {
                                 let enabled: bool = row.get("enabled");
-                                let original_blob_cid: Option<String> = row.get("original_blob_cid");
-                                (enabled, original_blob_cid)
+                                enabled
                             },
-                            _ => (false, None),
+                            _ => false,
                         };
 
                         // Toggle switch for enabling/disabling using our ToggleSwitch component
@@ -347,8 +346,8 @@ async fn display_profile_multi(
                             (ToggleSwitch::new(
                                 "enabled",
                                 "Enable Progress Visualization",
-                                progress_settings.0
-                            ).description("Automatically update your profile picture based on progress in your display name"))
+                                progress_enabled
+                            ).description("Your current profile picture will be saved as the base, and will be automatically updated to show progress from your display name"))
 
                             div class="mt-3 flex justify-end" {
                                 (Button::primary("Save")
@@ -357,18 +356,21 @@ async fn display_profile_multi(
                             }
                         }
 
-                        // Original profile picture selection
-                        form action="/profile_progress/set_original" method="post" class="p-3 bg-white rounded-lg shadow-sm" {
-                            p class="font-medium text-gray-900 mb-2" { "Original Profile Picture" }
-                            p class="text-sm text-gray-500 mb-4" { "Select the profile picture to use as the base for progress visualization" }
+                        // Original profile picture display (only if feature is enabled)
+                        @if progress_enabled {
+                            div class="p-3 bg-white rounded-lg shadow-sm" {
+                                p class="font-medium text-gray-900 mb-2" { "Base Profile Picture" }
+                                p class="text-sm text-gray-500 mb-4" { "When you enable this feature, your current profile picture is saved as the base for progress visualization." }
 
-                            input type="hidden" name="token_id" value=(primary_token.did) {}
+                                div class="flex items-center space-x-4" {
+                                    // Display the current profile picture
+                                    @if let Some(img_src) = &avatar_base64 {
+                                        div class="w-16 h-16 rounded-full overflow-hidden bg-white" {
+                                            img src=(img_src) alt="Current Profile Picture" class="w-full h-full object-cover" {}
+                                        }
+                                    }
 
-                            @if progress_settings.1.is_some() {
-                                div class="mb-4 flex items-center space-x-4" {
-                                    p class="text-sm text-gray-600" { "Original profile picture is saved to your PDS" }
-                                    
-                                    // Try to fetch and display the original profile picture
+                                    // If we have an original profile picture saved, display it too
                                     @if let Ok(original_blob) = crate::jobs::helpers::get_original_profile_picture(state, &primary_token).await {
                                         @if let Some(blob_ref) = original_blob.get("ref") {
                                             @if let Some(cid) = blob_ref.get("$link").and_then(|l| l.as_str()) {
@@ -376,31 +378,16 @@ async fn display_profile_multi(
                                                     @let mime_type = original_blob.get("mimeType").and_then(|m| m.as_str()).unwrap_or("image/jpeg");
                                                     @let base64_data = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &data);
                                                     @let img_src = format!("data:{};base64,{}", mime_type, base64_data);
-                                                    
-                                                    // Show the original image
-                                                    div class="w-12 h-12 rounded-full overflow-hidden border-2 border-green-200 bg-white" {
-                                                        img src=(img_src) alt="Original Profile Picture" class="w-full h-full object-cover" {}
+
+                                                    div class="flex flex-col items-center" {
+                                                        div class="w-16 h-16 rounded-full overflow-hidden border-2 border-green-200 bg-white" {
+                                                            img src=(img_src) alt="Base Profile Picture" class="w-full h-full object-cover" {}
+                                                        }
+                                                        p class="text-xs text-gray-600 mt-1" { "Base Image" }
                                                     }
                                                 }
                                             }
                                         }
-                                    }
-                                }
-                            }
-
-                            @if let Some(img_src) = &avatar_base64 {
-                                div class="flex items-center space-x-4" {
-                                    // Display current profile picture
-                                    div class="w-16 h-16 rounded-full overflow-hidden bg-white" {
-                                        img src=(img_src) alt="Current Profile Picture" class="w-full h-full object-cover" {}
-                                    }
-
-                                    // Use current button
-                                    @if let Some(cid) = avatar_blob_cid.clone() {
-                                        input type="hidden" name="blob_cid" value=(cid) {}
-                                        (Button::primary("Use Current Profile Picture")
-                                            .button_type("submit")
-                                            .size(ButtonSize::Small))
                                     }
                                 }
                             }
@@ -431,7 +418,7 @@ async fn display_profile_multi(
                         .variant(ButtonVariant::Link)
                         .href("/")
                         .icon(Icon::home().into_string(), IconPosition::Left))
-                    
+
                     // Account dropdown in the footer
                     (AccountDropdown::new(all_tokens.clone(), &primary_token.did, "/me"))
                 }
