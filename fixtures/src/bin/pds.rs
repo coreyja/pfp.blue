@@ -100,31 +100,84 @@ async fn oauth_protected_resource(State(state): State<AppState>) -> impl IntoRes
     }))
 }
 
-async fn get_record() -> impl IntoResponse {
-    Json(json!({
-        "uri": "at://did:plc:abcdefg/app.bsky.actor.profile/self",
-        "cid": "bafyreib3hg56hnxcysikiv5rsr2okgujajrjrpz4kpf7se52jgygyz7d7u",
-        "value": {
-            "$type": "app.bsky.actor.profile",
-            "displayName": "Fixture User",
-            "description": "This is a test user from the fixture server",
-            "avatar": {
-                "$type": "blob",
-                "ref": {
-                    "$link": "bafyreib3hg56hnxcysikiv5rsr2okgujajrjrpz4kpf7se52jgygyz7d7u"
-                },
-                "mimeType": "image/jpeg",
-                "size": 12345
-            }
+async fn get_record(
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> impl IntoResponse {
+    // Check what collection is being requested
+    let default_collection = "app.bsky.actor.profile".to_string();
+    let collection = params.get("collection").unwrap_or(&default_collection);
+
+    match collection.as_str() {
+        // Handle profile record
+        "app.bsky.actor.profile" => {
+            (
+                axum::http::StatusCode::OK,
+                Json(json!({
+                    "uri": "at://did:plc:abcdefg/app.bsky.actor.profile/self",
+                    "cid": "bafyreib3hg56hnxcysikiv5rsr2okgujajrjrpz4kpf7se52jgygyz7d7u",
+                    "value": {
+                        "$type": "app.bsky.actor.profile",
+                        "displayName": "Fixture User",
+                        "description": "This is a test user from the fixture server",
+                        "avatar": {
+                            "$type": "blob",
+                            "ref": {
+                                "$link": "bafyreib3hg56hnxcysikiv5rsr2okgujajrjrpz4kpf7se52jgygyz7d7u"
+                            },
+                            "mimeType": "image/jpeg",
+                            "size": 12345
+                        }
+                    }
+                }))
+            )
+        },
+        // Handle our custom collection for original profile pictures
+        "blue.pfp.unmodifiedPfp" => {
+            (
+                axum::http::StatusCode::OK,
+                Json(json!({
+                    "uri": "at://did:plc:abcdefg/blue.pfp.unmodifiedPfp/self",
+                    "cid": "bafyreib3hg56hnxcysikiv5rsr2okgujajrjrpz4kpf7se52jgygyz7d7u",
+                    "value": {
+                        "avatar": {
+                            "$type": "blob",
+                            "ref": {
+                                "$link": "bafyreib3hg56hnxcysikiv5rsr2okgujajrjrpz4kpf7se52jgygyz7d7u"
+                            },
+                            "mimeType": "image/jpeg",
+                            "size": 12345
+                        },
+                        "createdAt": "2025-03-15T12:00:00.000Z"
+                    }
+                }))
+            )
+        },
+        // Default to not found for other collections
+        _ => {
+            (
+                axum::http::StatusCode::NOT_FOUND,
+                Json(json!({
+                    "error": "Record not found",
+                    "message": format!("No record found for collection: {}", collection)
+                }))
+            )
         }
-    }))
+    }
 }
 
 async fn get_blob() -> impl IntoResponse {
-    // Return a small test image
-    let image_data = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46];
+    // Create a simple colored square image (1x1 pixel PNG)
+    // This is a valid PNG image representing a blue pixel
+    let image_data: &[u8] = &[
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44,
+        0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90,
+        0x77, 0x53, 0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41, 0x54, 0x08, 0xD7, 0x63, 0xF8,
+        0xCF, 0xC0, 0x00, 0x00, 0x03, 0x01, 0x01, 0x00, 0x18, 0xDD, 0x8D, 0xB0, 0x00, 0x00, 0x00,
+        0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+    ];
+    
     (
-        [(axum::http::header::CONTENT_TYPE, "image/jpeg")],
+        [(axum::http::header::CONTENT_TYPE, "image/png")],
         image_data,
     )
 }

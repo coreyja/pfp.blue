@@ -365,8 +365,26 @@ async fn display_profile_multi(
                             input type="hidden" name="token_id" value=(primary_token.did) {}
 
                             @if progress_settings.1.is_some() {
-                                div class="mb-4 flex items-center" {
-                                    p class="text-sm text-gray-600" { "You have set an original profile picture" }
+                                div class="mb-4 flex items-center space-x-4" {
+                                    p class="text-sm text-gray-600" { "Original profile picture is saved to your PDS" }
+                                    
+                                    // Try to fetch and display the original profile picture
+                                    @if let Ok(original_blob) = crate::jobs::helpers::get_original_profile_picture(state, &primary_token).await {
+                                        @if let Some(blob_ref) = original_blob.get("ref") {
+                                            @if let Some(cid) = blob_ref.get("$link").and_then(|l| l.as_str()) {
+                                                @if let Ok(data) = crate::routes::bsky::fetch_blob_by_cid(&primary_token.did, cid, state).await {
+                                                    @let mime_type = original_blob.get("mimeType").and_then(|m| m.as_str()).unwrap_or("image/jpeg");
+                                                    @let base64_data = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &data);
+                                                    @let img_src = format!("data:{};base64,{}", mime_type, base64_data);
+                                                    
+                                                    // Show the original image
+                                                    div class="w-12 h-12 rounded-full overflow-hidden border-2 border-green-200 bg-white" {
+                                                        img src=(img_src) alt="Original Profile Picture" class="w-full h-full object-cover" {}
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
 
