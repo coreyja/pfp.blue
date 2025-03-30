@@ -3,15 +3,19 @@ use maud::{html, Markup, Render};
 
 pub struct AccountDropdown {
     pub tokens: Vec<OAuthTokenSet>,
-    pub primary_did: String,
+    pub primary_token: OAuthTokenSet,
     pub current_path: String,
 }
 
 impl AccountDropdown {
-    pub fn new(tokens: Vec<OAuthTokenSet>, primary_did: &str, current_path: &str) -> Self {
+    pub fn new(
+        tokens: Vec<OAuthTokenSet>,
+        primary_token: OAuthTokenSet,
+        current_path: &str,
+    ) -> Self {
         Self {
             tokens,
-            primary_did: primary_did.to_string(),
+            primary_token,
             current_path: current_path.to_string(),
         }
     }
@@ -24,11 +28,10 @@ impl Render for AccountDropdown {
             details class="relative inline-block text-left" {
                 summary class="inline-flex justify-center w-full px-3 sm:px-4 py-2 text-sm font-medium text-indigo-700 bg-indigo-50 border border-indigo-300 rounded-md shadow-sm hover:bg-indigo-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 cursor-pointer" {
                     // Show current primary account handle
-                    @let primary_token = self.tokens.iter().find(|t| t.did == self.primary_did).unwrap_or(&self.tokens[0]);
                     span class="flex items-center gap-1 sm:gap-2" {
                         // Display name/handle with a dropdown arrow
                         span class="text-sm sm:text-md font-medium max-w-[120px] sm:max-w-[180px] truncate" {
-                            @if let Some(display_name) = &primary_token.display_name {
+                            @if let Some(display_name) = &self.primary_token.display_name {
                                 "@" (display_name)
                             } @else {
                                 "Account"
@@ -50,7 +53,7 @@ impl Render for AccountDropdown {
                         div class="px-4 py-2 text-xs text-gray-500 uppercase tracking-wider" { "Your Accounts" }
 
                         @for token in &self.tokens {
-                            @let is_current = token.did == self.primary_did;
+                            @let is_current = token.did == self.primary_token.did;
 
                             // For each account, show a menu item
                             a href={"/oauth/bsky/set-primary?did=" (token.did) "&redirect=" (self.current_path)}

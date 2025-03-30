@@ -447,7 +447,7 @@ async fn display_profile_multi(
                         .icon(Icon::home().into_string(), IconPosition::Left))
 
                     // Account dropdown in the footer
-                    (AccountDropdown::new(all_tokens.clone(), &primary_token.did, "/me"))
+                    (AccountDropdown::new(all_tokens.clone(), primary_token, "/me"))
                 }
             }
         }
