@@ -70,14 +70,14 @@ impl Render for FeatureCard {
         let icon_color = self.get_icon_color();
 
         html! {
-            div class={(bg_color) " p-4 rounded-lg text-left"} {
-                div class="flex items-center gap-2 mb-2" {
-                    div class={"w-8 h-8 rounded-full " (icon_bg) " flex items-center justify-center " (icon_color)} {
+            div class={(bg_color) " p-4 sm:p-5 rounded-lg sm:rounded-xl text-left transition-all duration-200 hover:shadow-sm"} {
+                div class="flex items-center gap-3 mb-2 sm:mb-3" {
+                    div class={"w-8 h-8 sm:w-10 sm:h-10 rounded-full " (icon_bg) " flex items-center justify-center " (icon_color) " text-lg sm:text-xl"} {
                         (self.emoji)
                     }
-                    h3 class={"font-medium " (title_color)} { (self.title) }
+                    h3 class={"font-medium " (title_color) " text-sm sm:text-base"} { (self.title) }
                 }
-                p class="text-sm text-gray-600" { (self.description) }
+                p class="text-xs sm:text-sm text-gray-600 leading-relaxed" { (self.description) }
             }
         }
     }

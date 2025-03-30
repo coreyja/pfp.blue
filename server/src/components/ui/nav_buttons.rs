@@ -31,6 +31,7 @@ pub enum NavButtonIcon {
 }
 
 impl NavButtons {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self {
             items: Vec::new(),
@@ -38,6 +39,7 @@ impl NavButtons {
         }
     }
 
+    #[allow(dead_code)]
     pub fn add_button(mut self, button: NavButton) -> Self {
         self.items.push(button);
         self
@@ -51,6 +53,7 @@ impl NavButtons {
 }
 
 impl NavButton {
+    #[allow(dead_code)]
     pub fn new(text: &str, href: &str) -> Self {
         Self {
             text: text.to_string(),
@@ -60,6 +63,7 @@ impl NavButton {
         }
     }
 
+    #[allow(dead_code)]
     pub fn with_icon(mut self, icon_type: NavButtonIcon) -> Self {
         self.icon_type = Some(icon_type);
         self

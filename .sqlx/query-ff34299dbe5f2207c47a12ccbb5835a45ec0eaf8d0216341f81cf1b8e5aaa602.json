@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT * FROM oauth_tokens\n        WHERE id = $1\n        ",
+  "query": "\n            SELECT * FROM oauth_tokens\n            WHERE id = $1\n            ",
   "describe": {
     "columns": [
       {
@@ -96,5 +96,5 @@
       true
     ]
   },
-  "hash": "ec7ed87274fc373e96d88877f24b6ef7778f5f1a2115de9fb8d9a24ff65151f9"
+  "hash": "ff34299dbe5f2207c47a12ccbb5835a45ec0eaf8d0216341f81cf1b8e5aaa602"
 }

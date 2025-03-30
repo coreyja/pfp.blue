@@ -85,8 +85,8 @@ impl Job<AppState> for UpdateProfilePictureProgressJob {
                 )
             })?;
 
-        // Extract the CID (link) from the blob object
-        let original_blob_cid = if let Some(blob_ref) = original_blob.get("ref") {
+        // Extract the CID (link) from the blob object retrieved from PDS
+        let pds_original_blob_cid = if let Some(blob_ref) = original_blob.get("ref") {
             blob_ref
                 .get("$link")
                 .and_then(|l| l.as_str())
@@ -96,7 +96,10 @@ impl Job<AppState> for UpdateProfilePictureProgressJob {
             Err(eyre!("Original blob object has no ref field"))?
         };
 
-        debug!("Using original blob CID: {}", original_blob_cid);
+        debug!(
+            "Using original blob CID from PDS: {}",
+            pds_original_blob_cid
+        );
 
         // Extract progress fraction or percentage from display_name
         let (numerator, denominator) = match &token.display_name {
@@ -122,10 +125,10 @@ impl Job<AppState> for UpdateProfilePictureProgressJob {
             progress_percentage * 100.0
         );
 
-        // Fetch the original profile picture
+        // Fetch the original profile picture using the CID from PDS
         let original_image_data = match crate::routes::bsky::fetch_blob_by_cid(
             &token.did,
-            &original_blob_cid,
+            &pds_original_blob_cid,
             &app_state,
         )
         .await

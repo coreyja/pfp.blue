@@ -9,6 +9,7 @@ pub enum ButtonVariant {
     Link,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum ButtonSize {
     Small,
@@ -63,6 +64,7 @@ impl Button {
         self
     }
 
+    #[allow(dead_code)]
     pub fn primary(text: &str) -> Self {
         Self {
             text: text.to_string(),
@@ -71,6 +73,7 @@ impl Button {
         }
     }
 
+    #[allow(dead_code)]
     pub fn secondary(text: &str) -> Self {
         Self {
             text: text.to_string(),
@@ -131,18 +134,18 @@ impl Button {
 
     fn get_variant_classes(&self) -> &'static str {
         match self.variant {
-            ButtonVariant::Primary => "bg-indigo-600 hover:bg-indigo-700 text-white",
-            ButtonVariant::Secondary => "bg-white hover:bg-gray-50 text-indigo-600 border border-indigo-300 hover:border-indigo-400",
-            ButtonVariant::Outline => "bg-transparent hover:bg-gray-50 text-indigo-600 border border-indigo-300 hover:border-indigo-400",
-            ButtonVariant::Link => "bg-transparent text-indigo-600 hover:text-indigo-800 hover:underline",
+            ButtonVariant::Primary => "bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2",
+            ButtonVariant::Secondary => "bg-white hover:bg-gray-50 active:bg-gray-100 text-indigo-600 border border-indigo-300 hover:border-indigo-400 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2",
+            ButtonVariant::Outline => "bg-transparent hover:bg-gray-50 active:bg-gray-100 text-indigo-600 border border-indigo-300 hover:border-indigo-400 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2",
+            ButtonVariant::Link => "bg-transparent text-indigo-600 hover:text-indigo-800 active:text-indigo-900 hover:underline focus:outline-none focus:underline",
         }
     }
 
     fn get_size_classes(&self) -> &'static str {
         match self.size {
-            ButtonSize::Small => "py-1 px-2 text-sm",
-            ButtonSize::Medium => "py-2 px-4",
-            ButtonSize::Large => "py-3 px-6 text-lg",
+            ButtonSize::Small => "py-1.5 px-2.5 text-xs sm:text-sm",
+            ButtonSize::Medium => "py-2 sm:py-2.5 px-3 sm:px-4 text-sm sm:text-base",
+            ButtonSize::Large => "py-2.5 sm:py-3 px-4 sm:px-6 text-base sm:text-lg",
         }
     }
 }
@@ -155,9 +158,9 @@ impl Render for Button {
         let extra_classes = self.extra_classes.as_deref().unwrap_or("");
 
         let base_classes = format!(
-            "{} {} {} font-medium rounded-lg transition-colors duration-200 flex items-center justify-center {} {}",
+            "{} {} {} font-medium rounded-lg transition-all duration-200 flex items-center justify-center outline-none focus:outline-none {} {}",
             variant_classes, size_classes, width_class,
-            if self.variant == ButtonVariant::Link { "" } else { "shadow-sm" },
+            if self.variant == ButtonVariant::Link { "" } else { "shadow-sm hover:shadow" },
             extra_classes
         );
 

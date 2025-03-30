@@ -2,7 +2,6 @@ use axum::{extract::State, http::StatusCode, response::IntoResponse};
 use cja::jobs::Job;
 use maud::html;
 use sqlx::Row;
-use std::time::SystemTime;
 use tower_cookies::Cookies;
 use tracing::error;
 
@@ -203,15 +202,12 @@ async fn display_profile_multi(
     all_tokens: Vec<OAuthTokenSet>,
 ) -> maud::Markup {
     use crate::components::{
-        form::{Form, InputField, ToggleSwitch},
         layout::Page,
-        profile::AccountCard,
         ui::{
-            badge::{Badge, BadgeColor},
-            button::{Button, ButtonSize, IconPosition},
+            account_dropdown::AccountDropdown,
+            button::{Button, ButtonVariant, IconPosition},
             heading::Heading,
             icon::Icon,
-            nav_buttons::{NavButton, NavButtonIcon, NavButtons},
         },
     };
     use maud::Render;
@@ -249,7 +245,7 @@ async fn display_profile_multi(
     // We don't need handle anymore since we use display_name
 
     // Extract avatar information and encode as base64 if available
-    let avatar_blob_cid = profile_info.avatar.as_ref().map(|a| a.cid.clone());
+    let _avatar_blob_cid = profile_info.avatar.as_ref().map(|a| a.cid.clone());
 
     // Encode avatar as base64 if available
     let avatar_base64 = if let Some(avatar) = &profile_info.avatar {
@@ -266,155 +262,69 @@ async fn display_profile_multi(
 
     // Create profile display content
     let content = html! {
-        div class="max-w-3xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden" {
+        div class="w-full md:max-w-3xl md:mx-auto bg-white overflow-hidden md:rounded-2xl md:shadow-xl" {
             // Profile header with fun curves
-            div class="relative h-48 bg-gradient-to-r from-blue-500 to-indigo-600" {
+            div class="relative h-32 sm:h-40 md:h-48 bg-gradient-to-r from-blue-500 to-indigo-600" {
                 div class="absolute left-0 right-0 bottom-0" {
-                    (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 100" class="w-full h-20 fill-white"><path d="M0,64L80,69.3C160,75,320,85,480,80C640,75,800,53,960,42.7C1120,32,1280,32,1360,32L1440,32L1440,100L1360,100C1280,100,1120,100,960,100C800,100,640,100,480,100C320,100,160,100,80,100L0,100Z"></path></svg>"#))
+                    (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 100" class="w-full h-16 sm:h-20 fill-white"><path d="M0,64L80,69.3C160,75,320,85,480,80C640,75,800,53,960,42.7C1120,32,1280,32,1360,32L1440,32L1440,100L1360,100C1280,100,1120,100,960,100C800,100,640,100,480,100C320,100,160,100,80,100L0,100Z"></path></svg>"#))
                 }
             }
 
-            // Profile content
-            div class="px-6 py-8 -mt-20 relative z-10" {
+            // Profile content - more condensed padding on mobile
+            div class="px-4 sm:px-6 py-6 sm:py-8 -mt-16 sm:-mt-20 relative z-10" {
                 // Avatar and name section
-                div class="flex flex-col md:flex-row items-center mb-8" {
-                    // Avatar with playful border
-                    div class="relative mb-4 md:mb-0 md:mr-6" {
+                div class="flex flex-col md:flex-row items-center mb-6 md:mb-8" {
+                    // Avatar with playful border - smaller on mobile
+                    div class="relative mb-3 md:mb-0 md:mr-6" {
                         @if let Some(img_src) = &avatar_base64 {
-                            div class="rounded-full w-36 h-36 border-4 border-white shadow-lg overflow-hidden bg-white" {
+                            div class="rounded-full w-28 h-28 sm:w-32 sm:h-32 md:w-36 md:h-36 border-4 border-white shadow-lg overflow-hidden bg-white" {
                                 img src=(img_src) alt="Profile Picture" class="w-full h-full object-cover" {}
                             }
                         } @else {
-                            div class="rounded-full w-36 h-36 border-4 border-white shadow-lg overflow-hidden bg-gradient-to-br from-blue-300 to-indigo-300 flex items-center justify-center text-white font-bold" {
+                            div class="rounded-full w-28 h-28 sm:w-32 sm:h-32 md:w-36 md:h-36 border-4 border-white shadow-lg overflow-hidden bg-gradient-to-br from-blue-300 to-indigo-300 flex items-center justify-center text-white font-bold" {
                                 "No Image"
                             }
                         }
-                        // Fun decorative element
-                        div class="absolute -bottom-2 -right-2 w-10 h-10 rounded-full bg-yellow-400 shadow-md border-2 border-white flex items-center justify-center text-white text-xl" {
+                        // Fun decorative element - smaller on mobile
+                        div class="absolute -bottom-2 -right-2 w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-yellow-400 shadow-md border-2 border-white flex items-center justify-center text-white text-lg sm:text-xl" {
                             "👋"
                         }
                     }
 
-                    // Profile info
-                    div class="text-center md:text-left" {
-                        (Heading::h1(&display_name))
+                    // Profile info - adapt font sizes for mobile
+                    div class="text-center md:text-left max-w-full overflow-hidden" {
+                        h1 class="text-2xl sm:text-3xl md:text-4xl font-bold mb-2 md:mb-3 text-gray-800 truncate" title=(primary_token.did) { (display_name) }
                         // We just display the display name now, no need to show handle separately
-                        p class="text-sm text-gray-500 mb-4 max-w-md truncate" { (primary_token.did) }
+                        // DID is shown as a tooltip on the display name instead of directly
 
-                        // Playful badges
-                        div class="flex flex-wrap justify-center md:justify-start gap-2 mt-2" {
-                            (Badge::new("Profile", BadgeColor::Blue).rounded(true))
-                            (Badge::new("Bluesky", BadgeColor::Green).rounded(true))
-                            (Badge::new("pfp.blue", BadgeColor::Purple).rounded(true))
-                        }
+                        // Remove decorative badge pills as they don't convey meaningful information
                     }
                 }
 
-                // Tabs for different sections
-                div class="border-b border-gray-200 mb-6" {
-                    div class="flex overflow-x-auto" {
-                        button class="px-4 py-2 text-indigo-600 border-b-2 border-indigo-600 font-medium" { "Accounts" }
-                        button class="px-4 py-2 text-gray-500 hover:text-indigo-600" { "Activity" }
-                        button class="px-4 py-2 text-gray-500 hover:text-indigo-600" { "Settings" }
-                    }
+                // Non-functional tabs removed - we'll implement real tabs when they have functionality
+
+                // Authentication status section removed for production - only show user-facing info
+
+                // Account section header - account dropdown moved to footer
+                div class="mb-6 md:mb-8 flex flex-col items-center" {
+                    (Heading::h3("Your Bluesky Account"))
                 }
 
-                // Token info card using Heading and Badge components
-                div class="bg-indigo-50 rounded-xl p-4 mb-6" {
-                    (Heading::h3("Authentication Status")
-                        .with_color("text-indigo-800"))
-
-                    div class="grid grid-cols-1 md:grid-cols-2 gap-4" {
-                        div class="bg-white rounded-lg p-3 shadow-sm" {
-                            p class="text-sm text-gray-500" { "Token Expires In" }
-                            p class="text-lg font-semibold" {
-                                ({
-                                    let now = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
-                                    if primary_token.expires_at > now {
-                                        primary_token.expires_at - now
-                                    } else {
-                                        0
-                                    }
-                                }) " seconds"
-                            }
-                        }
-                        div class="bg-white rounded-lg p-3 shadow-sm" {
-                            p class="text-sm text-gray-500" { "Refresh Token" }
-                            @if primary_token.refresh_token.is_some() {
-                                div class="flex items-center mt-1" {
-                                    (Badge::new("Available", BadgeColor::Green).rounded(true))
-                                }
-                            } @else {
-                                div class="flex items-center mt-1" {
-                                    (Badge::new("Not Available", BadgeColor::Red).rounded(true))
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Linked accounts section using AccountCard component
-                div class="mb-8" {
-                    (Heading::h3("Linked Bluesky Accounts"))
-
-                    div class="space-y-3" {
-                        @for token in &all_tokens {
-                            (AccountCard::new(&token.did, token.expires_at)
-                                .handle(token.display_name.as_deref().unwrap_or(""))
-                                .is_primary(token.did == primary_token.did))
-                        }
-                    }
-
-                    // Add new account form using Form, InputField and Button components
-                    div class="mt-6 bg-gradient-to-r from-indigo-50 to-blue-50 rounded-xl p-5 border border-dashed border-indigo-200" {
-                        (Form::new(
-                            "/oauth/bsky/authorize",
-                            "get",
-                            html! {
-                                div class="flex flex-col sm:flex-row gap-2 items-center" {
-                                    div class="w-full sm:flex-grow" {
-                                        (InputField::new("did")
-                                            .placeholder("Enter Bluesky handle or DID")
-                                            .icon(Icon::user()))
-                                    }
-
-                                    (Button::primary("Link Account")
-                                        .button_type("submit")
-                                        .icon(Icon::plus().into_string(), IconPosition::Left))
-                                }
-                            }
-                        ).extra_classes("m-0"))
-                    }
-                }
-
-                // Profile data section with improved styling
-                @if let Some(profile_data) = &profile_info.profile_data {
-                    div class="mb-8" {
-                        (Heading::h3("Profile Data"))
-                        details class="bg-gray-50 rounded-lg border border-gray-200" {
-                            summary class="cursor-pointer font-medium text-gray-700 p-4 hover:bg-gray-100" { "View Raw JSON" }
-                            pre class="bg-gray-900 text-gray-100 p-4 rounded-b-lg overflow-x-auto text-sm" {
-                                code {
-                                    (serde_json::to_string_pretty(profile_data).unwrap_or_else(|_| "Failed to format profile data".to_string()))
-                                }
-                            }
-                        }
-                    }
-                }
+                // Raw profile data section removed for production
 
                 // Profile Picture Progress feature
-                div class="mb-8" {
+                div class="mb-6 md:mb-8" {
                     (Heading::h3("Profile Picture Progress"))
-                    div class="bg-indigo-50 rounded-xl p-5 border border-indigo-200" {
-                        p class="text-gray-700 mb-4" {
+                    div class="bg-indigo-50 rounded-lg sm:rounded-xl p-4 sm:p-5 border border-indigo-200" {
+                        p class="text-gray-700 mb-4 text-sm sm:text-base" {
                             "This feature automatically updates your profile picture to show progress from your display name. "
                             "Use a fraction (e.g. 3/10) or percentage (e.g. 30%) in your display name, and we'll visualize it!"
                         }
 
                         // Get profile progress settings for this token
-                        @let progress_settings = match sqlx::query(
+                        @let progress_enabled = match sqlx::query(
                             r#"
-                            SELECT p.* FROM profile_picture_progress p
+                            SELECT p.enabled FROM profile_picture_progress p
                             JOIN oauth_tokens t ON p.token_id = t.id
                             WHERE t.did = $1
                             "#
@@ -423,87 +333,122 @@ async fn display_profile_multi(
                           .await {
                             Ok(Some(row)) => {
                                 let enabled: bool = row.get("enabled");
-                                let original_blob_cid: Option<String> = row.get("original_blob_cid");
-                                (enabled, original_blob_cid)
+                                enabled
                             },
-                            _ => (false, None),
+                            _ => false,
                         };
 
-                        // Toggle switch for enabling/disabling using our ToggleSwitch component
-                        form action="/profile_progress/toggle" method="post" class="mb-4" {
-                            input type="hidden" name="token_id" value=(primary_token.did) {}
+                        // Profile Progress Feature Status with Button
+                        div class="mb-4 p-3 sm:p-4 bg-white rounded-lg shadow-sm" {
+                            // Feature description and current status
+                            div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-3 gap-2" {
+                                div class="flex-1" {
+                                    p class="font-medium text-gray-900 text-sm sm:text-base" { "Profile Picture Progress Visualization" }
+                                    p class="text-xs sm:text-sm text-gray-500 mt-1" {
+                                        "This feature automatically updates your profile picture to show progress from your display name."
+                                    }
+                                }
 
-                            (ToggleSwitch::new(
-                                "enabled",
-                                "Enable Progress Visualization",
-                                progress_settings.0
-                            ).description("Automatically update your profile picture based on progress in your display name"))
-
-                            div class="mt-3 flex justify-end" {
-                                (Button::primary("Save")
-                                    .button_type("submit")
-                                    .size(ButtonSize::Small))
-                            }
-                        }
-
-                        // Original profile picture selection
-                        form action="/profile_progress/set_original" method="post" class="p-3 bg-white rounded-lg shadow-sm" {
-                            p class="font-medium text-gray-900 mb-2" { "Original Profile Picture" }
-                            p class="text-sm text-gray-500 mb-4" { "Select the profile picture to use as the base for progress visualization" }
-
-                            input type="hidden" name="token_id" value=(primary_token.did) {}
-
-                            @if let Some(original_cid) = &progress_settings.1 {
-                                div class="mb-4 flex items-center" {
-                                    p class="text-sm text-gray-600 mr-2" { "Current original: " }
-                                    code class="bg-gray-100 px-2 py-1 rounded text-sm" { (original_cid) }
+                                // Status indicator
+                                div class="sm:ml-4 flex-shrink-0" {
+                                    @if progress_enabled {
+                                        span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800" {
+                                            "Enabled"
+                                        }
+                                    } @else {
+                                        span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800" {
+                                            "Disabled"
+                                        }
+                                    }
                                 }
                             }
 
-                            @if let Some(img_src) = &avatar_base64 {
-                                div class="flex items-center space-x-4" {
-                                    // Display current profile picture
-                                    div class="w-16 h-16 rounded-full overflow-hidden bg-white" {
-                                        img src=(img_src) alt="Current Profile Picture" class="w-full h-full object-cover" {}
+                            // Form with single button
+                            form action="/profile_progress/toggle" method="post" class="mt-2" {
+                                input type="hidden" name="token_id" value=(primary_token.did) {}
+
+                                @if progress_enabled {
+                                    // When enabled, show a button to disable
+                                    (Button::primary("Disable Progress Visualization")
+                                        .button_type("submit")
+                                        .variant(ButtonVariant::Secondary)
+                                        .full_width(true))
+                                } @else {
+                                    // When disabled, show a button to enable with explanation
+                                    input type="hidden" name="enabled" value="true" {}
+                                    (Button::primary("Enable & Save Current Profile Picture")
+                                        .button_type("submit")
+                                        .full_width(true))
+                                }
+                            }
+                        }
+
+                        // Original profile picture display (only if feature is enabled)
+                        @if progress_enabled {
+                            div class="p-3 sm:p-4 bg-white rounded-lg shadow-sm" {
+                                p class="font-medium text-gray-900 mb-2 text-sm sm:text-base" { "Base Profile Picture" }
+                                p class="text-xs sm:text-sm text-gray-500 mb-3" { "When you enable this feature, your current profile picture is saved as the base for progress visualization." }
+
+                                div class="flex flex-wrap items-center gap-4 justify-center sm:justify-start" {
+                                    // Display the current profile picture
+                                    @if let Some(img_src) = &avatar_base64 {
+                                        div class="w-14 h-14 sm:w-16 sm:h-16 rounded-full overflow-hidden bg-white" {
+                                            img src=(img_src) alt="Current Profile Picture" class="w-full h-full object-cover" {}
+                                        }
                                     }
 
-                                    // Use current button
-                                    @if let Some(cid) = avatar_blob_cid.clone() {
-                                        input type="hidden" name="blob_cid" value=(cid) {}
-                                        (Button::primary("Use Current Profile Picture")
-                                            .button_type("submit")
-                                            .size(ButtonSize::Small))
+                                    // If we have an original profile picture saved, display it too
+                                    @if let Ok(original_blob) = crate::jobs::helpers::get_original_profile_picture(state, &primary_token).await {
+                                        @if let Some(blob_ref) = original_blob.get("ref") {
+                                            @if let Some(cid) = blob_ref.get("$link").and_then(|l| l.as_str()) {
+                                                @if let Ok(data) = crate::routes::bsky::fetch_blob_by_cid(&primary_token.did, cid, state).await {
+                                                    @let mime_type = original_blob.get("mimeType").and_then(|m| m.as_str()).unwrap_or("image/jpeg");
+                                                    @let base64_data = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &data);
+                                                    @let img_src = format!("data:{};base64,{}", mime_type, base64_data);
+
+                                                    div class="flex flex-col items-center" {
+                                                        div class="w-14 h-14 sm:w-16 sm:h-16 rounded-full overflow-hidden border-2 border-green-200 bg-white" {
+                                                            img src=(img_src) alt="Base Profile Picture" class="w-full h-full object-cover" {}
+                                                        }
+                                                        p class="text-xs text-gray-600 mt-1" { "Base Image" }
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
 
                         // Show how to format display name
-                        div class="mt-4 p-3 bg-white rounded-lg shadow-sm" {
-                            p class="font-medium text-gray-900 mb-2" { "How to format your display name" }
-                            div class="space-y-2 text-sm text-gray-600" {
+                        div class="mt-3 sm:mt-4 p-3 sm:p-4 bg-white rounded-lg shadow-sm" {
+                            p class="font-medium text-gray-900 mb-2 text-sm sm:text-base" { "How to format your display name" }
+                            div class="space-y-2 text-xs sm:text-sm text-gray-600" {
                                 p { "Your current display name: "
-                                    strong { (display_name) }
+                                    strong class="break-all" { (display_name) }
                                 }
                                 p { "To show progress, add one of these patterns to your display name:" }
-                                ul class="list-disc list-inside ml-2 space-y-1" {
-                                    li { "Fraction: " code class="bg-gray-100 px-1" { "My Name 3/10" } " — Shows 30% progress" }
-                                    li { "Percentage: " code class="bg-gray-100 px-1" { "My Name 30%" } " — Shows 30% progress" }
-                                    li { "Decimal: " code class="bg-gray-100 px-1" { "My Name 30.5%" } " — Shows 30.5% progress" }
+                                ul class="list-disc list-inside ml-0 sm:ml-2 space-y-1" {
+                                    li { "Fraction: " code class="bg-gray-100 px-1 text-xs" { "My Name 3/10" } " — Shows 30% progress" }
+                                    li { "Percentage: " code class="bg-gray-100 px-1 text-xs" { "My Name 30%" } " — Shows 30% progress" }
+                                    li { "Decimal: " code class="bg-gray-100 px-1 text-xs" { "My Name 30.5%" } " — Shows 30.5% progress" }
                                 }
                             }
                         }
                     }
                 }
 
-                // Action buttons footer using our new component
-                (NavButtons::new()
-                    .add_button(NavButton::new("Home", "/")
-                        .with_icon(NavButtonIcon::Home))
-                    .add_button(NavButton::new("Logout", "/logout")
-                        .with_icon(NavButtonIcon::Logout))
-                    .add_button(NavButton::new("Switch User", "/login")
-                        .with_icon(NavButtonIcon::Login)))
+                // Footer navigation with account switcher
+                div class="flex flex-wrap justify-center gap-3 sm:gap-4 pt-3 sm:pt-4 mt-2 border-t border-gray-200" {
+                    // Home button
+                    (Button::new("Home")
+                        .variant(ButtonVariant::Link)
+                        .href("/")
+                        .icon(Icon::home().into_string(), IconPosition::Left))
+
+                    // Account dropdown in the footer
+                    (AccountDropdown::new(all_tokens.clone(), primary_token, "/me"))
+                }
             }
         }
     };
