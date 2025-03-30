@@ -116,42 +116,10 @@ pub async fn document_to_auth_server_metadata(
     document: &DidDocument,
     _client: Arc<ReqwestClient>,
 ) -> cja::Result<AuthServerMetadata> {
-    // If we're in fixture mode, shortcut with fixture data
-    if std::env::var("USE_FIXTURES").unwrap_or_default() == "1" {
-        return create_fixture_auth_server_metadata();
-    }
-
     // Regular flow for production use
     let pds_service = extract_pds_from_document(document)?;
     let metadata = fetch_auth_server_metadata_from_pds(&pds_service.service_endpoint).await?;
     Ok(metadata)
-}
-
-/// Creates fixture auth server metadata for testing
-fn create_fixture_auth_server_metadata() -> cja::Result<AuthServerMetadata> {
-    let pds_url = std::env::var("PDS_URL").unwrap_or_else(|_| "http://localhost:3001".to_string());
-
-    info!(
-        "Using fixture auth server metadata with PDS URL: {}",
-        pds_url
-    );
-
-    // Return mock auth server metadata for fixture testing
-    Ok(AuthServerMetadata {
-        issuer: pds_url.clone(),
-        pushed_authorization_request_endpoint: format!(
-            "{}/xrpc/com.atproto.server.pushAuthorization",
-            pds_url
-        ),
-        authorization_endpoint: format!("{}/xrpc/com.atproto.server.authorize", pds_url),
-        token_endpoint: format!("{}/xrpc/com.atproto.server.getToken", pds_url),
-        scopes_supported: vec![
-            "read".to_string(),
-            "write".to_string(),
-            "profile".to_string(),
-            "email".to_string(),
-        ],
-    })
 }
 
 /// Fetches auth server metadata from a PDS endpoint
