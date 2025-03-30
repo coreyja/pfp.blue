@@ -92,6 +92,6 @@ test.describe('Authentication flow', () => {
     expect(currentUrl).not.toContain('/me');
     
     // And make sure we can see a login link
-    await page.waitForSelector('a:has-text("Login")', {state: 'visible', timeout: 5000});
+    await page.waitForSelector('a:has-text("Sign in with Bluesky")', {state: 'visible', timeout: 5000});
   });
 });

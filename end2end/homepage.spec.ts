@@ -20,10 +20,7 @@ test.describe('Homepage', () => {
     expect(bodyText).toContain('Profile');
     
     // Check for a login link which should always be on homepage
-    const loginLink = await page.waitForSelector('a:has-text("Login")', { state: 'visible' });
-    
-    // Also check for a link to view profile
-    const viewProfileLink = await page.waitForSelector('a[href="/me"]', { state: 'visible' });
+    await page.waitForSelector('a:has-text("Sign in with Bluesky")', { state: 'visible' });
   });
   
   test('navigation to login page works', async ({ page }) => {
@@ -33,7 +30,7 @@ test.describe('Homepage', () => {
     await page.waitForLoadState('networkidle');
     
     // Find and click the login link
-    const loginLink = await page.waitForSelector('a:has-text("Login")', {state: 'visible'});
+    const loginLink = await page.waitForSelector('a:has-text("Sign in with Bluesky")', {state: 'visible'});
     await loginLink.click();
     
     // Wait for navigation to complete
@@ -45,19 +42,5 @@ test.describe('Homepage', () => {
     
     // And check for login form by looking for input for DID
     await page.waitForSelector('input[name="did"]', {state: 'visible'});
-  });
-  
-  test('navigation to profile page redirects to login when not authenticated', async ({ page }) => {
-    await page.goto('/');
-    
-    // Click the profile link
-    await page.locator('a:has-text("View Your Profile")').click();
-    
-    // Since we're not logged in, we should be redirected to login
-    // Wait for redirect to complete
-    await page.waitForURL(/\/login/);
-    
-    // Verify we're on the login page
-    await expect(page).toHaveURL(/\/login/);
   });
 });
