@@ -260,6 +260,8 @@ async fn toggle_profile_progress(
         .with_redirect(Redirect::to("/me"))?;
 
     // Check if we're enabling the feature
+    // When the form is submitted with enabled=true we're enabling
+    // When it's submitted without the enabled parameter we're disabling
     let is_enabling = params.enabled.is_some();
 
     // Get or create the profile progress settings

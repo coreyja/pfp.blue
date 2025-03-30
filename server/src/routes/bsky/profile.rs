@@ -202,11 +202,10 @@ async fn display_profile_multi(
     all_tokens: Vec<OAuthTokenSet>,
 ) -> maud::Markup {
     use crate::components::{
-        form::ToggleSwitch,
         layout::Page,
         ui::{
             account_dropdown::AccountDropdown,
-            button::{Button, ButtonSize, ButtonVariant, IconPosition},
+            button::{Button, ButtonVariant, IconPosition},
             heading::Heading,
             icon::Icon,
         },
@@ -339,20 +338,48 @@ async fn display_profile_multi(
                             _ => false,
                         };
 
-                        // Toggle switch for enabling/disabling using our ToggleSwitch component
-                        form action="/profile_progress/toggle" method="post" class="mb-4" {
-                            input type="hidden" name="token_id" value=(primary_token.did) {}
-
-                            (ToggleSwitch::new(
-                                "enabled",
-                                "Enable Progress Visualization",
-                                progress_enabled
-                            ).description("Your current profile picture will be saved as the base, and will be automatically updated to show progress from your display name"))
-
-                            div class="mt-3 flex justify-end" {
-                                (Button::primary("Save")
-                                    .button_type("submit")
-                                    .size(ButtonSize::Small))
+                        // Profile Progress Feature Status with Button
+                        div class="mb-4 p-3 bg-white rounded-lg shadow-sm" {
+                            // Feature description and current status
+                            div class="flex justify-between items-center mb-3" {
+                                div class="flex-1" {
+                                    p class="font-medium text-gray-900" { "Profile Picture Progress Visualization" }
+                                    p class="text-sm text-gray-500 mt-1" { 
+                                        "This feature automatically updates your profile picture to show progress from your display name."
+                                    }
+                                }
+                                
+                                // Status indicator
+                                div class="ml-4 flex-shrink-0" {
+                                    @if progress_enabled {
+                                        span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800" {
+                                            "Enabled"
+                                        }
+                                    } @else {
+                                        span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800" {
+                                            "Disabled"
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            // Form with single button
+                            form action="/profile_progress/toggle" method="post" class="mt-2" {
+                                input type="hidden" name="token_id" value=(primary_token.did) {}
+                                
+                                @if progress_enabled {
+                                    // When enabled, show a button to disable
+                                    (Button::primary("Disable Progress Visualization")
+                                        .button_type("submit")
+                                        .variant(ButtonVariant::Secondary)
+                                        .full_width(true))
+                                } @else {
+                                    // When disabled, show a button to enable with explanation
+                                    input type="hidden" name="enabled" value="true" {}
+                                    (Button::primary("Enable & Save Current Profile Picture as Base")
+                                        .button_type("submit")
+                                        .full_width(true))
+                                }
                             }
                         }
 
