@@ -11,6 +11,7 @@ impl Render for Page {
             head {
                 title { (self.title) }
                 script src="https://unpkg.com/@tailwindcss/browser@4" {}
+                meta name="viewport" content="width=device-width, initial-scale=1.0";
             }
 
             // Main container - fullscreen on mobile, gradient background on larger screens
