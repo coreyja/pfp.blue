@@ -31,6 +31,8 @@ pfp.blue automatically detects when you update your display name and refreshes y
 
 Visit [pfp.blue](https://pfp.blue) and sign in with your Bluesky account to start visualizing your progress today!
 
+Follow us on Bluesky: [@pfp.blue](https://bsky.app/profile/pfp.blue)
+
 ## Privacy & Security
 
 - pfp.blue uses OAuth to securely access your Bluesky account
@@ -40,3 +42,7 @@ Visit [pfp.blue](https://pfp.blue) and sign in with your Bluesky account to star
 ## Feedback & Support
 
 Having trouble or want to suggest a feature? Reach out to us on Bluesky: [@pfp.blue](https://bsky.app/profile/pfp.blue)
+
+---
+
+Built with ❤️ for the Bluesky community | [pfp.blue](https://pfp.blue) | [@pfp.blue](https://bsky.app/profile/pfp.blue)
