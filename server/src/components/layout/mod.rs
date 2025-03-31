@@ -19,8 +19,20 @@ impl Render for Page {
                 (self.content.render())
 
                 // Footer credit
-                div class="mt-6 md:mt-8 text-center text-gray-500 text-sm" {
-                    p { "© 2025 pfp.blue - Bluesky Profile Management" }
+                div class="mt-6 md:mt-8 text-center text-sm" {
+                    p class="text-gray-500" { "© 2025 pfp.blue - Bluesky Profile Management" }
+                    
+                    // Social links
+                    div class="mt-2 flex justify-center space-x-3" {
+                        a href="https://bsky.app/profile/pfp.blue" target="_blank" 
+                          class="inline-flex items-center text-blue-600 hover:text-blue-800" {
+                            // Bluesky icon
+                            svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" {
+                                path d="M12.001 3.5c-4.31 0-7.375 3.033-7.375 6.875 0 1.643.68 2.972 1.694 4.106a7.642 7.642 0 01-.568 1.343c-.204.484-.474.976-.803 1.438.887-.132 1.691-.399 2.37-.802.476-.27.916-.6 1.294-.991a9.457 9.457 0 003.388.632c4.31 0 7.375-3.033 7.375-6.875.001-3.776-3.133-6.726-7.375-6.726zm0 12.601a8.325 8.325 0 01-2.984-.569 1.15 1.15 0 00-1.242.225 4.573 4.573 0 01-1.234.85 5.82 5.82 0 01-.742.266c.24-.33.429-.674.581-1.014.263-.591.335-1.306.072-1.94a1.065 1.065 0 00-.14-.25c-.778-.883-1.275-1.896-1.275-3.294 0-3.157 2.569-5.726 5.726-5.726 3.431 0 6.226 2.396 6.226 5.726 0 3.126-2.46 5.726-5.988 5.726z" {}
+                            }
+                            span class="ml-1 text-xs" { "@pfp.blue" }
+                        }
+                    }
                 }
             }
         }
