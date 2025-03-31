@@ -31,6 +31,8 @@ pub fn routes(app_state: AppState) -> axum::Router {
         .route("/", get(root_page))
         .route("/login", get(login_page))
         .route("/logout", get(logout))
+        .route("/about", get(about_page))
+        .route("/privacy", get(privacy_policy_page))
         // Authenticated pages
         .route("/me", get(bsky::profile))
         // Profile Picture Progress routes
@@ -510,6 +512,70 @@ async fn logout(
     // Redirect to home page
     info!("User logged out successfully");
     Ok(Redirect::to("/"))
+}
+
+/// About page handler
+async fn about_page(optional_user: OptionalUser, State(_state): State<AppState>) -> Page {
+    use crate::components::{
+        layout::{Card, ContentSection, CurvedHeader},
+        ui::heading::Heading,
+    };
+    use maud::Render;
+
+    let content = maud::html! {
+        // Header with curved bottom
+        (CurvedHeader::new("h-32").render())
+
+        // Main content
+        (ContentSection::new(maud::html! {
+            (Heading::h1("About pfp.blue")
+                .with_color("text-indigo-700")
+                .render())
+            
+            // Empty placeholder content for now
+            div class="mt-6 space-y-6" {
+                // Content will be added later
+            }
+            
+        }).render())
+    };
+
+    Page {
+        title: "About - pfp.blue".to_string(),
+        content: Box::new(Card::new(content).with_max_width("max-w-3xl")),
+    }
+}
+
+/// Privacy policy page handler
+async fn privacy_policy_page(optional_user: OptionalUser, State(_state): State<AppState>) -> Page {
+    use crate::components::{
+        layout::{Card, ContentSection, CurvedHeader},
+        ui::heading::Heading,
+    };
+    use maud::Render;
+
+    let content = maud::html! {
+        // Header with curved bottom
+        (CurvedHeader::new("h-32").render())
+
+        // Main content
+        (ContentSection::new(maud::html! {
+            (Heading::h1("Privacy Policy")
+                .with_color("text-indigo-700")
+                .render())
+            
+            // Empty placeholder content for now
+            div class="mt-6 space-y-6" {
+                // Content will be added later
+            }
+            
+        }).render())
+    };
+
+    Page {
+        title: "Privacy Policy - pfp.blue".to_string(),
+        content: Box::new(Card::new(content).with_max_width("max-w-3xl")),
+    }
 }
 
 /// Admin panel page - shows available jobs and provides a UI to run them
