@@ -1,5 +1,4 @@
 use super::button::{Button, ButtonVariant, IconPosition};
-use super::icon::Icon;
 use maud::{html, Markup, Render};
 
 // Add Default implementation to fix clippy warning
@@ -75,17 +74,21 @@ impl NavButton {
         self
     }
 
-    fn get_icon_svg(&self) -> String {
+    fn get_icon_class(&self) -> String {
         if let Some(icon_type) = &self.icon_type {
             match icon_type {
-                NavButtonIcon::Home => Icon::home().into_string(),
-                NavButtonIcon::User => Icon::user().into_string(),
-                NavButtonIcon::Logout => Icon::logout().into_string(),
-                NavButtonIcon::Login => Icon::login().into_string(),
-                NavButtonIcon::Link => Icon::link().into_string(),
-                NavButtonIcon::Plus => Icon::plus().into_string(),
-                NavButtonIcon::Check => Icon::check().into_string(),
-                NavButtonIcon::Custom(svg) => svg.clone(),
+                NavButtonIcon::Home => "<i class=\"fa-solid fa-home\"></i>".to_string(),
+                NavButtonIcon::User => "<i class=\"fa-solid fa-user\"></i>".to_string(),
+                NavButtonIcon::Logout => {
+                    "<i class=\"fa-solid fa-right-from-bracket\"></i>".to_string()
+                }
+                NavButtonIcon::Login => {
+                    "<i class=\"fa-solid fa-right-to-bracket\"></i>".to_string()
+                }
+                NavButtonIcon::Link => "<i class=\"fa-solid fa-link\"></i>".to_string(),
+                NavButtonIcon::Plus => "<i class=\"fa-solid fa-plus\"></i>".to_string(),
+                NavButtonIcon::Check => "<i class=\"fa-solid fa-check\"></i>".to_string(),
+                NavButtonIcon::Custom(html) => html.clone(),
             }
         } else {
             String::new()
@@ -123,7 +126,7 @@ fn render_nav_button(button: &NavButton) -> Markup {
 
     // Fix redundant pattern matching
     if button.icon_type.is_some() {
-        btn = btn.icon(button.get_icon_svg(), IconPosition::Left);
+        btn = btn.icon(button.get_icon_class(), IconPosition::Left);
     }
 
     html! {

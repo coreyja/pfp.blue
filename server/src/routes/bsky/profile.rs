@@ -51,7 +51,6 @@ pub async fn profile(
             ui::{
                 button::{Button, ButtonVariant, IconPosition},
                 heading::Heading,
-                icon::Icon,
             },
         };
         use maud::Render;
@@ -59,11 +58,11 @@ pub async fn profile(
         let form_content = html! {
             (InputField::new("did")
                 .placeholder("Enter Bluesky handle or DID")
-                .icon(Icon::user())
+                .icon("fa-solid fa-user")
                 .required(true))
 
             (Button::primary("Link Bluesky Account")
-                .icon(Icon::link().into_string(), IconPosition::Left)
+                .icon("fa-solid fa-link", IconPosition::Left)
                 .button_type("submit")
                 .full_width(true))
         };
@@ -72,7 +71,7 @@ pub async fn profile(
             div class="max-w-3xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden text-center p-8" {
                 // App logo
                 div class="mb-6 flex justify-center" {
-                    (Icon::app_logo())
+                    i class="fa-solid fa-user-circle text-indigo-600 text-4xl sm:text-5xl" {}
                 }
 
                 (Heading::h1("Welcome to Your Profile!")
@@ -118,24 +117,21 @@ pub async fn profile(
                     (Button::new("Back to Home")
                         .variant(ButtonVariant::Link)
                         .href("/")
-                        .icon(Icon::home().into_string(), IconPosition::Left))
+                        .icon("fa-solid fa-home", IconPosition::Left))
 
                     span class="text-gray-300 self-center" { "|" }
 
                     (Button::new("Try Different Login")
                         .variant(ButtonVariant::Link)
                         .href("/login")
-                        .icon(Icon::login().into_string(), IconPosition::Left))
+                        .icon("fa-solid fa-sign-in-alt", IconPosition::Left))
                 }
             }
         };
 
-        return Page {
-            title: "Your Profile - pfp.blue".to_string(),
-            content: Box::new(content),
-        }
-        .render()
-        .into_response();
+        return Page::new("Your Profile - pfp.blue".to_string(), Box::new(content))
+            .render()
+            .into_response();
     }
 
     // Get session to check for a set primary token
@@ -207,7 +203,6 @@ async fn display_profile_multi(
             account_dropdown::AccountDropdown,
             button::{Button, ButtonVariant, IconPosition},
             heading::Heading,
-            icon::Icon,
         },
     };
     use maud::Render;
@@ -263,14 +258,22 @@ async fn display_profile_multi(
     // Create profile display content
     let content = html! {
         div class="w-full md:max-w-3xl md:mx-auto bg-white overflow-hidden md:rounded-2xl md:shadow-xl" {
-            // Profile header with fun curves
-            div class="relative h-32 sm:h-40 md:h-48 bg-gradient-to-r from-blue-500 to-indigo-600" {
-                div class="absolute left-0 right-0 bottom-0" {
-                    (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 100" class="w-full h-16 sm:h-20 fill-white"><path d="M0,64L80,69.3C160,75,320,85,480,80C640,75,800,53,960,42.7C1120,32,1280,32,1360,32L1440,32L1440,100L1360,100C1280,100,1120,100,960,100C800,100,640,100,480,100C320,100,160,100,80,100L0,100Z"></path></svg>"#))
+            // Include the wavy header inline with the profile content
+            div class="relative" {
+                // The curved header background
+                div class="relative h-32 sm:h-40 md:h-48 bg-gradient-to-r from-blue-500 to-indigo-600" {
+                    div class="absolute left-0 right-0 bottom-0" {
+                        (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 100" class="w-full h-16 sm:h-20 fill-white"><path d="M0,64L80,69.3C160,75,320,85,480,80C640,75,800,53,960,42.7C1120,32,1280,32,1360,32L1440,32L1440,100L1360,100C1280,100,1120,100,960,100C800,100,640,100,480,100C320,100,160,100,80,100L0,100Z"></path></svg>"#))
+                    }
+
+                    // Logo on the right side of the header
+                    div class="absolute top-4 right-4 sm:right-6" {
+                        (crate::static_assets::logo_img("w-12 h-12 sm:w-16 sm:h-16 shadow-md rounded-full border-2 border-white bg-white"))
+                    }
                 }
             }
 
-            // Profile content - more condensed padding on mobile
+            // Profile content - positioned to overlap slightly with the wave
             div class="px-4 sm:px-6 py-6 sm:py-8 -mt-16 sm:-mt-20 relative z-10" {
                 // Avatar and name section
                 div class="flex flex-col md:flex-row items-center mb-6 md:mb-8" {
@@ -444,7 +447,7 @@ async fn display_profile_multi(
                     (Button::new("Home")
                         .variant(ButtonVariant::Link)
                         .href("/")
-                        .icon(Icon::home().into_string(), IconPosition::Left))
+                        .icon("fa-solid fa-home", IconPosition::Left))
 
                     // Account dropdown in the footer
                     (AccountDropdown::new(all_tokens.clone(), primary_token, "/me"))
@@ -453,10 +456,10 @@ async fn display_profile_multi(
         }
     };
 
-    // Use the Page struct to wrap the content
-    Page {
-        title: format!("{} - Bluesky Profile - pfp.blue", display_name),
-        content: Box::new(content),
-    }
+    // Use the Page struct to wrap the content without additional header
+    Page::new(
+        format!("{} - Bluesky Profile - pfp.blue", display_name),
+        Box::new(content),
+    )
     .render()
 }

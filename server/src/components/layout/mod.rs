@@ -5,13 +5,25 @@ pub struct Page {
     pub content: Box<dyn Render>,
 }
 
+impl Page {
+    pub fn new(title: String, content: Box<dyn Render>) -> Self {
+        Self { title, content }
+    }
+
+    // We can add any new Page methods here if needed in the future
+}
+
 impl Render for Page {
     fn render(&self) -> Markup {
+        use crate::static_assets;
+
         html! {
             head {
                 title { (self.title) }
                 script src="https://unpkg.com/@tailwindcss/browser@4" {}
                 meta name="viewport" content="width=device-width, initial-scale=1.0";
+                link rel="stylesheet" href="https://kit.fontawesome.com/e62c3d1513.css" crossorigin="anonymous";
+                link rel="icon" href=(static_assets::image_url("PFP.png")) type="image/png";
             }
 
             // Main container - fullscreen on mobile, gradient background on larger screens
@@ -19,8 +31,27 @@ impl Render for Page {
                 (self.content.render())
 
                 // Footer credit
-                div class="mt-6 md:mt-8 text-center text-gray-500 text-sm" {
-                    p { "© 2025 pfp.blue - Bluesky Profile Management" }
+                div class="mt-6 md:mt-8 text-center text-sm" {
+                    p class="text-gray-500" { "© 2025 pfp.blue - Bluesky Profile Management" }
+
+                    // Social links and footer nav
+                    div class="mt-2 flex flex-col md:flex-row justify-center items-center gap-y-2 md:gap-x-6" {
+                        // Social links
+                        div class="flex justify-center space-x-3" {
+                            a href="https://bsky.app/profile/pfp.blue" target="_blank"
+                              class="inline-flex items-center text-blue-600 hover:text-blue-800 cursor-pointer" {
+                                // Bluesky icon
+                                i class="fa-brands fa-bluesky" {}
+                                span class="ml-1 text-xs" { "@pfp.blue" }
+                            }
+                        }
+
+                        // Footer navigation
+                        div class="flex justify-center space-x-6 text-xs text-gray-500" {
+                            a href="/about" class="hover:text-gray-700 hover:underline cursor-pointer" { "About" }
+                            a href="/privacy" class="hover:text-gray-700 hover:underline cursor-pointer" { "Privacy Policy" }
+                        }
+                    }
                 }
             }
         }
@@ -86,14 +117,28 @@ impl CurvedHeader {
 
 impl Render for CurvedHeader {
     fn render(&self) -> Markup {
-        html! {
-            div class={"relative " (self.height) " bg-gradient-to-r from-blue-500 to-indigo-600"} {
-                @if let Some(content) = &self.content {
-                    (content.render())
-                }
+        use crate::static_assets;
 
-                div class="absolute left-0 right-0 bottom-0" {
-                    (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 100" class="w-full h-20 fill-white"><path d="M0,64L80,69.3C160,75,320,85,480,80C640,75,800,53,960,42.7C1120,32,1280,32,1360,32L1440,32L1440,100L1360,100C1280,100,1120,100,960,100C800,100,640,100,480,100C320,100,160,100,80,100L0,100Z"></path></svg>"#))
+        html! {
+            div class="relative mb-8" {
+                // The curved header background
+                div class={"relative " (self.height) " bg-gradient-to-r from-blue-500 to-indigo-600"} {
+                    // Curved bottom svg
+                    div class="absolute left-0 right-0 bottom-0" {
+                        (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 100" class="w-full h-12 sm:h-16 fill-white"><path d="M0,64L80,69.3C160,75,320,85,480,80C640,75,800,53,960,42.7C1120,32,1280,32,1360,32L1440,32L1440,100L1360,100C1280,100,1120,100,960,100C800,100,640,100,480,100C320,100,160,100,80,100L0,100Z"></path></svg>"#))
+                    }
+
+                    // Content inside the header (if provided)
+                    @if let Some(content) = &self.content {
+                        div class="h-full flex items-center justify-center text-white" {
+                            (content.render())
+                        }
+                    } @else {
+                        // Default content with logo centered
+                        div class="flex justify-center items-center h-16 sm:h-24 py-4" {
+                            (static_assets::logo_img("w-12 h-12 sm:w-16 sm:h-16 shadow-md rounded-full border-2 border-white bg-white"))
+                        }
+                    }
                 }
             }
         }

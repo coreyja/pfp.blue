@@ -18,6 +18,7 @@ mod oauth;
 mod profile_progress;
 mod routes;
 mod state;
+mod static_assets;
 mod user;
 
 use state::AppState;
