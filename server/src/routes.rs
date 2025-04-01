@@ -48,6 +48,8 @@ pub fn routes(app_state: AppState) -> axum::Router {
         .route("/_", get(admin_panel))
         .route("/_/job/enqueue", post(admin_enqueue_job))
         .route("/_/job/run", post(admin_run_job))
+        // Static files route
+        .route("/static/*path", get(crate::static_assets::serve_static_file))
         // Add trace layer for debugging
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(app_state)
@@ -137,17 +139,13 @@ async fn root_page(optional_user: OptionalUser, State(state): State<AppState>) -
 
     let content = maud::html! {
         div class="text-center px-4 sm:px-8 py-6 sm:py-8" {
-            // Logo/icon for the app - larger and more prominent on mobile
+            // Banner for the app
             div class="mb-4 sm:mb-6 flex justify-center" {
-                div class="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-gradient-to-br from-blue-100 to-indigo-100 border-4 border-white shadow-lg flex items-center justify-center" {
-                    (Icon::app_logo())
-                }
+                (crate::static_assets::banner_img("w-64 sm:w-80 md:w-96 mx-auto"))
             }
 
             // Display personalized greeting
             h2 class="text-xl sm:text-2xl font-semibold text-indigo-700 mt-2" { (greeting) }
-
-            (Heading::h1("pfp.blue").render())
             p class="text-base sm:text-lg text-gray-600 mb-6 sm:mb-8" { "Your Bluesky Profile Manager" }
 
             // Action buttons

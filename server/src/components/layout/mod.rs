@@ -7,15 +7,23 @@ pub struct Page {
 
 impl Render for Page {
     fn render(&self) -> Markup {
+        use crate::static_assets;
+
         html! {
             head {
                 title { (self.title) }
                 script src="https://unpkg.com/@tailwindcss/browser@4" {}
                 meta name="viewport" content="width=device-width, initial-scale=1.0";
+                link rel="icon" href=(static_assets::image_url("PFP.png")) type="image/png";
             }
 
             // Main container - fullscreen on mobile, gradient background on larger screens
             div class="min-h-screen bg-white md:bg-gradient-to-br md:from-blue-100 md:via-indigo-50 md:to-purple-100 py-4 md:py-8 px-0 sm:px-4 md:px-6 lg:px-8" {
+                // Header with logo
+                header class="mb-6 text-center" {
+                    (static_assets::logo_img("w-20 h-20 mx-auto"))
+                }
+
                 (self.content.render())
 
                 // Footer credit
