@@ -6,18 +6,6 @@ pub struct Page {
     pub show_header: bool,
 }
 
-// Allow creating with struct initialization for backward compatibility
-#[allow(clippy::missing_const_for_fn)]
-impl Default for Page {
-    fn default() -> Self {
-        Self {
-            title: String::new(),
-            content: Box::new(String::new()),
-            show_header: false,
-        }
-    }
-}
-
 impl Page {
     pub fn new(title: String, content: Box<dyn Render>) -> Self {
         Self {
@@ -25,6 +13,12 @@ impl Page {
             content,
             show_header: false,
         }
+    }
+    
+    // Backward compatibility constructor that matches the old struct initialization
+    #[allow(dead_code)]
+    pub fn legacy(title: String, content: Box<dyn Render>) -> Self {
+        Self::new(title, content)
     }
 
     pub fn with_header(mut self) -> Self {
