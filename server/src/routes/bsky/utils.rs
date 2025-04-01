@@ -96,12 +96,12 @@ pub fn handle_missing_code_error(
                 div class="flex flex-col sm:flex-row justify-center gap-4 mt-6" {
                     (Button::primary("Try Again")
                         .href("/login")
-                        .icon(Icon::login().into_string(), IconPosition::Left))
+                        .icon("fa-solid fa-sign-in-alt", IconPosition::Left))
 
                     (Button::new("Return to Home")
                         .variant(ButtonVariant::Secondary)
                         .href("/")
-                        .icon(Icon::home().into_string(), IconPosition::Left))
+                        .icon("fa-solid fa-home", IconPosition::Left))
                 }
             }
         }

@@ -59,11 +59,11 @@ pub async fn profile(
         let form_content = html! {
             (InputField::new("did")
                 .placeholder("Enter Bluesky handle or DID")
-                .icon(Icon::user())
+                .icon("fa-solid fa-user")
                 .required(true))
 
             (Button::primary("Link Bluesky Account")
-                .icon(Icon::link().into_string(), IconPosition::Left)
+                .icon("fa-solid fa-link", IconPosition::Left)
                 .button_type("submit")
                 .full_width(true))
         };
@@ -72,7 +72,7 @@ pub async fn profile(
             div class="max-w-3xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden text-center p-8" {
                 // App logo
                 div class="mb-6 flex justify-center" {
-                    (Icon::app_logo())
+                    i class="fa-solid fa-user-circle text-indigo-600 text-4xl sm:text-5xl" {}
                 }
 
                 (Heading::h1("Welcome to Your Profile!")
@@ -118,14 +118,14 @@ pub async fn profile(
                     (Button::new("Back to Home")
                         .variant(ButtonVariant::Link)
                         .href("/")
-                        .icon(Icon::home().into_string(), IconPosition::Left))
+                        .icon("fa-solid fa-home", IconPosition::Left))
 
                     span class="text-gray-300 self-center" { "|" }
 
                     (Button::new("Try Different Login")
                         .variant(ButtonVariant::Link)
                         .href("/login")
-                        .icon(Icon::login().into_string(), IconPosition::Left))
+                        .icon("fa-solid fa-sign-in-alt", IconPosition::Left))
                 }
             }
         };
@@ -449,7 +449,7 @@ async fn display_profile_multi(
                     (Button::new("Home")
                         .variant(ButtonVariant::Link)
                         .href("/")
-                        .icon(Icon::home().into_string(), IconPosition::Left))
+                        .icon("fa-solid fa-home", IconPosition::Left))
 
                     // Account dropdown in the footer
                     (AccountDropdown::new(all_tokens.clone(), primary_token, "/me"))
