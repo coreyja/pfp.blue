@@ -70,7 +70,7 @@ impl Render for Page {
                             a href="https://bsky.app/profile/pfp.blue" target="_blank"
                               class="inline-flex items-center text-blue-600 hover:text-blue-800 cursor-pointer" {
                                 // Bluesky icon
-                                i class="fa-solid fa-comment-dots" {}
+                                i class="fa-brands fa-bluesky" {}
                                 span class="ml-1 text-xs" { "@pfp.blue" }
                             }
                         }

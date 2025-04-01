@@ -160,14 +160,14 @@ async fn root_page(optional_user: OptionalUser, State(state): State<AppState>) -
                 a href="https://github.com/coreyja/pfp.blue" target="_blank"
                   class="inline-flex items-center px-4 sm:px-5 py-2 sm:py-2.5 text-sm font-medium rounded-md bg-purple-100 text-purple-700 hover:bg-purple-200 transition-colors cursor-pointer" {
                     // GitHub icon
-                    i class="fa-brands fa-github h-5 w-5 mr-2" {}
+                    i class="fa-brands fa-github mr-2" {}
                     "Star on GitHub"
                 }
 
                 a href="https://bsky.app/profile/pfp.blue" target="_blank"
                   class="inline-flex items-center px-4 sm:px-5 py-2 sm:py-2.5 text-sm font-medium rounded-md bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors cursor-pointer" {
                     // Bluesky icon
-                    i class="fa-solid fa-comment-dots h-5 w-5 mr-2" {}
+                    i class="fa-brands fa-bluesky mr-2" {}
                     "Follow @pfp.blue"
                 }
             }
@@ -541,21 +541,21 @@ async fn about_page(_optional_user: OptionalUser, State(_state): State<AppState>
                     ul class="space-y-2" {
                         li class="flex items-center" {
                             // Bluesky icon
-                            i class="fa-solid fa-comment-dots h-5 w-5 mr-2 text-blue-600" {}
+                            i class="fa-brands fa-bluesky mr-2 text-blue-600" {}
                             "Bluesky: "
                             a href="https://bsky.app/profile/coreyja.com" target="_blank" class="text-blue-600 hover:underline" { "@coreyja.com" }
                         }
 
                         li class="flex items-center" {
                             // Web icon
-                            i class="fa-solid fa-globe h-5 w-5 mr-2 text-blue-600" {}
+                            i class="fa-solid fa-globe mr-2 text-blue-600" {}
                             "Website: "
                             a href="https://coreyja.com" target="_blank" class="text-blue-600 hover:underline" { "coreyja.com" }
                         }
 
                         li class="flex items-center" {
                             // GitHub icon
-                            i class="fa-brands fa-github h-5 w-5 mr-2 text-blue-600" {}
+                            i class="fa-brands fa-github mr-2 text-blue-600" {}
                             "GitHub: "
                             a href="https://github.com/coreyja" target="_blank" class="text-blue-600 hover:underline" { "coreyja" }
                         }

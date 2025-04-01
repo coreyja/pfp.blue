@@ -165,7 +165,7 @@ impl Render for Button {
         );
 
         let icon_markup = match &self.icon {
-            Some(icon) => html! { (maud::PreEscaped(icon)) },
+            Some(icon) => html! { i class=(icon) {} },
             None => html! {},
         };
 
