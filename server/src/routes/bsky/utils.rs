@@ -60,10 +60,10 @@ pub fn handle_oauth_error(
     };
 
     // Use the Page struct to wrap the content
-    Page {
-        title: "Authentication Error - pfp.blue".to_string(),
-        content: Box::new(content),
-    }
+    Page::new(
+        "Authentication Error - pfp.blue".to_string(),
+        Box::new(content),
+    )
     .render()
     .into_response()
 }
@@ -108,10 +108,10 @@ pub fn handle_missing_code_error(
     };
 
     // Use the Page struct to wrap the content
-    Page {
-        title: "Authentication Error - pfp.blue".to_string(),
-        content: Box::new(content),
-    }
+    Page::new(
+        "Authentication Error - pfp.blue".to_string(),
+        Box::new(content),
+    )
     .render()
     .into_response()
 }

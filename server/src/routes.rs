@@ -220,10 +220,10 @@ async fn root_page(optional_user: OptionalUser, State(state): State<AppState>) -
         }
     };
 
-    Page {
-        title: "pfp.blue - Bluesky Profile Manager".to_string(),
-        content: Box::new(Card::new(content).with_max_width(card_width)),
-    }
+    Page::new(
+        "pfp.blue - Bluesky Profile Manager".to_string(),
+        Box::new(Card::new(content).with_max_width(card_width)),
+    )
 }
 
 /// Login page handler - displays the login form
@@ -318,11 +318,7 @@ async fn login_page(State(state): State<AppState>) -> impl IntoResponse {
         (debug_info)
     };
 
-    Page {
-        title: "Login - pfp.blue".to_string(),
-        content: Box::new(content),
-    }
-    .render()
+    Page::new("Login - pfp.blue".to_string(), Box::new(content)).render()
 }
 
 /// Parameters for toggling profile picture progress
@@ -584,10 +580,10 @@ async fn about_page(_optional_user: OptionalUser, State(_state): State<AppState>
         }).render())
     };
 
-    Page {
-        title: "About - pfp.blue".to_string(),
-        content: Box::new(Card::new(content).with_max_width("max-w-3xl")),
-    }
+    Page::new(
+        "About - pfp.blue".to_string(),
+        Box::new(Card::new(content).with_max_width("max-w-3xl")),
+    )
 }
 
 /// Privacy policy page handler
@@ -643,10 +639,10 @@ async fn privacy_policy_page(_optional_user: OptionalUser, State(_state): State<
         }).render())
     };
 
-    Page {
-        title: "Privacy Policy - pfp.blue".to_string(),
-        content: Box::new(Card::new(content).with_max_width("max-w-3xl")),
-    }
+    Page::new(
+        "Privacy Policy - pfp.blue".to_string(),
+        Box::new(Card::new(content).with_max_width("max-w-3xl")),
+    )
 }
 
 /// Admin panel page - shows available jobs and provides a UI to run them
@@ -722,11 +718,7 @@ async fn admin_panel(
         }
     };
 
-    Page {
-        title: "Admin Panel - pfp.blue".to_string(),
-        content: Box::new(content),
-    }
-    .render()
+    Page::new("Admin Panel - pfp.blue".to_string(), Box::new(content)).render()
 }
 
 /// Input parameters for job operations
@@ -788,10 +780,10 @@ async fn admin_enqueue_job(
                 }
             };
 
-            Page {
-                title: "Job Enqueued - pfp.blue".to_string(),
-                content: Box::new(content),
-            }
+            Page::new(
+                "Job Enqueued - pfp.blue".to_string(),
+                Box::new(content)
+            )
             .render()
         }
         Err(err) => {
@@ -865,10 +857,10 @@ async fn admin_run_job(
                 }
             };
 
-            Page {
-                title: "Job Completed - pfp.blue".to_string(),
-                content: Box::new(content),
-            }
+            Page::new(
+                "Job Completed - pfp.blue".to_string(),
+                Box::new(content)
+            )
             .render()
         }
         Err(err) => {
