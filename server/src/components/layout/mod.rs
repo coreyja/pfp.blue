@@ -19,9 +19,19 @@ impl Render for Page {
 
             // Main container - fullscreen on mobile, gradient background on larger screens
             div class="min-h-screen bg-white md:bg-gradient-to-br md:from-blue-100 md:via-indigo-50 md:to-purple-100 py-4 md:py-8 px-0 sm:px-4 md:px-6 lg:px-8" {
-                // Header with logo
-                header class="mb-6 text-center" {
-                    (static_assets::logo_img("w-20 h-20 mx-auto"))
+                // Header with curved bottom and overlapping logo
+                div class="relative" {
+                    // The curved header background
+                    div class="h-12 sm:h-16 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-b-3xl mb-6" {
+                        div class="absolute left-0 right-0 bottom-0" {
+                            (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 24" class="w-full h-6 fill-white transform translate-y-1"><path d="M0,0L80,5.3C160,11,320,21,480,21.3C640,21,800,11,960,5.3C1120,0,1280,0,1360,0L1440,0L1440,24L1360,24C1280,24,1120,24,960,24C800,24,640,24,480,24C320,24,160,24,80,24L0,24Z"></path></svg>"#))
+                        }
+                    }
+
+                    // The overlapping logo
+                    div class="absolute top-1 left-0 right-0 flex justify-center" {
+                        (static_assets::logo_img("w-14 h-14 sm:w-16 sm:h-16 shadow-lg rounded-full border-2 border-white bg-white"))
+                    }
                 }
 
                 (self.content.render())
@@ -29,13 +39,13 @@ impl Render for Page {
                 // Footer credit
                 div class="mt-6 md:mt-8 text-center text-sm" {
                     p class="text-gray-500" { "© 2025 pfp.blue - Bluesky Profile Management" }
-                    
+
                     // Social links and footer nav
                     div class="mt-2 flex flex-col md:flex-row justify-center items-center gap-y-2 md:gap-x-6" {
                         // Social links
                         div class="flex justify-center space-x-3" {
-                            a href="https://bsky.app/profile/pfp.blue" target="_blank" 
-                              class="inline-flex items-center text-blue-600 hover:text-blue-800" {
+                            a href="https://bsky.app/profile/pfp.blue" target="_blank"
+                              class="inline-flex items-center text-blue-600 hover:text-blue-800 cursor-pointer" {
                                 // Bluesky icon
                                 svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" {
                                     path d="M12.001 3.5c-4.31 0-7.375 3.033-7.375 6.875 0 1.643.68 2.972 1.694 4.106a7.642 7.642 0 01-.568 1.343c-.204.484-.474.976-.803 1.438.887-.132 1.691-.399 2.37-.802.476-.27.916-.6 1.294-.991a9.457 9.457 0 003.388.632c4.31 0 7.375-3.033 7.375-6.875.001-3.776-3.133-6.726-7.375-6.726zm0 12.601a8.325 8.325 0 01-2.984-.569 1.15 1.15 0 00-1.242.225 4.573 4.573 0 01-1.234.85 5.82 5.82 0 01-.742.266c.24-.33.429-.674.581-1.014.263-.591.335-1.306.072-1.94a1.065 1.065 0 00-.14-.25c-.778-.883-1.275-1.896-1.275-3.294 0-3.157 2.569-5.726 5.726-5.726 3.431 0 6.226 2.396 6.226 5.726 0 3.126-2.46 5.726-5.988 5.726z" {}
@@ -43,11 +53,11 @@ impl Render for Page {
                                 span class="ml-1 text-xs" { "@pfp.blue" }
                             }
                         }
-                        
+
                         // Footer navigation
                         div class="flex justify-center space-x-6 text-xs text-gray-500" {
-                            a href="/about" class="hover:text-gray-700 hover:underline" { "About" }
-                            a href="/privacy" class="hover:text-gray-700 hover:underline" { "Privacy Policy" }
+                            a href="/about" class="hover:text-gray-700 hover:underline cursor-pointer" { "About" }
+                            a href="/privacy" class="hover:text-gray-700 hover:underline cursor-pointer" { "Privacy Policy" }
                         }
                     }
                 }

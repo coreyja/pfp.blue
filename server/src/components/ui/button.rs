@@ -158,7 +158,7 @@ impl Render for Button {
         let extra_classes = self.extra_classes.as_deref().unwrap_or("");
 
         let base_classes = format!(
-            "{} {} {} font-medium rounded-lg transition-all duration-200 flex items-center justify-center outline-none focus:outline-none {} {}",
+            "{} {} {} font-medium rounded-lg transition-all duration-200 flex items-center justify-center outline-none focus:outline-none cursor-pointer {} {}",
             variant_classes, size_classes, width_class,
             if self.variant == ButtonVariant::Link { "" } else { "shadow-sm hover:shadow" },
             extra_classes

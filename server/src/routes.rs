@@ -49,7 +49,10 @@ pub fn routes(app_state: AppState) -> axum::Router {
         .route("/_/job/enqueue", post(admin_enqueue_job))
         .route("/_/job/run", post(admin_run_job))
         // Static files route
-        .route("/static/*path", get(crate::static_assets::serve_static_file))
+        .route(
+            "/static/*path",
+            get(crate::static_assets::serve_static_file),
+        )
         // Add trace layer for debugging
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(app_state)
@@ -156,7 +159,7 @@ async fn root_page(optional_user: OptionalUser, State(state): State<AppState>) -
             // Connect & Follow section
             div class="mt-8 sm:mt-10 flex flex-wrap justify-center gap-3" {
                 a href="https://github.com/coreyja/pfp.blue" target="_blank"
-                  class="inline-flex items-center px-4 sm:px-5 py-2 sm:py-2.5 text-sm font-medium rounded-md bg-purple-100 text-purple-700 hover:bg-purple-200 transition-colors" {
+                  class="inline-flex items-center px-4 sm:px-5 py-2 sm:py-2.5 text-sm font-medium rounded-md bg-purple-100 text-purple-700 hover:bg-purple-200 transition-colors cursor-pointer" {
                     // GitHub icon
                     svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 24 24" fill="currentColor" {
                         path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12" {}
@@ -165,7 +168,7 @@ async fn root_page(optional_user: OptionalUser, State(state): State<AppState>) -
                 }
 
                 a href="https://bsky.app/profile/pfp.blue" target="_blank"
-                  class="inline-flex items-center px-4 sm:px-5 py-2 sm:py-2.5 text-sm font-medium rounded-md bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors" {
+                  class="inline-flex items-center px-4 sm:px-5 py-2 sm:py-2.5 text-sm font-medium rounded-md bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors cursor-pointer" {
                     // Bluesky icon
                     svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 24 24" fill="currentColor" {
                         path d="M12.001 3.5c-4.31 0-7.375 3.033-7.375 6.875 0 1.643.68 2.972 1.694 4.106a7.642 7.642 0 01-.568 1.343c-.204.484-.474.976-.803 1.438.887-.132 1.691-.399 2.37-.802.476-.27.916-.6 1.294-.991a9.457 9.457 0 003.388.632c4.31 0 7.375-3.033 7.375-6.875.001-3.776-3.133-6.726-7.375-6.726zm0 12.601a8.325 8.325 0 01-2.984-.569 1.15 1.15 0 00-1.242.225 4.573 4.573 0 01-1.234.85 5.82 5.82 0 01-.742.266c.24-.33.429-.674.581-1.014.263-.591.335-1.306.072-1.94a1.065 1.065 0 00-.14-.25c-.778-.883-1.275-1.896-1.275-3.294 0-3.157 2.569-5.726 5.726-5.726 3.431 0 6.226 2.396 6.226 5.726 0 3.126-2.46 5.726-5.988 5.726z" {}
@@ -530,21 +533,21 @@ async fn about_page(_optional_user: OptionalUser, State(_state): State<AppState>
             (Heading::h1("About pfp.blue")
                 .with_color("text-indigo-700")
                 .render())
-            
+
             // About content
             div class="mt-6 space-y-6 text-gray-700" {
                 p class="leading-relaxed" {
-                    "pfp.blue was created by Corey Alexander, a software developer who goes by " 
+                    "pfp.blue was created by Corey Alexander, a software developer who goes by "
                     strong { "coreyja" } " online."
                 }
-                
+
                 p class="leading-relaxed" {
                     "I built pfp.blue to explore the Bluesky APIs and ecosystem, creating a useful tool that helps people visualize their progress right in their profile pictures."
                 }
-                
+
                 div class="mt-8 bg-blue-50 rounded-lg p-4 border border-blue-100" {
                     h3 class="text-blue-800 font-medium mb-2" { "Connect with Corey" }
-                    
+
                     ul class="space-y-2" {
                         li class="flex items-center" {
                             // Bluesky icon
@@ -554,7 +557,7 @@ async fn about_page(_optional_user: OptionalUser, State(_state): State<AppState>
                             "Bluesky: "
                             a href="https://bsky.app/profile/coreyja.com" target="_blank" class="text-blue-600 hover:underline" { "@coreyja.com" }
                         }
-                        
+
                         li class="flex items-center" {
                             // Web icon
                             svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-blue-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" {
@@ -565,7 +568,7 @@ async fn about_page(_optional_user: OptionalUser, State(_state): State<AppState>
                             "Website: "
                             a href="https://coreyja.com" target="_blank" class="text-blue-600 hover:underline" { "coreyja.com" }
                         }
-                        
+
                         li class="flex items-center" {
                             // GitHub icon
                             svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-blue-600" viewBox="0 0 24 24" fill="currentColor" {
@@ -577,7 +580,7 @@ async fn about_page(_optional_user: OptionalUser, State(_state): State<AppState>
                     }
                 }
             }
-            
+
         }).render())
     };
 
@@ -604,13 +607,13 @@ async fn privacy_policy_page(_optional_user: OptionalUser, State(_state): State<
             (Heading::h1("Privacy Policy")
                 .with_color("text-indigo-700")
                 .render())
-            
+
             // Privacy policy content
             div class="mt-6 space-y-6 text-gray-700" {
                 div class="p-4 bg-gray-50 rounded-md border border-gray-200 mb-8" {
                     p class="text-sm italic" { "Last Updated: April 1, 2025" }
                 }
-                
+
                 p class="leading-relaxed" {
                     "At pfp.blue, we take your privacy seriously. This page outlines what information we collect and how we use it."
                 }
@@ -636,7 +639,7 @@ async fn privacy_policy_page(_optional_user: OptionalUser, State(_state): State<
                     a href="https://bsky.app/profile/pfp.blue" target="_blank" class="text-blue-600 hover:underline" { "@pfp.blue" }
                 }
             }
-            
+
         }).render())
     };
 
