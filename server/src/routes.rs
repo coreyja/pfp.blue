@@ -514,7 +514,7 @@ async fn logout(
 }
 
 /// About page handler
-async fn about_page(optional_user: OptionalUser, State(_state): State<AppState>) -> Page {
+async fn about_page(_optional_user: OptionalUser, State(_state): State<AppState>) -> Page {
     use crate::components::{
         layout::{Card, ContentSection, CurvedHeader},
         ui::heading::Heading,
@@ -588,7 +588,7 @@ async fn about_page(optional_user: OptionalUser, State(_state): State<AppState>)
 }
 
 /// Privacy policy page handler
-async fn privacy_policy_page(optional_user: OptionalUser, State(_state): State<AppState>) -> Page {
+async fn privacy_policy_page(_optional_user: OptionalUser, State(_state): State<AppState>) -> Page {
     use crate::components::{
         layout::{Card, ContentSection, CurvedHeader},
         ui::heading::Heading,
