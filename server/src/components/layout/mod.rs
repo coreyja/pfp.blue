@@ -156,6 +156,8 @@ impl CurvedHeader {
 
 impl Render for CurvedHeader {
     fn render(&self) -> Markup {
+        use crate::static_assets;
+        
         html! {
             div class="relative mb-8" {
                 // The curved header background
@@ -171,9 +173,9 @@ impl Render for CurvedHeader {
                             (content.render())
                         }
                     } @else {
-                        // Default content if none provided
-                        div class="flex justify-center items-center h-16 sm:h-24 text-white" {
-                            h2 class="text-xl sm:text-2xl font-bold" { "pfp.blue" }
+                        // Default content with logo centered
+                        div class="flex justify-center items-center h-16 sm:h-24 py-4" {
+                            (static_assets::logo_img("w-12 h-12 sm:w-16 sm:h-16 shadow-md rounded-full border-2 border-white bg-white"))
                         }
                     }
                 }
