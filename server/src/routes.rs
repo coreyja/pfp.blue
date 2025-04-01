@@ -66,7 +66,6 @@ async fn root_page(optional_user: OptionalUser, State(state): State<AppState>) -
         ui::{
             button::{Button, ButtonSize, IconPosition},
             heading::Heading,
-            icon::Icon,
         },
     };
     use maud::Render;
@@ -230,7 +229,6 @@ async fn login_page(State(state): State<AppState>) -> impl IntoResponse {
         ui::{
             button::{Button, ButtonSize, IconPosition},
             heading::Heading,
-            icon::Icon,
         },
     };
     use maud::Render;
@@ -745,7 +743,8 @@ async fn admin_enqueue_job(
                 }
             };
 
-            return Page { show_header: false,
+            return Page {
+                show_header: false,
                 title: "Job Error - pfp.blue".to_string(),
                 content: Box::new(content),
             }
@@ -768,11 +767,7 @@ async fn admin_enqueue_job(
                 }
             };
 
-            Page::new(
-                "Job Enqueued - pfp.blue".to_string(),
-                Box::new(content)
-            )
-            .render()
+            Page::new("Job Enqueued - pfp.blue".to_string(), Box::new(content)).render()
         }
         Err(err) => {
             error!("Failed to enqueue job {}: {:?}", job.name(), err);
@@ -785,7 +780,8 @@ async fn admin_enqueue_job(
                 }
             };
 
-            Page { show_header: false,
+            Page {
+                show_header: false,
                 title: "Job Error - pfp.blue".to_string(),
                 content: Box::new(content),
             }
@@ -822,7 +818,8 @@ async fn admin_run_job(
                 }
             };
 
-            return Page { show_header: false,
+            return Page {
+                show_header: false,
                 title: "Job Error - pfp.blue".to_string(),
                 content: Box::new(content),
             }
@@ -845,11 +842,7 @@ async fn admin_run_job(
                 }
             };
 
-            Page::new(
-                "Job Completed - pfp.blue".to_string(),
-                Box::new(content)
-            )
-            .render()
+            Page::new("Job Completed - pfp.blue".to_string(), Box::new(content)).render()
         }
         Err(err) => {
             error!("Failed to run job {}: {:?}", job.name(), err);
@@ -862,7 +855,8 @@ async fn admin_run_job(
                 }
             };
 
-            Page { show_header: false,
+            Page {
+                show_header: false,
                 title: "Job Error - pfp.blue".to_string(),
                 content: Box::new(content),
             }

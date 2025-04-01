@@ -51,7 +51,6 @@ pub async fn profile(
             ui::{
                 button::{Button, ButtonVariant, IconPosition},
                 heading::Heading,
-                icon::Icon,
             },
         };
         use maud::Render;
@@ -204,7 +203,6 @@ async fn display_profile_multi(
             account_dropdown::AccountDropdown,
             button::{Button, ButtonVariant, IconPosition},
             heading::Heading,
-            icon::Icon,
         },
     };
     use maud::Render;
@@ -267,7 +265,7 @@ async fn display_profile_multi(
                     div class="absolute left-0 right-0 bottom-0" {
                         (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 100" class="w-full h-16 sm:h-20 fill-white"><path d="M0,64L80,69.3C160,75,320,85,480,80C640,75,800,53,960,42.7C1120,32,1280,32,1360,32L1440,32L1440,100L1360,100C1280,100,1120,100,960,100C800,100,640,100,480,100C320,100,160,100,80,100L0,100Z"></path></svg>"#))
                     }
-                    
+
                     // Logo on the right side of the header
                     div class="absolute top-4 right-4 sm:right-6" {
                         (crate::static_assets::logo_img("w-12 h-12 sm:w-16 sm:h-16 shadow-md rounded-full border-2 border-white bg-white"))

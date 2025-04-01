@@ -14,7 +14,7 @@ impl Page {
             show_header: false,
         }
     }
-    
+
     // We can add any new Page methods here if needed in the future
 }
 
@@ -147,7 +147,7 @@ impl CurvedHeader {
 impl Render for CurvedHeader {
     fn render(&self) -> Markup {
         use crate::static_assets;
-        
+
         html! {
             div class="relative mb-8" {
                 // The curved header background

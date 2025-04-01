@@ -9,7 +9,6 @@ use crate::{
             badge::{Badge, BadgeColor},
             button::{Button, ButtonVariant, IconPosition},
             heading::Heading,
-            icon::Icon,
         },
     },
     oauth::OAuthSession,
