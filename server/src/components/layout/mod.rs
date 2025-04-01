@@ -15,16 +15,7 @@ impl Page {
         }
     }
     
-    // Backward compatibility constructor that matches the old struct initialization
-    #[allow(dead_code)]
-    pub fn legacy(title: String, content: Box<dyn Render>) -> Self {
-        Self::new(title, content)
-    }
-
-    pub fn with_header(mut self) -> Self {
-        self.show_header = true;
-        self
-    }
+    // We can add any new Page methods here if needed in the future
 }
 
 impl Render for Page {
