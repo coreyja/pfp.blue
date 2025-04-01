@@ -744,7 +744,6 @@ async fn admin_enqueue_job(
             };
 
             return Page {
-                show_header: false,
                 title: "Job Error - pfp.blue".to_string(),
                 content: Box::new(content),
             }
@@ -781,7 +780,6 @@ async fn admin_enqueue_job(
             };
 
             Page {
-                show_header: false,
                 title: "Job Error - pfp.blue".to_string(),
                 content: Box::new(content),
             }
@@ -819,7 +817,6 @@ async fn admin_run_job(
             };
 
             return Page {
-                show_header: false,
                 title: "Job Error - pfp.blue".to_string(),
                 content: Box::new(content),
             }
@@ -856,7 +853,6 @@ async fn admin_run_job(
             };
 
             Page {
-                show_header: false,
                 title: "Job Error - pfp.blue".to_string(),
                 content: Box::new(content),
             }

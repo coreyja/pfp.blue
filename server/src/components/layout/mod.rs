@@ -3,16 +3,11 @@ use maud::{html, Markup, Render};
 pub struct Page {
     pub title: String,
     pub content: Box<dyn Render>,
-    pub show_header: bool,
 }
 
 impl Page {
     pub fn new(title: String, content: Box<dyn Render>) -> Self {
-        Self {
-            title,
-            content,
-            show_header: false,
-        }
+        Self { title, content }
     }
 
     // We can add any new Page methods here if needed in the future
@@ -33,30 +28,6 @@ impl Render for Page {
 
             // Main container - fullscreen on mobile, gradient background on larger screens
             div class="min-h-screen bg-white md:bg-gradient-to-br md:from-blue-100 md:via-indigo-50 md:to-purple-100 py-4 md:py-8 px-0 sm:px-4 md:px-6 lg:px-8" {
-                @if self.show_header {
-                    // Header with curved bottom and right-aligned logo
-                    div class="relative mb-8 sm:mb-10" {
-                        // The curved header background
-                        div class="relative h-24 sm:h-32 bg-gradient-to-r from-blue-500 to-indigo-600" {
-                            // Curved bottom svg
-                            div class="absolute left-0 right-0 bottom-0" {
-                                (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 100" class="w-full h-12 sm:h-16 fill-white"><path d="M0,64L80,69.3C160,75,320,85,480,80C640,75,800,53,960,42.7C1120,32,1280,32,1360,32L1440,32L1440,100L1360,100C1280,100,1120,100,960,100C800,100,640,100,480,100C320,100,160,100,80,100L0,100Z"></path></svg>"#))
-                            }
-
-                            // Site name in the header
-                            div class="flex justify-between items-center h-16 sm:h-24 text-white px-6" {
-                                // Site name on the left
-                                h2 class="text-xl sm:text-2xl font-bold" { "pfp.blue" }
-
-                                // Logo on the right
-                                div class="relative z-10" {
-                                    (static_assets::logo_img("w-12 h-12 sm:w-16 sm:h-16 shadow-md rounded-full border-2 border-white bg-white"))
-                                }
-                            }
-                        }
-                    }
-                }
-
                 (self.content.render())
 
                 // Footer credit
