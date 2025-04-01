@@ -19,18 +19,24 @@ impl Render for Page {
 
             // Main container - fullscreen on mobile, gradient background on larger screens
             div class="min-h-screen bg-white md:bg-gradient-to-br md:from-blue-100 md:via-indigo-50 md:to-purple-100 py-4 md:py-8 px-0 sm:px-4 md:px-6 lg:px-8" {
-                // Header with curved bottom and overlapping logo
-                div class="relative" {
+                // Header with curved bottom and centered logo
+                div class="relative mb-12 sm:mb-14" {
                     // The curved header background
-                    div class="h-12 sm:h-16 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-b-3xl mb-6" {
+                    div class="relative h-24 sm:h-32 bg-gradient-to-r from-blue-500 to-indigo-600" {
+                        // Curved bottom svg
                         div class="absolute left-0 right-0 bottom-0" {
-                            (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 24" class="w-full h-6 fill-white transform translate-y-1"><path d="M0,0L80,5.3C160,11,320,21,480,21.3C640,21,800,11,960,5.3C1120,0,1280,0,1360,0L1440,0L1440,24L1360,24C1280,24,1120,24,960,24C800,24,640,24,480,24C320,24,160,24,80,24L0,24Z"></path></svg>"#))
+                            (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 100" class="w-full h-12 sm:h-16 fill-white"><path d="M0,64L80,69.3C160,75,320,85,480,80C640,75,800,53,960,42.7C1120,32,1280,32,1360,32L1440,32L1440,100L1360,100C1280,100,1120,100,960,100C800,100,640,100,480,100C320,100,160,100,80,100L0,100Z"></path></svg>"#))
+                        }
+
+                        // Site name in the header
+                        div class="flex justify-center items-center h-16 sm:h-24 text-white" {
+                            h2 class="text-xl sm:text-2xl font-bold" { "pfp.blue" }
                         }
                     }
 
-                    // The overlapping logo
-                    div class="absolute top-1 left-0 right-0 flex justify-center" {
-                        (static_assets::logo_img("w-14 h-14 sm:w-16 sm:h-16 shadow-lg rounded-full border-2 border-white bg-white"))
+                    // The overlapping logo - positioned so it overlaps the bottom curve
+                    div class="absolute bottom-0 left-0 right-0 flex justify-center transform translate-y-1/2" {
+                        (static_assets::logo_img("w-16 h-16 sm:w-20 sm:h-20 shadow-lg rounded-full border-2 border-white bg-white"))
                     }
                 }
 
@@ -125,14 +131,33 @@ impl CurvedHeader {
 
 impl Render for CurvedHeader {
     fn render(&self) -> Markup {
+        use crate::static_assets;
+
         html! {
-            div class={"relative " (self.height) " bg-gradient-to-r from-blue-500 to-indigo-600"} {
-                @if let Some(content) = &self.content {
-                    (content.render())
+            div class="relative mb-12 sm:mb-14" {
+                // The curved header background
+                div class={"relative " (self.height) " bg-gradient-to-r from-blue-500 to-indigo-600"} {
+                    // Curved bottom svg
+                    div class="absolute left-0 right-0 bottom-0" {
+                        (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 100" class="w-full h-12 sm:h-16 fill-white"><path d="M0,64L80,69.3C160,75,320,85,480,80C640,75,800,53,960,42.7C1120,32,1280,32,1360,32L1440,32L1440,100L1360,100C1280,100,1120,100,960,100C800,100,640,100,480,100C320,100,160,100,80,100L0,100Z"></path></svg>"#))
+                    }
+
+                    // Content inside the header (if provided)
+                    @if let Some(content) = &self.content {
+                        div class="h-full flex items-center justify-center text-white" {
+                            (content.render())
+                        }
+                    } @else {
+                        // Default content if none provided
+                        div class="flex justify-center items-center h-16 sm:h-24 text-white" {
+                            h2 class="text-xl sm:text-2xl font-bold" { "pfp.blue" }
+                        }
+                    }
                 }
 
-                div class="absolute left-0 right-0 bottom-0" {
-                    (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 100" class="w-full h-20 fill-white"><path d="M0,64L80,69.3C160,75,320,85,480,80C640,75,800,53,960,42.7C1120,32,1280,32,1360,32L1440,32L1440,100L1360,100C1280,100,1120,100,960,100C800,100,640,100,480,100C320,100,160,100,80,100L0,100Z"></path></svg>"#))
+                // The overlapping logo - positioned so it overlaps the bottom curve
+                div class="absolute bottom-0 left-0 right-0 flex justify-center transform translate-y-1/2" {
+                    (static_assets::logo_img("w-16 h-16 sm:w-20 sm:h-20 shadow-lg rounded-full border-2 border-white bg-white"))
                 }
             }
         }
