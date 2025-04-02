@@ -21,17 +21,7 @@ struct Cli {
 // Server state to hold configured responses
 #[derive(Clone)]
 struct AppState {
-    data: Arc<Mutex<Value>>,
     port: u16,
-}
-
-impl Default for AppState {
-    fn default() -> Self {
-        Self {
-            data: Arc::new(Mutex::new(Value::Null)),
-            port: 0,
-        }
-    }
 }
 
 #[tokio::main]
@@ -42,18 +32,7 @@ async fn main() -> anyhow::Result<()> {
 
     let state = AppState {
         port: args.common.port,
-        ..Default::default()
     };
-
-    // Load fixture data if provided
-    if let Some(data_path) = &args.common.data {
-        if data_path.exists() {
-            let data = std::fs::read_to_string(data_path)?;
-            let json_data: Value = serde_json::from_str(&data)?;
-            *state.data.lock().unwrap() = json_data;
-            info!("Loaded fixture data from {}", data_path.display());
-        }
-    }
 
     let app = Router::new()
         // OAuth endpoints

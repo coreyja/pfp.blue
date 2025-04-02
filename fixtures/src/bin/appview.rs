@@ -7,9 +7,7 @@ use axum::{
 use clap::Parser;
 use fixtures::{require_env_var, run_server, FixtureArgs};
 use serde::Deserialize;
-use serde_json::{json, Value};
-use std::sync::{Arc, Mutex};
-use tracing::info;
+use serde_json::json;
 
 /// AppView fixture server
 #[derive(Parser, Debug)]
@@ -22,17 +20,7 @@ struct Cli {
 // Server state to hold configured responses
 #[derive(Clone)]
 struct AppState {
-    data: Arc<Mutex<Value>>,
     avatar_cdn_url: String,
-}
-
-impl Default for AppState {
-    fn default() -> Self {
-        Self {
-            data: Arc::new(Mutex::new(Value::Null)),
-            avatar_cdn_url: String::new(),
-        }
-    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -47,20 +35,7 @@ async fn main() -> anyhow::Result<()> {
     // Get URL of the Avatar CDN
     let avatar_cdn_url = require_env_var("AVATAR_CDN_URL", args.common.force)?;
 
-    let state = AppState {
-        avatar_cdn_url,
-        ..Default::default()
-    };
-
-    // Load fixture data if provided
-    if let Some(data_path) = &args.common.data {
-        if data_path.exists() {
-            let data = std::fs::read_to_string(data_path)?;
-            let json_data: Value = serde_json::from_str(&data)?;
-            *state.data.lock().unwrap() = json_data;
-            info!("Loaded fixture data from {}", data_path.display());
-        }
-    }
+    let state = AppState { avatar_cdn_url };
 
     let app = Router::new()
         // AppView XRPC endpoints
@@ -81,6 +56,7 @@ async fn main() -> anyhow::Result<()> {
 async fn resolve_handle(Query(params): Query<HandleResolveParams>) -> impl IntoResponse {
     let did = match params.handle.as_str() {
         "fixture-user.test" => "did:plc:abcdefg",
+        "fixture-user2.test" => "did:plc:bbbbbb",
         _ => "did:plc:unknown",
     };
 

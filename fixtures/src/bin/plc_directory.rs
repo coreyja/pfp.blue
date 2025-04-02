@@ -17,17 +17,7 @@ struct Cli {
 // Server state to hold configured responses
 #[derive(Clone)]
 struct AppState {
-    data: Arc<Mutex<Value>>,
     pds_url: String,
-}
-
-impl Default for AppState {
-    fn default() -> Self {
-        Self {
-            data: Arc::new(Mutex::new(Value::Null)),
-            pds_url: String::new(),
-        }
-    }
 }
 
 #[tokio::main]
@@ -37,20 +27,7 @@ async fn main() -> anyhow::Result<()> {
     // Get URL of the PDS fixture
     let pds_url = require_env_var("PDS_URL", args.common.force)?;
 
-    let state = AppState {
-        pds_url,
-        ..Default::default()
-    };
-
-    // Load fixture data if provided
-    if let Some(data_path) = &args.common.data {
-        if data_path.exists() {
-            let data = std::fs::read_to_string(data_path)?;
-            let json_data: Value = serde_json::from_str(&data)?;
-            *state.data.lock().unwrap() = json_data;
-            info!("Loaded fixture data from {}", data_path.display());
-        }
-    }
+    let state = AppState { pds_url };
 
     let app = Router::new()
         // PLC Directory endpoints - support multiple patterns for DID resolution
