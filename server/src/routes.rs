@@ -192,7 +192,7 @@ async fn root_page(optional_user: OptionalUser, State(state): State<AppState>) -
                 a href="https://bsky.app/profile/coreyja.com" target="_blank" class="text-indigo-600 hover:text-indigo-800 underline" {
                     "Bluesky"
                 }
-                " to with ideas or suggestions."
+                " with your ideas or suggestions."
             }
         }
     };
