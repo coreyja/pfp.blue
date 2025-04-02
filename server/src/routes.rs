@@ -268,19 +268,6 @@ async fn login_page(State(state): State<AppState>) -> impl IntoResponse {
         }
     };
 
-    // Debug info
-    let debug_info = maud::html! {
-        details class="mt-8 mx-auto bg-white/70 rounded-lg shadow-sm p-4 text-sm text-gray-600" {
-            summary class="font-medium cursor-pointer" { "Debug Information" }
-            div class="mt-2 space-y-1" {
-                p { "Client ID: " span class="font-mono text-xs bg-gray-100 px-1 py-0.5 rounded" { (state.client_id()) } }
-                p { "Redirect URI: " span class="font-mono text-xs bg-gray-100 px-1 py-0.5 rounded" { (state.redirect_uri()) } }
-                p { "Domain: " span class="font-mono text-xs bg-gray-100 px-1 py-0.5 rounded" { (state.domain) } }
-                p { "Protocol: " span class="font-mono text-xs bg-gray-100 px-1 py-0.5 rounded" { (state.protocol) } }
-            }
-        }
-    };
-
     let card_content = maud::html! {
         // Header with curved bottom
         (CurvedHeader::new("h-32").render())
@@ -289,10 +276,7 @@ async fn login_page(State(state): State<AppState>) -> impl IntoResponse {
         (ContentSection::new(login_form).render())
     };
 
-    let content = maud::html! {
-        (Card::new(card_content).with_max_width("max-w-md").render())
-        (debug_info)
-    };
+    let content = Card::new(card_content).with_max_width("max-w-md").render();
 
     Page::new("Login - pfp.blue".to_string(), Box::new(content)).render()
 }
