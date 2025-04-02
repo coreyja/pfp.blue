@@ -6,9 +6,7 @@ use axum::{
 };
 use clap::Parser;
 use fixtures::{run_server, FixtureArgs};
-use serde_json::{json, Value};
-use std::sync::{Arc, Mutex};
-use tracing::info;
+use serde_json::json;
 
 /// PDS (Personal Data Server) fixture server
 #[derive(Parser, Debug)]

@@ -2,9 +2,7 @@ use axum::{extract::State, response::IntoResponse, routing::get, Json, Router};
 use clap::Parser;
 use fixtures::{require_env_var, run_server, FixtureArgs};
 // Unused imports removed
-use serde_json::{json, Value};
-use std::sync::{Arc, Mutex};
-use tracing::info;
+use serde_json::json;
 
 /// PLC Directory fixture server
 #[derive(Parser, Debug)]

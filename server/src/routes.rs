@@ -204,7 +204,7 @@ async fn root_page(optional_user: OptionalUser, State(state): State<AppState>) -
 }
 
 /// Login page handler - displays the login form
-async fn login_page(State(state): State<AppState>) -> impl IntoResponse {
+async fn login_page() -> impl IntoResponse {
     use crate::components::{
         form::{Form, InputField},
         layout::{Card, ContentSection, CurvedHeader, Page},
