@@ -54,33 +54,31 @@ async fn resolve_did(
     axum::extract::Path(did): axum::extract::Path<String>,
 ) -> impl IntoResponse {
     println!("PLC DIRECTORY: Resolving DID: {}", did);
-    
+
     // Return different DID documents based on the requested DID
     match did.as_str() {
-        "did:plc:bbbbb" => {
-            Json(json!({
-                "@context": ["https://w3id.org/did/v1"],
-                "id": "did:plc:bbbbb",
-                "alsoKnownAs": [
-                    "at://fixture-user2.test"
-                ],
-                "verificationMethod": [
-                    {
-                        "id": "did:plc:bbbbb#atproto",
-                        "type": "EcdsaSecp256k1VerificationKey2019",
-                        "controller": "did:plc:bbbbb",
-                        "publicKeyMultibase": "zQYEBzXeuTM9UR3rfvNag6L3RNAs5pQZyYPsomTsgQhsxLdEgCiHgVDHFfv"
-                    }
-                ],
-                "service": [
-                    {
-                        "id": "#atproto_pds",
-                        "type": "AtprotoPersonalDataServer",
-                        "serviceEndpoint": state.pds_url
-                    }
-                ]
-            }))
-        },
+        "did:plc:bbbbb" => Json(json!({
+            "@context": ["https://w3id.org/did/v1"],
+            "id": "did:plc:bbbbb",
+            "alsoKnownAs": [
+                "at://fixture-user2.test"
+            ],
+            "verificationMethod": [
+                {
+                    "id": "did:plc:bbbbb#atproto",
+                    "type": "EcdsaSecp256k1VerificationKey2019",
+                    "controller": "did:plc:bbbbb",
+                    "publicKeyMultibase": "zQYEBzXeuTM9UR3rfvNag6L3RNAs5pQZyYPsomTsgQhsxLdEgCiHgVDHFfv"
+                }
+            ],
+            "service": [
+                {
+                    "id": "#atproto_pds",
+                    "type": "AtprotoPersonalDataServer",
+                    "serviceEndpoint": state.pds_url
+                }
+            ]
+        })),
         _ => {
             // Default to first user's DID document
             Json(json!({

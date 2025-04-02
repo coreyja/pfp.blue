@@ -83,7 +83,10 @@ async fn get_record(
     // Check what collection is being requested
     let default_collection = "app.bsky.actor.profile".to_string();
     let collection = params.get("collection").unwrap_or(&default_collection);
-    let repo = params.get("repo").unwrap_or(&"did:plc:abcdefg".to_string()).to_string();
+    let repo = params
+        .get("repo")
+        .unwrap_or(&"did:plc:abcdefg".to_string())
+        .to_string();
 
     match (collection.as_str(), repo.as_str()) {
         // Handle first user profile record
@@ -182,51 +185,51 @@ async fn get_blob(
 ) -> impl IntoResponse {
     // Check which blob is being requested
     let cid = params.get("cid").unwrap_or(&"".to_string()).to_string();
-    
+
     match cid.as_str() {
         // First user's profile picture (blue pixel)
         "bafyreib3hg56hnxcysikiv5rsr2okgujajrjrpz4kpf7se52jgygyz7d7u" => {
             // Blue pixel
             let image_data: &[u8] = &[
-                0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44,
-                0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90,
-                0x77, 0x53, 0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41, 0x54, 0x08, 0xD7, 0x63, 0x00,
-                0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
-                0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+                0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48,
+                0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00,
+                0x00, 0x90, 0x77, 0x53, 0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41, 0x54, 0x08,
+                0xD7, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00,
+                0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
             ];
 
             (
                 [(axum::http::header::CONTENT_TYPE, "image/png")],
                 image_data,
             )
-        },
+        }
         // Second user's profile picture (red pixel)
         "bafyreic2hxcysikiv5rsr2okgujajrjrpz4kpf7se52jgygyz7d7u" => {
             // Red pixel
             let image_data: &[u8] = &[
-                0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44,
-                0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90,
-                0x77, 0x53, 0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41, 0x54, 0x08, 0xD7, 0x63, 0x60,
-                0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0x7B, 0x38, 0xAF, 0x7A, 0x00, 0x00,
-                0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+                0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48,
+                0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00,
+                0x00, 0x90, 0x77, 0x53, 0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41, 0x54, 0x08,
+                0xD7, 0x63, 0x60, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0x7B, 0x38,
+                0xAF, 0x7A, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
             ];
-            
+
             (
                 [(axum::http::header::CONTENT_TYPE, "image/png")],
                 image_data,
             )
-        },
+        }
         // Default case for unknown CIDs (grey pixel)
         _ => {
             // Grey pixel
             let image_data: &[u8] = &[
-                0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44,
-                0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90,
-                0x77, 0x53, 0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41, 0x54, 0x08, 0xD7, 0x63, 0xF8,
-                0xCF, 0xC0, 0x00, 0x00, 0x03, 0x01, 0x01, 0x00, 0x18, 0xDD, 0x8D, 0xB0, 0x00, 0x00, 0x00,
-                0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+                0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48,
+                0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00,
+                0x00, 0x90, 0x77, 0x53, 0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41, 0x54, 0x08,
+                0xD7, 0x63, 0xF8, 0xCF, 0xC0, 0x00, 0x00, 0x03, 0x01, 0x01, 0x00, 0x18, 0xDD, 0x8D,
+                0xB0, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
             ];
-            
+
             (
                 [(axum::http::header::CONTENT_TYPE, "image/png")],
                 image_data,
@@ -239,8 +242,11 @@ async fn refresh_session(
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> impl IntoResponse {
     // Check the refresh token to determine which user is refreshing
-    let refresh_token = params.get("refreshJwt").unwrap_or(&"".to_string()).to_string();
-    
+    let refresh_token = params
+        .get("refreshJwt")
+        .unwrap_or(&"".to_string())
+        .to_string();
+
     if refresh_token.contains("user2") {
         // Return second user's session
         Json(json!({
@@ -317,7 +323,9 @@ struct AuthorizeQuery {
 // The authorization endpoint is what the browser gets redirected to
 async fn authorize(
     Query(params): Query<AuthorizeQuery>,
-    axum::extract::Query(all_params): axum::extract::Query<std::collections::HashMap<String, String>>,
+    axum::extract::Query(all_params): axum::extract::Query<
+        std::collections::HashMap<String, String>,
+    >,
 ) -> impl IntoResponse {
     println!(
         "PDS: Handling OAuth authorization request with redirect_uri: {}",
@@ -325,9 +333,12 @@ async fn authorize(
     );
 
     // The handle is passed as a scope in the form "profile.handle:fixture-user.test"
-    let scope = all_params.get("scope").unwrap_or(&"".to_string()).to_string();
+    let scope = all_params
+        .get("scope")
+        .unwrap_or(&"".to_string())
+        .to_string();
     println!("PDS: OAuth scope: {}", scope);
-    
+
     // Determine which user is being authorized based on the handle in the scope
     let auth_code = if scope.contains("fixture-user2.test") {
         println!("PDS: Authorizing as fixture-user2.test");
@@ -340,10 +351,7 @@ async fn authorize(
     // For fixtures, we'll auto-authorize and redirect back with a code
     let redirect_url = if let Some(state) = params.state {
         // Include state if provided
-        format!(
-            "{}?code={}&state={}",
-            params.redirect_uri, auth_code, state
-        )
+        format!("{}?code={}&state={}", params.redirect_uri, auth_code, state)
     } else {
         // Just code if no state
         format!("{}?code={}", params.redirect_uri, auth_code)
@@ -360,11 +368,11 @@ async fn push_authorization(
     axum::extract::Form(params): axum::extract::Form<std::collections::HashMap<String, String>>,
 ) -> impl IntoResponse {
     println!("PDS: Handling pushed authorization request");
-    
+
     // The handle is passed as a scope in the form "profile.handle:fixture-user.test"
     let scope = params.get("scope").unwrap_or(&"".to_string()).to_string();
     println!("PDS: Push authorization scope: {}", scope);
-    
+
     // Determine which user is being authorized based on the handle in the scope
     let request_uri = if scope.contains("fixture-user2.test") {
         println!("PDS: Using request URI for fixture-user2.test");
@@ -373,7 +381,7 @@ async fn push_authorization(
         println!("PDS: Using request URI for fixture-user.test");
         "urn:fixture:auth:12345"
     };
-    
+
     // Return a request URI that the client will redirect to
     Json(json!({
         "request_uri": request_uri,
@@ -388,12 +396,18 @@ async fn get_token(
     println!("PDS: Handling token request");
 
     // Check various params to determine which user is authenticating
-    let code = params.get("code").unwrap_or(&"fixture_auth_code_12345".to_string()).to_string();
-    let request_uri = params.get("request_uri").unwrap_or(&"".to_string()).to_string();
-    
+    let code = params
+        .get("code")
+        .unwrap_or(&"fixture_auth_code_12345".to_string())
+        .to_string();
+    let request_uri = params
+        .get("request_uri")
+        .unwrap_or(&"".to_string())
+        .to_string();
+
     // Check both code and request_uri for user2 identifiers
     let is_user2 = code == "fixture_auth_code_user2" || request_uri.contains("user2");
-    
+
     if is_user2 {
         println!("PDS: Issuing tokens for fixture-user2.test");
         // Return tokens for the second user
