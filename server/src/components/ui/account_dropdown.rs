@@ -88,7 +88,7 @@ impl Render for AccountDropdown {
                     // Actions section
                     div class="py-1" {
                         // Add new account option
-                        a href="/oauth/bsky/authorize" class="flex items-center px-3 sm:px-4 py-2 text-sm text-indigo-700 hover:bg-indigo-50 transition-colors duration-150" {
+                        a href="/login" class="flex items-center px-3 sm:px-4 py-2 text-sm text-indigo-700 hover:bg-indigo-50 transition-colors duration-150" {
                             // Plus icon
                             div class="w-5 text-indigo-600 mr-2 sm:mr-3 flex-shrink-0" {
                                 svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" {

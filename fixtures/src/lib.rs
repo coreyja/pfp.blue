@@ -2,7 +2,6 @@ use axum::Router;
 use clap::Parser;
 use std::env;
 use std::net::SocketAddr;
-use std::path::PathBuf;
 use tower_http::trace::TraceLayer;
 use tracing::{error, info};
 
@@ -16,10 +15,6 @@ pub struct FixtureArgs {
     /// The host to bind to
     #[arg(short = 'H', long, default_value = "127.0.0.1")]
     pub host: String,
-
-    /// Path to JSON file with fixture data
-    #[arg(short, long)]
-    pub data: Option<PathBuf>,
 
     /// Force allow running without required environment variables (for development)
     #[arg(long)]

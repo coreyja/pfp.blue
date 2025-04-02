@@ -183,34 +183,16 @@ async fn root_page(optional_user: OptionalUser, State(state): State<AppState>) -
                         "📊",
                         FeatureCardColor::Blue
                     ).render())
-
-                    (FeatureCard::new(
-                        "Multiple Accounts",
-                        "Easily manage and switch between all your Bluesky accounts",
-                        "🔄",
-                        FeatureCardColor::Indigo
-                    ).render())
-
-                    (FeatureCard::new(
-                        "Secure Access",
-                        "Industry-standard OAuth for safe and private authorization",
-                        "🔐",
-                        FeatureCardColor::Purple
-                    ).render())
-
-                    (FeatureCard::new(
-                        "Free to Use",
-                        "All features are completely free and open to everyone",
-                        "✨",
-                        FeatureCardColor::Pink
-                    ).render())
                 }
             }
 
-            // Coming soon section - improved for mobile
             div class="mt-8 sm:mt-10 p-4 sm:p-5 bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg sm:rounded-xl border border-purple-100 shadow-sm" {
                 h3 class="text-base sm:text-lg font-medium text-purple-800" { "Coming Soon" }
-                p class="text-xs sm:text-sm text-gray-700 mt-1 sm:mt-2" { "More profile customization options and enhanced features!" }
+                p class="text-xs sm:text-sm text-gray-700 mt-1 sm:mt-2" { "More profile customization! Reach out on" }
+                a href="https://bsky.app/profile/coreyja.com" target="_blank" class="text-indigo-600 hover:text-indigo-800 underline" {
+                    "Bluesky"
+                }
+                " with your ideas or suggestions."
             }
         }
     };
@@ -222,7 +204,7 @@ async fn root_page(optional_user: OptionalUser, State(state): State<AppState>) -
 }
 
 /// Login page handler - displays the login form
-async fn login_page(State(state): State<AppState>) -> impl IntoResponse {
+async fn login_page() -> impl IntoResponse {
     use crate::components::{
         form::{Form, InputField},
         layout::{Card, ContentSection, CurvedHeader, Page},
@@ -286,19 +268,6 @@ async fn login_page(State(state): State<AppState>) -> impl IntoResponse {
         }
     };
 
-    // Debug info
-    let debug_info = maud::html! {
-        details class="mt-8 mx-auto bg-white/70 rounded-lg shadow-sm p-4 text-sm text-gray-600" {
-            summary class="font-medium cursor-pointer" { "Debug Information" }
-            div class="mt-2 space-y-1" {
-                p { "Client ID: " span class="font-mono text-xs bg-gray-100 px-1 py-0.5 rounded" { (state.client_id()) } }
-                p { "Redirect URI: " span class="font-mono text-xs bg-gray-100 px-1 py-0.5 rounded" { (state.redirect_uri()) } }
-                p { "Domain: " span class="font-mono text-xs bg-gray-100 px-1 py-0.5 rounded" { (state.domain) } }
-                p { "Protocol: " span class="font-mono text-xs bg-gray-100 px-1 py-0.5 rounded" { (state.protocol) } }
-            }
-        }
-    };
-
     let card_content = maud::html! {
         // Header with curved bottom
         (CurvedHeader::new("h-32").render())
@@ -307,10 +276,7 @@ async fn login_page(State(state): State<AppState>) -> impl IntoResponse {
         (ContentSection::new(login_form).render())
     };
 
-    let content = maud::html! {
-        (Card::new(card_content).with_max_width("max-w-md").render())
-        (debug_info)
-    };
+    let content = Card::new(card_content).with_max_width("max-w-md").render();
 
     Page::new("Login - pfp.blue".to_string(), Box::new(content)).render()
 }
@@ -593,7 +559,7 @@ async fn privacy_policy_page(_optional_user: OptionalUser, State(_state): State<
             // Privacy policy content
             div class="mt-6 space-y-6 text-gray-700" {
                 div class="p-4 bg-gray-50 rounded-md border border-gray-200 mb-8" {
-                    p class="text-sm italic" { "Last Updated: April 1, 2025" }
+                    p class="text-sm italic" { "Last Updated: April 2, 2025" }
                 }
 
                 p class="leading-relaxed" {
@@ -607,7 +573,7 @@ async fn privacy_policy_page(_optional_user: OptionalUser, State(_state): State<
                 ul class="list-disc ml-6 space-y-1 mt-2" {
                     li { "Your Bluesky handle and DID" }
                     li { "OAuth tokens to authenticate with Bluesky" }
-                    li { "Your original profile picture (stored on Bluesky's servers, not ours)" }
+                    li { "Your original profile picture (stored on your PDS, not our servers)" }
                 }
 
                 h3 class="text-lg font-medium text-indigo-700 mt-6" { "How We Use Your Information" }

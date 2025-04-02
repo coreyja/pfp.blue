@@ -80,7 +80,7 @@ impl Render for InputField {
                 @if let Some(icon) = &self.icon {
                     div class="relative" {
                         div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none" {
-                            (maud::PreEscaped(icon))
+                            i class=(icon) {}
                         }
                         input
                             type=(self.input_type)
