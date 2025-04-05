@@ -451,6 +451,7 @@ async fn logout(
     cookies: Cookies,
 ) -> ServerResult<impl IntoResponse, StatusCode> {
     // End the session
+    let cookies = cookies.private(&state.cookie_key);
     crate::auth::end_session(&state, &cookies)
         .await
         .wrap_err("Failed to end user session")?;

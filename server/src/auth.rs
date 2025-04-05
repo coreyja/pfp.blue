@@ -172,7 +172,7 @@ impl FromRequestParts<AppState> for OptionalUser {
 }
 
 /// Get the session ID from the cookie
-pub fn get_session_id_from_cookie(cookies: &PrivateCookies) -> Option<Uuid> {
+pub fn get_session_id_from_cookie(cookies: &PrivateCookies<'_>) -> Option<Uuid> {
     cookies
         .get(SESSION_COOKIE_NAME)
         .and_then(|cookie| cookie.value().parse::<Uuid>().ok())
@@ -244,8 +244,7 @@ pub async fn create_session_and_set_cookie(
 }
 
 /// Clear the session cookie and invalidate the session in the database
-pub async fn end_session(state: &AppState, cookies: &Cookies) -> cja::Result<()> {
-    let cookies = cookies.private(&state.cookie_key);
+pub async fn end_session(state: &AppState, cookies: &PrivateCookies<'_>) -> cja::Result<()> {
     if let Some(session_id) = get_session_id_from_cookie(&cookies) {
         if let Ok(Some(mut session)) = Session::get_by_id(state.db(), session_id).await {
             session

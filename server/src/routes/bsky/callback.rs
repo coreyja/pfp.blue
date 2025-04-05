@@ -5,7 +5,7 @@ use axum::{
 };
 use cja::{app_state::AppState as _, jobs::Job};
 use serde::Deserialize;
-use tower_cookies::Cookies;
+use tower_cookies::{Cookies, PrivateCookies};
 use tracing::{error, info};
 use uuid::Uuid;
 
@@ -143,13 +143,12 @@ async fn get_or_create_user_id_for_token(
 
 /// Helper function to create a user session if needed
 async fn ensure_user_session(
-    cookies: &Cookies,
+    cookies: &PrivateCookies<'_>,
     state: &AppState,
     user_id: uuid::Uuid,
     token_set: &OAuthTokenSet,
 ) -> Result<(), (StatusCode, String)> {
     // Check if we already have a session
-    let cookies = cookies.private(&state.cookie_key);
     let have_session = if let Some(session_id) = crate::auth::get_session_id_from_cookie(&cookies) {
         matches!(
             crate::auth::validate_session(state.db(), session_id).await,
@@ -194,9 +193,11 @@ async fn ensure_user_session(
 }
 
 /// Check if there's an existing user session and return user ID if found
-async fn check_existing_user_session(cookies: &Cookies, state: &AppState) -> Option<uuid::Uuid> {
-    let cookies = cookies.private(&state.cookie_key);
-    if let Some(session_id) = crate::auth::get_session_id_from_cookie(&cookies) {
+async fn check_existing_user_session(
+    cookies: &PrivateCookies<'_>,
+    state: &AppState,
+) -> Option<uuid::Uuid> {
+    if let Some(session_id) = crate::auth::get_session_id_from_cookie(cookies) {
         match crate::auth::validate_session(state.db(), session_id).await {
             Ok(Some(user_session)) => {
                 // User is already logged in, get their ID
@@ -224,6 +225,8 @@ pub async fn callback(
     cookies: Cookies,
     Query(params): Query<CallbackParams>,
 ) -> impl IntoResponse {
+    let cookies = cookies.private(&state.cookie_key);
+
     // Use the consistent helpers
     let client_id = state.client_id();
     let redirect_uri = state.redirect_uri();
