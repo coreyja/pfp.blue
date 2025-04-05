@@ -1,3 +1,4 @@
+use crate::cookies::{Cookie, CookieJar};
 use axum::{
     extract::{Query, State},
     http::StatusCode,
@@ -5,7 +6,6 @@ use axum::{
 };
 use color_eyre::eyre::WrapErr;
 use serde::Deserialize;
-use tower_cookies::{Cookie, Cookies};
 use tracing::info;
 
 use crate::{
@@ -27,7 +27,7 @@ pub struct AuthParams {
 /// Start the Bluesky OAuth flow
 pub async fn authorize(
     State(state): State<AppState>,
-    cookies: Cookies,
+    cookies: CookieJar,
     Query(params): Query<AuthParams>,
 ) -> ServerResult<impl IntoResponse, StatusCode> {
     // Use the helpers for consistent values
@@ -114,12 +114,11 @@ pub struct SetPrimaryAccountParams {
 /// Set a specific Bluesky account as the primary one
 pub async fn set_primary_account(
     State(state): State<AppState>,
-    cookies: Cookies,
+    cookies: CookieJar,
     crate::auth::AuthUser(user): crate::auth::AuthUser,
     Query(params): Query<SetPrimaryAccountParams>,
 ) -> impl IntoResponse {
     // Get the session
-    let cookies = cookies.private(&state.cookie_key);
     let session_id = match crate::auth::get_session_id_from_cookie(&cookies) {
         Some(id) => id,
         None => {

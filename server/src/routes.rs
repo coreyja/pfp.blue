@@ -1,6 +1,7 @@
 use crate::{
     auth::{AdminUser, AuthUser, OptionalUser},
     components::layout::Page,
+    cookies::CookieJar,
     errors::{ServerResult, WithRedirect},
     profile_progress::ProfilePictureProgress,
     state::AppState,
@@ -18,7 +19,6 @@ use cja::jobs::Job as _;
 use color_eyre::eyre::{eyre, WrapErr};
 use serde::Deserialize;
 use std::collections::HashMap;
-use tower_cookies::Cookies;
 use tracing::{error, info};
 use uuid::Uuid;
 
@@ -448,10 +448,9 @@ async fn validate_token_ownership(state: &AppState, did: &str, user_id: Uuid) ->
 /// Logout route - clears authentication cookies and redirects to home
 async fn logout(
     State(state): State<AppState>,
-    cookies: Cookies,
+    cookies: CookieJar,
 ) -> ServerResult<impl IntoResponse, StatusCode> {
     // End the session
-    let cookies = cookies.private(&state.cookie_key);
     crate::auth::end_session(&state, &cookies)
         .await
         .wrap_err("Failed to end user session")?;

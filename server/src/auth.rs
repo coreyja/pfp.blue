@@ -7,11 +7,12 @@ use axum::{
 use cja::app_state::AppState as _;
 use color_eyre::eyre::eyre;
 use time::Duration;
-use tower_cookies::{Cookie, Cookies, PrivateCookies};
 use tracing::{error, info};
 use uuid::Uuid;
 
 use crate::{
+    cookies::Cookie,
+    cookies::CookieJar,
     state::AppState,
     user::{Session, User},
 };
@@ -34,14 +35,13 @@ impl FromRequestParts<AppState> for AuthUser {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
-        let cookies = match Cookies::from_request_parts(parts, state).await {
+        let cookies = match CookieJar::from_request_parts(parts, state).await {
             Ok(cookies) => cookies,
             Err(_) => {
                 error!("Failed to extract cookies from request");
                 return Err(StatusCode::INTERNAL_SERVER_ERROR.into_response());
             }
         };
-        let cookies = cookies.private(&state.cookie_key);
 
         // Check if we have a session cookie
         let session_id = match get_session_id_from_cookie(&cookies) {
@@ -128,14 +128,13 @@ impl FromRequestParts<AppState> for OptionalUser {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
-        let cookies = match Cookies::from_request_parts(parts, state).await {
+        let cookies = match CookieJar::from_request_parts(parts, state).await {
             Ok(cookies) => cookies,
             Err(_) => {
                 error!("Failed to extract cookies from request");
                 return Err(StatusCode::INTERNAL_SERVER_ERROR.into_response());
             }
         };
-        let cookies = cookies.private(&state.cookie_key);
 
         // Check if we have a session cookie
         let session_id = match get_session_id_from_cookie(&cookies) {
@@ -172,7 +171,7 @@ impl FromRequestParts<AppState> for OptionalUser {
 }
 
 /// Get the session ID from the cookie
-pub fn get_session_id_from_cookie(cookies: &PrivateCookies<'_>) -> Option<Uuid> {
+pub fn get_session_id_from_cookie(cookies: &CookieJar) -> Option<Uuid> {
     cookies
         .get(SESSION_COOKIE_NAME)
         .and_then(|cookie| cookie.value().parse::<Uuid>().ok())
@@ -201,8 +200,8 @@ pub async fn validate_session(
 }
 
 /// Creates a session cookie for the given session ID
-fn create_session_cookie(session_id: Uuid, duration_days: i64) -> Cookie<'static> {
-    let mut cookie = Cookie::new(SESSION_COOKIE_NAME, session_id.to_string());
+fn create_session_cookie(session_id: Uuid, duration_days: i64) -> crate::cookies::Cookie<'static> {
+    let mut cookie = crate::cookies::Cookie::new(SESSION_COOKIE_NAME, session_id.to_string());
     cookie.set_path("/");
     cookie.set_http_only(true);
     cookie.set_secure(std::env::var("PROTO").ok() == Some("https".to_owned()));
@@ -213,7 +212,7 @@ fn create_session_cookie(session_id: Uuid, duration_days: i64) -> Cookie<'static
 /// Create a new session for a user and set a cookie
 pub async fn create_session_and_set_cookie(
     state: &AppState,
-    cookies: &PrivateCookies<'_>,
+    cookies: &CookieJar,
     user_id: Uuid,
     user_agent: Option<String>,
     ip_address: Option<String>,
@@ -244,8 +243,8 @@ pub async fn create_session_and_set_cookie(
 }
 
 /// Clear the session cookie and invalidate the session in the database
-pub async fn end_session(state: &AppState, cookies: &PrivateCookies<'_>) -> cja::Result<()> {
-    if let Some(session_id) = get_session_id_from_cookie(&cookies) {
+pub async fn end_session(state: &AppState, cookies: &CookieJar) -> cja::Result<()> {
+    if let Some(session_id) = get_session_id_from_cookie(cookies) {
         if let Ok(Some(mut session)) = Session::get_by_id(state.db(), session_id).await {
             session
                 .invalidate(state.db())
@@ -263,7 +262,7 @@ pub async fn end_session(state: &AppState, cookies: &PrivateCookies<'_>) -> cja:
     cookie.set_http_only(true);
     cookie.set_secure(std::env::var("PROTO").ok() == Some("https".to_owned()));
 
-    cookies.add(cookie);
+    cookies.remove(cookie);
     info!("Session cookie removed");
 
     Ok(())

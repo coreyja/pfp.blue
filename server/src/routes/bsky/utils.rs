@@ -11,6 +11,7 @@ use crate::{
             heading::Heading,
         },
     },
+    cookies::CookieJar,
     oauth::OAuthSession,
     state::AppState,
 };
@@ -118,7 +119,7 @@ pub fn handle_missing_code_error(
 /// Helper function to get session ID from state or cookie
 pub async fn get_session_id_and_data(
     state_param: Option<&str>,
-    cookies: &tower_cookies::PrivateCookies<'_>,
+    cookies: &CookieJar,
     app_state: &AppState,
 ) -> Result<(Uuid, OAuthSession), (axum::http::StatusCode, String)> {
     // Get the session ID from the state parameter or the cookie
