@@ -1,6 +1,7 @@
 use crate::{
     auth::{AdminUser, AuthUser, OptionalUser},
     components::layout::Page,
+    cookies::CookieJar,
     errors::{ServerResult, WithRedirect},
     profile_progress::ProfilePictureProgress,
     state::AppState,
@@ -18,7 +19,6 @@ use cja::jobs::Job as _;
 use color_eyre::eyre::{eyre, WrapErr};
 use serde::Deserialize;
 use std::collections::HashMap;
-use tower_cookies::{Cookie, Cookies};
 use tracing::{error, info};
 use uuid::Uuid;
 
@@ -448,24 +448,12 @@ async fn validate_token_ownership(state: &AppState, did: &str, user_id: Uuid) ->
 /// Logout route - clears authentication cookies and redirects to home
 async fn logout(
     State(state): State<AppState>,
-    cookies: Cookies,
+    cookies: CookieJar,
 ) -> ServerResult<impl IntoResponse, StatusCode> {
     // End the session
-    crate::auth::end_session(&state.db, &cookies)
+    crate::auth::end_session(&state, &cookies)
         .await
         .wrap_err("Failed to end user session")?;
-
-    // Also clear the old legacy cookie if it exists
-    if let Some(_cookie) = cookies.get(bsky::AUTH_DID_COOKIE) {
-        let mut remove_cookie = Cookie::new(bsky::AUTH_DID_COOKIE, "");
-        remove_cookie.set_path("/");
-        remove_cookie.set_max_age(time::Duration::seconds(-1));
-        remove_cookie.set_http_only(true);
-        remove_cookie.set_secure(std::env::var("PROTO").ok() == Some("https".to_owned()));
-
-        cookies.add(remove_cookie);
-        info!("Removed legacy auth cookie");
-    }
 
     // Redirect to home page
     info!("User logged out successfully");
