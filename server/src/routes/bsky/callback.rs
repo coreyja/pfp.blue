@@ -14,8 +14,8 @@ use crate::{
     state::AppState,
 };
 
-use super::{
-    utils::{self, extract_dpop_nonce_from_error, handle_missing_code_error, handle_oauth_error},
+use super::utils::{
+    self, extract_dpop_nonce_from_error, handle_missing_code_error, handle_oauth_error,
 };
 
 #[derive(Deserialize)]
