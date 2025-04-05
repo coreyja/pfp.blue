@@ -5,7 +5,7 @@ use axum::{
 };
 use cja::{app_state::AppState as _, jobs::Job};
 use serde::Deserialize;
-use tower_cookies::{Cookie, Cookies};
+use tower_cookies::Cookies;
 use tracing::{error, info};
 use uuid::Uuid;
 

@@ -18,7 +18,7 @@ use cja::jobs::Job as _;
 use color_eyre::eyre::{eyre, WrapErr};
 use serde::Deserialize;
 use std::collections::HashMap;
-use tower_cookies::{Cookie, Cookies};
+use tower_cookies::Cookies;
 use tracing::{error, info};
 use uuid::Uuid;
 
