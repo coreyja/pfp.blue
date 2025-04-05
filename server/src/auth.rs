@@ -4,9 +4,10 @@ use axum::{
     http::{request::Parts, StatusCode},
     response::{IntoResponse, Redirect, Response},
 };
+use cja::app_state::AppState as _;
 use color_eyre::eyre::eyre;
 use time::Duration;
-use tower_cookies::{Cookie, Cookies};
+use tower_cookies::{Cookie, Cookies, PrivateCookies};
 use tracing::{error, info};
 use uuid::Uuid;
 
@@ -40,6 +41,7 @@ impl FromRequestParts<AppState> for AuthUser {
                 return Err(StatusCode::INTERNAL_SERVER_ERROR.into_response());
             }
         };
+        let cookies = cookies.private(&state.cookie_key);
 
         // Check if we have a session cookie
         let session_id = match get_session_id_from_cookie(&cookies) {
@@ -133,6 +135,7 @@ impl FromRequestParts<AppState> for OptionalUser {
                 return Err(StatusCode::INTERNAL_SERVER_ERROR.into_response());
             }
         };
+        let cookies = cookies.private(&state.cookie_key);
 
         // Check if we have a session cookie
         let session_id = match get_session_id_from_cookie(&cookies) {
@@ -169,7 +172,7 @@ impl FromRequestParts<AppState> for OptionalUser {
 }
 
 /// Get the session ID from the cookie
-pub fn get_session_id_from_cookie(cookies: &Cookies) -> Option<Uuid> {
+pub fn get_session_id_from_cookie(cookies: &PrivateCookies) -> Option<Uuid> {
     cookies
         .get(SESSION_COOKIE_NAME)
         .and_then(|cookie| cookie.value().parse::<Uuid>().ok())
@@ -209,8 +212,8 @@ fn create_session_cookie(session_id: Uuid, duration_days: i64) -> Cookie<'static
 
 /// Create a new session for a user and set a cookie
 pub async fn create_session_and_set_cookie(
-    pool: &sqlx::PgPool,
-    cookies: &Cookies,
+    state: &AppState,
+    cookies: &PrivateCookies<'_>,
     user_id: Uuid,
     user_agent: Option<String>,
     ip_address: Option<String>,
@@ -220,7 +223,7 @@ pub async fn create_session_and_set_cookie(
 
     // Create a new session
     let session = Session::create(
-        pool,
+        state.db(),
         user_id,
         user_agent,
         ip_address,
@@ -241,11 +244,12 @@ pub async fn create_session_and_set_cookie(
 }
 
 /// Clear the session cookie and invalidate the session in the database
-pub async fn end_session(pool: &sqlx::PgPool, cookies: &Cookies) -> cja::Result<()> {
-    if let Some(session_id) = get_session_id_from_cookie(cookies) {
-        if let Ok(Some(mut session)) = Session::get_by_id(pool, session_id).await {
+pub async fn end_session(state: &AppState, cookies: &Cookies) -> cja::Result<()> {
+    let cookies = cookies.private(&state.cookie_key);
+    if let Some(session_id) = get_session_id_from_cookie(&cookies) {
+        if let Ok(Some(mut session)) = Session::get_by_id(state.db(), session_id).await {
             session
-                .invalidate(pool)
+                .invalidate(state.db())
                 .await
                 .map_err(|e| eyre!("Failed to invalidate session {}: {}", session_id, e))?;
 

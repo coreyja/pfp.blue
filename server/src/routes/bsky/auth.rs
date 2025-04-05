@@ -119,6 +119,7 @@ pub async fn set_primary_account(
     Query(params): Query<SetPrimaryAccountParams>,
 ) -> impl IntoResponse {
     // Get the session
+    let cookies = cookies.private(&state.cookie_key);
     let session_id = match crate::auth::get_session_id_from_cookie(&cookies) {
         Some(id) => id,
         None => {

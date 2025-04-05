@@ -16,6 +16,8 @@ pub async fn profile(
     cookies: Cookies,
     crate::auth::AuthUser(user): crate::auth::AuthUser,
 ) -> impl IntoResponse {
+    let cookies = cookies.private(&state.cookie_key);
+
     // Get all tokens for this user
     let tokens = match oauth::db::get_tokens_for_user(&state, user.user_id).await {
         Ok(tokens) => tokens,

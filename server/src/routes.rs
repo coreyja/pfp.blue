@@ -451,21 +451,9 @@ async fn logout(
     cookies: Cookies,
 ) -> ServerResult<impl IntoResponse, StatusCode> {
     // End the session
-    crate::auth::end_session(&state.db, &cookies)
+    crate::auth::end_session(&state, &cookies)
         .await
         .wrap_err("Failed to end user session")?;
-
-    // Also clear the old legacy cookie if it exists
-    if let Some(_cookie) = cookies.get(bsky::AUTH_DID_COOKIE) {
-        let mut remove_cookie = Cookie::new(bsky::AUTH_DID_COOKIE, "");
-        remove_cookie.set_path("/");
-        remove_cookie.set_max_age(time::Duration::seconds(-1));
-        remove_cookie.set_http_only(true);
-        remove_cookie.set_secure(std::env::var("PROTO").ok() == Some("https".to_owned()));
-
-        cookies.add(remove_cookie);
-        info!("Removed legacy auth cookie");
-    }
 
     // Redirect to home page
     info!("User logged out successfully");
