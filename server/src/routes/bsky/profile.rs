@@ -5,7 +5,9 @@ use sqlx::Row;
 use tracing::error;
 
 use crate::{
-    cookies::CookieJar, oauth::{self, OAuthTokenSet}, state::AppState
+    cookies::CookieJar,
+    oauth::{self, OAuthTokenSet},
+    state::AppState,
 };
 
 /// Profile page that requires authentication

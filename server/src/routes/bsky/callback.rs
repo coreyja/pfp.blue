@@ -149,7 +149,7 @@ async fn ensure_user_session(
     token_set: &OAuthTokenSet,
 ) -> Result<(), (StatusCode, String)> {
     // Check if we already have a session
-    let have_session = if let Some(session_id) = crate::auth::get_session_id_from_cookie(&cookies) {
+    let have_session = if let Some(session_id) = crate::auth::get_session_id_from_cookie(cookies) {
         matches!(
             crate::auth::validate_session(state.db(), session_id).await,
             Ok(Some(_))
@@ -175,7 +175,7 @@ async fn ensure_user_session(
         };
 
         if let Err(err) = crate::auth::create_session_and_set_cookie(
-            state, &cookies, user_id, None,     // User agent
+            state, cookies, user_id, None,     // User agent
             None,     // IP address
             token_id, // Set this token as primary
         )
