@@ -3,20 +3,19 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Redirect},
 };
-use cja::jobs::Job;
+use cja::{app_state::AppState as _, jobs::Job};
 use serde::Deserialize;
-use tower_cookies::{Cookie, Cookies};
 use tracing::{error, info};
 use uuid::Uuid;
 
 use crate::{
+    cookies::CookieJar,
     oauth::{self, OAuthTokenSet},
     state::AppState,
 };
 
-use super::{
-    utils::{self, extract_dpop_nonce_from_error, handle_missing_code_error, handle_oauth_error},
-    AUTH_DID_COOKIE,
+use super::utils::{
+    self, extract_dpop_nonce_from_error, handle_missing_code_error, handle_oauth_error,
 };
 
 #[derive(Deserialize)]
@@ -144,15 +143,15 @@ async fn get_or_create_user_id_for_token(
 
 /// Helper function to create a user session if needed
 async fn ensure_user_session(
-    cookies: &Cookies,
-    db_pool: &sqlx::PgPool,
+    cookies: &CookieJar,
+    state: &AppState,
     user_id: uuid::Uuid,
     token_set: &OAuthTokenSet,
 ) -> Result<(), (StatusCode, String)> {
     // Check if we already have a session
     let have_session = if let Some(session_id) = crate::auth::get_session_id_from_cookie(cookies) {
         matches!(
-            crate::auth::validate_session(db_pool, session_id).await,
+            crate::auth::validate_session(state.db(), session_id).await,
             Ok(Some(_))
         )
     } else {
@@ -168,7 +167,7 @@ async fn ensure_user_session(
             "#,
             &token_set.did
         )
-        .fetch_optional(db_pool)
+        .fetch_optional(state.db())
         .await
         {
             Ok(Some(row)) => Some(row.uuid_id),
@@ -176,7 +175,7 @@ async fn ensure_user_session(
         };
 
         if let Err(err) = crate::auth::create_session_and_set_cookie(
-            db_pool, cookies, user_id, None,     // User agent
+            state, cookies, user_id, None,     // User agent
             None,     // IP address
             token_id, // Set this token as primary
         )
@@ -194,15 +193,12 @@ async fn ensure_user_session(
 }
 
 /// Check if there's an existing user session and return user ID if found
-async fn check_existing_user_session(
-    cookies: &Cookies,
-    db_pool: &sqlx::PgPool,
-) -> Option<uuid::Uuid> {
+async fn check_existing_user_session(cookies: &CookieJar, state: &AppState) -> Option<uuid::Uuid> {
     if let Some(session_id) = crate::auth::get_session_id_from_cookie(cookies) {
-        match crate::auth::validate_session(db_pool, session_id).await {
+        match crate::auth::validate_session(state.db(), session_id).await {
             Ok(Some(user_session)) => {
                 // User is already logged in, get their ID
-                match user_session.get_user(db_pool).await {
+                match user_session.get_user(state.db()).await {
                     Ok(Some(user)) => {
                         info!(
                             "Found existing user session, linking new account to user_id: {}",
@@ -223,7 +219,7 @@ async fn check_existing_user_session(
 /// Handle the OAuth callback - main entry point
 pub async fn callback(
     State(state): State<AppState>,
-    cookies: Cookies,
+    cookies: CookieJar,
     Query(params): Query<CallbackParams>,
 ) -> impl IntoResponse {
     // Use the consistent helpers
@@ -286,7 +282,7 @@ pub async fn callback(
     };
 
     // Check if there's an existing user session
-    let current_user_id = check_existing_user_session(&cookies, &state.db).await;
+    let current_user_id = check_existing_user_session(&cookies, &state).await;
 
     // Create a token set with JWK thumbprint and user_id if we have one
     let mut token_set = match OAuthTokenSet::from_token_response_with_jwk(
@@ -339,20 +335,10 @@ pub async fn callback(
     };
 
     // Ensure we have a user session
-    if let Err((status, message)) =
-        ensure_user_session(&cookies, &state.db, user_id, &token_set).await
+    if let Err((status, message)) = ensure_user_session(&cookies, &state, user_id, &token_set).await
     {
         return (status, message).into_response();
     }
-
-    // For backward compatibility, also set the legacy DID cookie
-    let mut legacy_cookie = Cookie::new(AUTH_DID_COOKIE, session.did.clone());
-    legacy_cookie.set_path("/");
-    legacy_cookie.set_max_age(time::Duration::days(30));
-    legacy_cookie.set_http_only(true);
-    legacy_cookie.set_secure(true);
-
-    cookies.add(legacy_cookie);
 
     // Redirect to the profile page
     info!("Setting auth cookies and redirecting to /me");

@@ -18,6 +18,3 @@ pub use client_metadata::*;
 pub use profile::*;
 pub use tokens::*;
 pub use utils::*;
-
-/// Cookie name for storing the user's DID
-pub const AUTH_DID_COOKIE: &str = "pfp_auth_did";
