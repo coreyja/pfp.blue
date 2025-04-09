@@ -25,7 +25,6 @@ impl InputField {
         }
     }
 
-    
     pub fn label(mut self, label: &str) -> Self {
         self.label = Some(label.to_string());
         self
@@ -41,7 +40,6 @@ impl InputField {
         self
     }
 
-    
     pub fn input_type(mut self, input_type: &str) -> Self {
         self.input_type = input_type.to_string();
         self
@@ -149,7 +147,6 @@ pub struct ToggleSwitch {
 }
 
 impl ToggleSwitch {
-    
     pub fn new(name: &str, label: &str, checked: bool) -> Self {
         Self {
             name: name.to_string(),
@@ -159,7 +156,6 @@ impl ToggleSwitch {
         }
     }
 
-    
     pub fn description(mut self, description: &str) -> Self {
         self.description = Some(description.to_string());
         self

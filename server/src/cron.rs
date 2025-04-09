@@ -6,7 +6,6 @@ use tracing::{error, info};
 
 use crate::{jobs::UpdateProfilePictureProgressJob, oauth, state::AppState};
 
-
 fn cron_registry() -> CronRegistry<AppState> {
     let mut registry = CronRegistry::new();
 
@@ -40,7 +39,6 @@ fn cron_registry() -> CronRegistry<AppState> {
 
     registry
 }
-
 
 pub(crate) async fn run_cron(app_state: AppState) -> cja::Result<()> {
     Ok(Worker::new(app_state, cron_registry()).run().await?)

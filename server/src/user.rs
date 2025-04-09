@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 /// Represents a user in the system
 #[derive(Debug, Clone)]
- // Fields needed for database operations
+// Fields needed for database operations
 pub struct User {
     /// Unique user ID (matches database column 'id')
     pub user_id: Uuid,
@@ -24,7 +24,7 @@ pub struct User {
 
 /// Represents a session for authenticated users
 #[derive(Debug, Clone)]
- // Fields needed for database operations
+// Fields needed for database operations
 pub struct Session {
     /// Unique session ID (used in cookies)
     pub session_id: Uuid,

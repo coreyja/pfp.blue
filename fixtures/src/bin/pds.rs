@@ -308,15 +308,14 @@ use axum::extract::Query;
 
 #[derive(Debug, serde::Deserialize)]
 struct AuthorizeQuery {
-    
     client_id: String,
     redirect_uri: String,
     state: Option<String>,
-    
+
     code_challenge: Option<String>,
-    
+
     code_challenge_method: Option<String>,
-    
+
     response_type: Option<String>,
 }
 

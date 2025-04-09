@@ -23,7 +23,7 @@ pub struct ProfileDataParams {
     pub display_name: Option<String>,
     pub avatar: Option<ProfileAvatar>,
     pub description: Option<String>,
-    
+
     pub profile_data: Option<serde_json::Value>,
 }
 

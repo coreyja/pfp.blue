@@ -102,7 +102,7 @@ pub struct PDSMetadata {
 }
 
 #[derive(serde::Deserialize, Debug)]
- // Needed for deserialization from API responses
+// Needed for deserialization from API responses
 pub struct AuthServerMetadata {
     pub issuer: String,
     pub pushed_authorization_request_endpoint: String,

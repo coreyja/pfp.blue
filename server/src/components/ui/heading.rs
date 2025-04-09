@@ -7,7 +7,6 @@ pub struct Heading {
     pub classes: Option<String>,
 }
 
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum HeadingLevel {
     H1,
