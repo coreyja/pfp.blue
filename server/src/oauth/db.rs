@@ -117,7 +117,7 @@ pub async fn store_token(app_state: &AppState, token_set: &OAuthTokenSet) -> cja
             Some(user) => user.user_id,
             None => {
                 // Create a new user
-                let user = crate::user::User::create(&app_state.db, None, None).await?;
+                let user = crate::user::User::create(&app_state.db, None).await?;
                 user.user_id
             }
         }

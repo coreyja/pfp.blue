@@ -15,8 +15,6 @@ use crate::{oauth, state::AppState};
 pub struct GetTokenParams {
     /// The DID to get a token for
     pub did: String,
-    /// Optional token endpoint override (used by calling code but marked as unused by linter)
-    pub token_endpoint: Option<String>,
 }
 
 #[derive(Deserialize)]

@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 /// Represents a profile picture progress setting in the database
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 // Fields needed for database operations
 pub struct ProfilePictureProgress {
     /// Unique ID for this progress setting

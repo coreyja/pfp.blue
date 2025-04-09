@@ -45,7 +45,6 @@ pub(crate) async fn run_cron(app_state: AppState) -> cja::Result<()> {
 }
 
 /// Clean up expired OAuth sessions
-
 async fn cleanup_expired_sessions(state: AppState) -> cja::Result<()> {
     info!("Cleaning up expired OAuth sessions");
 
@@ -63,7 +62,6 @@ async fn cleanup_expired_sessions(state: AppState) -> cja::Result<()> {
 
 /// Update profile pictures for all enabled accounts
 /// This function is called by the cron job every hour
-
 async fn update_profile_pictures(state: AppState) -> cja::Result<()> {
     info!("Starting profile picture progress updates");
 

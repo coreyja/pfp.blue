@@ -214,31 +214,18 @@ pub async fn create_session_and_set_cookie(
     state: &AppState,
     cookies: &CookieJar,
     user_id: Uuid,
-    user_agent: Option<String>,
-    ip_address: Option<String>,
     primary_token_id: Option<Uuid>,
 ) -> cja::Result<Session> {
     let duration_days = DEFAULT_SESSION_DURATION_DAYS;
 
     // Create a new session
-    let session = Session::create(
-        state.db(),
-        user_id,
-        user_agent,
-        ip_address,
-        duration_days,
-        primary_token_id,
-    )
-    .await?;
+    let session = Session::create(state.db(), user_id, duration_days, primary_token_id).await?;
 
     // Set a secure cookie with the session ID
-    let cookie = create_session_cookie(session.session_id, duration_days);
+    let cookie = create_session_cookie(session.id, duration_days);
     cookies.add(cookie);
 
-    info!(
-        "Created new session {} for user {}",
-        session.session_id, user_id
-    );
+    info!("Created new session {} for user {}", session.id, user_id);
     Ok(session)
 }
 

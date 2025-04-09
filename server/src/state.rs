@@ -190,11 +190,6 @@ impl AppState {
         format!("{}://{}/oauth/bsky/callback", self.protocol, self.domain)
     }
 
-    /// Returns the configured AppView URL
-    pub fn appview_url(&self) -> String {
-        env::var("APPVIEW_URL").unwrap_or_else(|_| "https://bsky.social".to_string())
-    }
-
     /// Returns the configured Avatar CDN URL
     pub fn avatar_cdn_url(&self) -> String {
         env::var("AVATAR_CDN_URL").unwrap_or_else(|_| "https://avatar.bsky.social".to_string())

@@ -120,7 +120,7 @@ async fn get_or_create_user_id_for_token(
         Ok(Some(user)) => Ok(user.user_id),
         Ok(None) => {
             // Create a new user
-            match crate::user::User::create(db_pool, None, None).await {
+            match crate::user::User::create(db_pool, None).await {
                 Ok(user) => Ok(user.user_id),
                 Err(err) => {
                     error!("Failed to create user: {:?}", err);
@@ -174,12 +174,8 @@ async fn ensure_user_session(
             _ => None,
         };
 
-        if let Err(err) = crate::auth::create_session_and_set_cookie(
-            state, cookies, user_id, None,     // User agent
-            None,     // IP address
-            token_id, // Set this token as primary
-        )
-        .await
+        if let Err(err) =
+            crate::auth::create_session_and_set_cookie(state, cookies, user_id, token_id).await
         {
             error!("Failed to create session: {:?}", err);
             return Err((

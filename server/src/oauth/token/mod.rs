@@ -81,14 +81,6 @@ impl OAuthTokenSet {
         }
     }
 
-    /// Copy the display name and handle from another token
-
-    pub fn with_display_name_from(mut self, other: &OAuthTokenSet) -> Self {
-        self.display_name = other.display_name.clone();
-        self.handle = other.handle.clone();
-        self
-    }
-
     /// Create a new OAuthTokenSet from a TokenResponse with a calculated JWK thumbprint
     pub fn from_token_response_with_jwk(
         response: &TokenResponse,
