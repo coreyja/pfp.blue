@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use color_eyre::eyre::eyre;
+use color_eyre::eyre::{eyre, Context as _};
 use sqlx::postgres::PgPool;
 use tracing::{error, info};
 use uuid::Uuid;
@@ -216,10 +216,7 @@ impl Session {
         )
         .execute(pool)
         .await
-        .map_err(|e| {
-            error!("Failed to invalidate session {}: {:?}", self.session_id, e);
-            eyre!("Database error invalidating session: {}", e)
-        })?;
+        .wrap_err("Database error invalidating session")?;
 
         self.is_active = false;
         info!("Session {} invalidated", self.session_id);
@@ -245,13 +242,7 @@ impl Session {
         )
         .fetch_one(pool)
         .await
-        .map_err(|e| {
-            error!(
-                "Failed to set primary token for session {}: {:?}",
-                self.session_id, e
-            );
-            eyre!("Database error setting primary token: {}", e)
-        })?;
+        .wrap_err("Database error setting primary token")?;
 
         self.primary_token_id = Some(token_id);
         self.updated_at_utc = row.updated_at_utc;

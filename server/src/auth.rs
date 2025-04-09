@@ -5,7 +5,7 @@ use axum::{
     response::{IntoResponse, Redirect, Response},
 };
 use cja::app_state::AppState as _;
-use color_eyre::eyre::eyre;
+use color_eyre::eyre::{eyre, Context};
 use time::Duration;
 use tracing::{error, info};
 use uuid::Uuid;
@@ -249,7 +249,7 @@ pub async fn end_session(state: &AppState, cookies: &CookieJar) -> cja::Result<(
             session
                 .invalidate(state.db())
                 .await
-                .map_err(|e| eyre!("Failed to invalidate session {}: {}", session_id, e))?;
+                .wrap_err("Failed to invalidate session")?;
 
             info!("Session {} invalidated", session_id);
         }

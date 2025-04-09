@@ -368,7 +368,7 @@ async fn display_profile_multi(
 
                             // Form with single button
                             form action="/profile_progress/toggle" method="post" class="mt-2" {
-                                input type="hidden" name="token_id" value=(primary_token.did) {}
+                                input type="hidden" name="did" value=(primary_token.did) {}
 
                                 @if progress_enabled {
                                     // When enabled, show a button to disable

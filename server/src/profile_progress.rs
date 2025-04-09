@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use color_eyre::eyre::eyre;
+use color_eyre::eyre::{eyre, Context};
 use sqlx::PgPool;
 use tracing::{error, info};
 use uuid::Uuid;
@@ -34,10 +34,7 @@ impl ProfilePictureProgress {
         )
         .fetch_one(pool)
         .await
-        .map_err(|e| {
-            error!("Failed to create profile picture progress: {:?}", e);
-            eyre!("Database error creating profile picture progress: {}", e)
-        })?;
+        .wrap_err("Database error creating profile picture progress")?;
 
         info!(
             "Created profile picture progress setting for token {}",
@@ -55,7 +52,8 @@ impl ProfilePictureProgress {
 
     /// Get a profile picture progress setting by token ID
     pub async fn get_by_token_id(pool: &PgPool, token_id: Uuid) -> cja::Result<Option<Self>> {
-        let row = sqlx::query!(
+        let row = sqlx::query_as!(
+            Self,
             r#"
             SELECT id, token_id, enabled, created_at_utc, updated_at_utc 
             FROM profile_picture_progress
@@ -65,18 +63,9 @@ impl ProfilePictureProgress {
         )
         .fetch_optional(pool)
         .await
-        .map_err(|e| {
-            error!("Failed to query profile picture progress: {:?}", e);
-            eyre!("Database error querying profile picture progress: {}", e)
-        })?;
+        .wrap_err("Database error querying profile picture progress")?;
 
-        Ok(row.map(|r| Self {
-            id: r.id,
-            token_id: r.token_id,
-            enabled: r.enabled,
-            created_at_utc: r.created_at_utc,
-            updated_at_utc: r.updated_at_utc,
-        }))
+        Ok(row)
     }
 
     /// Update the enabled status
@@ -93,13 +82,7 @@ impl ProfilePictureProgress {
         )
         .fetch_one(pool)
         .await
-        .map_err(|e| {
-            error!(
-                "Failed to update profile picture progress enabled status: {:?}",
-                e
-            );
-            eyre!("Database error updating profile picture progress: {}", e)
-        })?;
+        .wrap_err("Database error updating profile picture progress")?;
 
         self.enabled = enabled;
         self.updated_at_utc = row.updated_at_utc;

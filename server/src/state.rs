@@ -122,7 +122,7 @@ impl EncryptionConfig {
         use std::str::FromStr;
 
         let key_str = std::env::var("ENCRYPTION_KEY")
-            .map_err(|_| eyre!("ENCRYPTION_KEY environment variable not set"))?;
+            .wrap_err("ENCRYPTION_KEY environment variable not set")?;
 
         let key = Identity::from_str(&key_str)
             .map_err(|e| eyre!("Failed to parse ENCRYPTION_KEY: {}", e))?;

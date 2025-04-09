@@ -174,10 +174,6 @@ pub async fn fetch_and_parse_json<T: serde::de::DeserializeOwned>(url: &str) -> 
     // Try to decode as JSON
     let response_text = response.text().await?;
     let result = serde_json::from_str::<T>(&response_text)
-        .map_err(|e| {
-            error!("Failed to decode JSON: {} from body: {}", e, response_text);
-            e
-        })
         .wrap_err_with(|| format!("Failed to decode JSON from {}", url))?;
 
     Ok(result)

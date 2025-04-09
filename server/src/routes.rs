@@ -284,7 +284,7 @@ async fn login_page() -> impl IntoResponse {
 /// Parameters for toggling profile picture progress
 #[derive(Deserialize)]
 struct ToggleProfileProgressParams {
-    token_id: String, // This is the DID string, not a UUID
+    did: String, // This is the DID string, not a UUID
     enabled: Option<String>,
 }
 
@@ -294,10 +294,9 @@ async fn toggle_profile_progress(
     AuthUser(user): AuthUser,
     Form(params): Form<ToggleProfileProgressParams>,
 ) -> ServerResult<Response, Redirect> {
-    // Validate token ownership and get token ID
-    let token_id = validate_token_ownership(&state, &params.token_id, user.user_id)
+    let token_id = validate_did_ownership(&state, &params.did, user.user_id)
         .await
-        .wrap_err("Failed to validate token ownership")
+        .wrap_err("Failed to validate DID ownership")
         .with_redirect(Redirect::to("/me"))?;
 
     // Check if we're enabling the feature
@@ -407,7 +406,7 @@ async fn toggle_profile_progress(
 // Previous set_original_profile_picture handler removed - functionality is now part of toggle_profile_progress
 
 /// Helper function to validate token ownership and return token ID
-async fn validate_token_ownership(state: &AppState, did: &str, user_id: Uuid) -> cja::Result<Uuid> {
+async fn validate_did_ownership(state: &AppState, did: &str, user_id: Uuid) -> cja::Result<Uuid> {
     let token_result = sqlx::query!(
         r#"
         SELECT id FROM oauth_tokens
