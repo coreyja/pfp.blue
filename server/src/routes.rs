@@ -396,6 +396,9 @@ async fn toggle_profile_progress(
                 .with_redirect(Redirect::to("/me"))?;
 
             info!("Enqueued profile picture update job for token {}", token_id);
+        } else {
+            return Err(eyre!("Token not found for DID {}", token_id))
+                .with_redirect(Redirect::to("/me"));
         }
     }
 
