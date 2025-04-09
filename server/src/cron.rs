@@ -6,7 +6,7 @@ use tracing::{error, info};
 
 use crate::{jobs::UpdateProfilePictureProgressJob, oauth, state::AppState};
 
-#[allow(dead_code)]
+
 fn cron_registry() -> CronRegistry<AppState> {
     let mut registry = CronRegistry::new();
 
@@ -41,13 +41,13 @@ fn cron_registry() -> CronRegistry<AppState> {
     registry
 }
 
-#[allow(dead_code)]
+
 pub(crate) async fn run_cron(app_state: AppState) -> cja::Result<()> {
     Ok(Worker::new(app_state, cron_registry()).run().await?)
 }
 
 /// Clean up expired OAuth sessions
-#[allow(dead_code)]
+
 async fn cleanup_expired_sessions(state: AppState) -> cja::Result<()> {
     info!("Cleaning up expired OAuth sessions");
 
@@ -65,7 +65,7 @@ async fn cleanup_expired_sessions(state: AppState) -> cja::Result<()> {
 
 /// Update profile pictures for all enabled accounts
 /// This function is called by the cron job every hour
-#[allow(dead_code)]
+
 async fn update_profile_pictures(state: AppState) -> cja::Result<()> {
     info!("Starting profile picture progress updates");
 

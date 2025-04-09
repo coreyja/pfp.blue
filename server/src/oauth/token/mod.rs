@@ -82,7 +82,7 @@ impl OAuthTokenSet {
     }
 
     /// Copy the display name and handle from another token
-    #[allow(dead_code)]
+    
     pub fn with_display_name_from(mut self, other: &OAuthTokenSet) -> Self {
         self.display_name = other.display_name.clone();
         self.handle = other.handle.clone();

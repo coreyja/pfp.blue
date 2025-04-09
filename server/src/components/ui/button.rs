@@ -1,6 +1,5 @@
 use maud::{html, Markup, Render};
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum ButtonVariant {
     Primary,
@@ -9,7 +8,6 @@ pub enum ButtonVariant {
     Link,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum ButtonSize {
     Small,
@@ -64,7 +62,6 @@ impl Button {
         self
     }
 
-    #[allow(dead_code)]
     pub fn primary(text: &str) -> Self {
         Self {
             text: text.to_string(),
@@ -73,7 +70,6 @@ impl Button {
         }
     }
 
-    #[allow(dead_code)]
     pub fn secondary(text: &str) -> Self {
         Self {
             text: text.to_string(),
@@ -82,7 +78,6 @@ impl Button {
         }
     }
 
-    #[allow(dead_code)]
     pub fn outline(text: &str) -> Self {
         Self {
             text: text.to_string(),
@@ -91,7 +86,6 @@ impl Button {
         }
     }
 
-    #[allow(dead_code)]
     pub fn link(text: &str) -> Self {
         Self {
             text: text.to_string(),
@@ -126,7 +120,6 @@ impl Button {
         self
     }
 
-    #[allow(dead_code)]
     pub fn extra_classes(mut self, classes: &str) -> Self {
         self.extra_classes = Some(classes.to_string());
         self

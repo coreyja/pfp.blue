@@ -9,7 +9,7 @@ pub struct Avatar {
 }
 
 impl Avatar {
-    #[allow(dead_code)]
+    
     pub fn new(src: Option<String>, alt: &str) -> Self {
         Self {
             src,
@@ -20,19 +20,19 @@ impl Avatar {
         }
     }
 
-    #[allow(dead_code)]
+    
     pub fn size(mut self, size: &str) -> Self {
         self.size = size.to_string();
         self
     }
 
-    #[allow(dead_code)]
+    
     pub fn with_border(mut self, border: bool) -> Self {
         self.border = border;
         self
     }
 
-    #[allow(dead_code)]
+    
     pub fn placeholder_text(mut self, text: &str) -> Self {
         self.placeholder_text = Some(text.to_string());
         self

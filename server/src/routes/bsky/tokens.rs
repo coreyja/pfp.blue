@@ -16,7 +16,7 @@ pub struct GetTokenParams {
     /// The DID to get a token for
     pub did: String,
     /// Optional token endpoint override (used by calling code but marked as unused by linter)
-    #[allow(dead_code)]
+    
     pub token_endpoint: Option<String>,
 }
 

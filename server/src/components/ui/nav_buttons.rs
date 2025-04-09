@@ -16,7 +16,7 @@ pub struct NavButton {
 }
 
 // Allow unused variants as they'll likely be used in the future
-#[allow(dead_code)]
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum NavButtonIcon {
     Home,
@@ -30,7 +30,6 @@ pub enum NavButtonIcon {
 }
 
 impl NavButtons {
-    #[allow(dead_code)]
     pub fn new() -> Self {
         Self {
             items: Vec::new(),
@@ -38,13 +37,11 @@ impl NavButtons {
         }
     }
 
-    #[allow(dead_code)]
     pub fn add_button(mut self, button: NavButton) -> Self {
         self.items.push(button);
         self
     }
 
-    #[allow(dead_code)]
     pub fn container_classes(mut self, classes: &str) -> Self {
         self.container_classes = Some(classes.to_string());
         self
@@ -52,7 +49,6 @@ impl NavButtons {
 }
 
 impl NavButton {
-    #[allow(dead_code)]
     pub fn new(text: &str, href: &str) -> Self {
         Self {
             text: text.to_string(),
@@ -62,13 +58,11 @@ impl NavButton {
         }
     }
 
-    #[allow(dead_code)]
     pub fn with_icon(mut self, icon_type: NavButtonIcon) -> Self {
         self.icon_type = Some(icon_type);
         self
     }
 
-    #[allow(dead_code)]
     pub fn active(mut self, is_active: bool) -> Self {
         self.is_active = is_active;
         self
