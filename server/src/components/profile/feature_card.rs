@@ -13,6 +13,7 @@ pub enum FeatureCardColor {
     Blue,
     Indigo,
     Purple,
+    #[allow(dead_code)]
     Pink,
 }
 

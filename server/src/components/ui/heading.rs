@@ -8,6 +8,7 @@ pub struct Heading {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(dead_code)]
 pub enum HeadingLevel {
     H1,
     H2,

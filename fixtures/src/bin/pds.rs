@@ -307,6 +307,7 @@ async fn oauth_authorization_server(State(state): State<AppState>) -> impl IntoR
 use axum::extract::Query;
 
 #[derive(Debug, serde::Deserialize)]
+#[allow(dead_code)]
 struct AuthorizeQuery {
     client_id: String,
     redirect_uri: String,

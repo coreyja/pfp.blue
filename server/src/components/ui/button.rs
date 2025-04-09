@@ -1,6 +1,7 @@
 use maud::{html, Markup, Render};
 
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 pub enum ButtonVariant {
     Primary,
     Secondary,
@@ -9,6 +10,7 @@ pub enum ButtonVariant {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 pub enum ButtonSize {
     Small,
     Medium,
@@ -70,30 +72,6 @@ impl Button {
         }
     }
 
-    pub fn secondary(text: &str) -> Self {
-        Self {
-            text: text.to_string(),
-            variant: ButtonVariant::Secondary,
-            ..Default::default()
-        }
-    }
-
-    pub fn outline(text: &str) -> Self {
-        Self {
-            text: text.to_string(),
-            variant: ButtonVariant::Outline,
-            ..Default::default()
-        }
-    }
-
-    pub fn link(text: &str) -> Self {
-        Self {
-            text: text.to_string(),
-            variant: ButtonVariant::Link,
-            ..Default::default()
-        }
-    }
-
     pub fn href(mut self, href: &str) -> Self {
         self.href = Some(href.to_string());
         self
@@ -117,11 +95,6 @@ impl Button {
 
     pub fn button_type(mut self, button_type: &str) -> Self {
         self.button_type = Some(button_type.to_string());
-        self
-    }
-
-    pub fn extra_classes(mut self, classes: &str) -> Self {
-        self.extra_classes = Some(classes.to_string());
         self
     }
 

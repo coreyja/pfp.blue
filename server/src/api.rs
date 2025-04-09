@@ -23,8 +23,6 @@ pub struct ProfileDataParams {
     pub display_name: Option<String>,
     pub avatar: Option<ProfileAvatar>,
     pub description: Option<String>,
-
-    pub profile_data: Option<serde_json::Value>,
 }
 
 /// Extract profile information from Bluesky profile data
@@ -33,7 +31,6 @@ pub fn extract_profile_info(profile_data: &serde_json::Value) -> ProfileDataPara
         display_name: None,
         avatar: None,
         description: None,
-        profile_data: Some(profile_data.clone()),
     };
 
     // Extract profile information from the data

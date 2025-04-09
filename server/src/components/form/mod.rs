@@ -25,11 +25,6 @@ impl InputField {
         }
     }
 
-    pub fn label(mut self, label: &str) -> Self {
-        self.label = Some(label.to_string());
-        self
-    }
-
     pub fn placeholder(mut self, placeholder: &str) -> Self {
         self.placeholder = Some(placeholder.to_string());
         self
@@ -37,11 +32,6 @@ impl InputField {
 
     pub fn value(mut self, value: &str) -> Self {
         self.value = Some(value.to_string());
-        self
-    }
-
-    pub fn input_type(mut self, input_type: &str) -> Self {
-        self.input_type = input_type.to_string();
         self
     }
 
@@ -144,22 +134,6 @@ pub struct ToggleSwitch {
     pub label: String,
     pub description: Option<String>,
     pub checked: bool,
-}
-
-impl ToggleSwitch {
-    pub fn new(name: &str, label: &str, checked: bool) -> Self {
-        Self {
-            name: name.to_string(),
-            label: label.to_string(),
-            description: None,
-            checked,
-        }
-    }
-
-    pub fn description(mut self, description: &str) -> Self {
-        self.description = Some(description.to_string());
-        self
-    }
 }
 
 impl Render for ToggleSwitch {

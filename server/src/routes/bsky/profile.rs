@@ -228,7 +228,6 @@ async fn display_profile_multi(
                 display_name: None,
                 avatar: None,
                 description: None,
-                profile_data: None,
             }
         }
     };
