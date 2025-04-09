@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            INSERT INTO sessions (user_id, expires_at, user_agent, ip_address, primary_token_id)\n            VALUES ($1, $2, $3, $4, $5)\n            RETURNING id, user_id, expires_at, user_agent, ip_address, is_active, primary_token_id, created_at_utc, updated_at_utc\n            ",
+  "query": "\n            INSERT INTO sessions (user_id, expires_at, primary_token_id)\n            VALUES ($1, $2, $3)\n            RETURNING id, user_id, expires_at, is_active, primary_token_id, created_at_utc, updated_at_utc\n            ",
   "describe": {
     "columns": [
       {
@@ -20,31 +20,21 @@
       },
       {
         "ordinal": 3,
-        "name": "user_agent",
-        "type_info": "Text"
-      },
-      {
-        "ordinal": 4,
-        "name": "ip_address",
-        "type_info": "Text"
-      },
-      {
-        "ordinal": 5,
         "name": "is_active",
         "type_info": "Bool"
       },
       {
-        "ordinal": 6,
+        "ordinal": 4,
         "name": "primary_token_id",
         "type_info": "Uuid"
       },
       {
-        "ordinal": 7,
+        "ordinal": 5,
         "name": "created_at_utc",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 8,
+        "ordinal": 6,
         "name": "updated_at_utc",
         "type_info": "Timestamptz"
       }
@@ -53,8 +43,6 @@
       "Left": [
         "Uuid",
         "Timestamptz",
-        "Text",
-        "Text",
         "Uuid"
       ]
     },
@@ -62,13 +50,11 @@
       false,
       false,
       false,
-      true,
-      true,
       false,
       true,
       false,
       false
     ]
   },
-  "hash": "986695a5572cbb22d5e898a1d5cf6c5fa76bccf0f903ac822a022232a625fb30"
+  "hash": "0093025e21d86e77c50ce95cabc8ecaaf5f7f8639db01c94bd35bb7140232bed"
 }
