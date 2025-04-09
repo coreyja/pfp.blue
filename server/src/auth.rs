@@ -5,7 +5,7 @@ use axum::{
     response::{IntoResponse, Redirect, Response},
 };
 use cja::app_state::AppState as _;
-use color_eyre::eyre::{eyre, Context};
+use color_eyre::eyre::Context;
 use time::Duration;
 use tracing::{error, info};
 use uuid::Uuid;

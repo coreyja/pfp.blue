@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
-use color_eyre::eyre::{eyre, Context};
+use color_eyre::eyre::Context;
 use sqlx::PgPool;
-use tracing::{error, info};
+use tracing::info;
 use uuid::Uuid;
 
 /// Represents a profile picture progress setting in the database

@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use color_eyre::eyre::{eyre, Context as _};
+use color_eyre::eyre::Context as _;
 use sqlx::postgres::PgPool;
 use tracing::{error, info};
 use uuid::Uuid;
