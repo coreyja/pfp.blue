@@ -284,7 +284,7 @@ async fn login_page() -> impl IntoResponse {
 /// Parameters for toggling profile picture progress
 #[derive(Deserialize)]
 struct ToggleProfileProgressParams {
-    token_id: String, // This is the DID string, not a UUID
+    did: String, // This is the DID string, not a UUID
     enabled: Option<String>,
 }
 
@@ -294,10 +294,9 @@ async fn toggle_profile_progress(
     AuthUser(user): AuthUser,
     Form(params): Form<ToggleProfileProgressParams>,
 ) -> ServerResult<Response, Redirect> {
-    // Validate token ownership and get token ID
-    let token_id = validate_token_ownership(&state, &params.token_id, user.user_id)
+    let token_id = validate_did_ownership(&state, &params.did, user.user_id)
         .await
-        .wrap_err("Failed to validate token ownership")
+        .wrap_err("Failed to validate DID ownership")
         .with_redirect(Redirect::to("/me"))?;
 
     // Check if we're enabling the feature
@@ -355,55 +354,51 @@ async fn toggle_profile_progress(
             };
 
             // Fetch profile info to get the current avatar blob CID
-            if let Ok(profile_info) = crate::api::get_profile_with_avatar(&token.did, &state).await
-            {
-                if let Some(avatar) = profile_info.avatar {
-                    // Get the blob data
-                    if let Ok(blob_data) =
-                        crate::routes::bsky::fetch_blob_by_cid(&token.did, &avatar.cid, &state)
-                            .await
-                    {
-                        // Upload to get a proper blob object
-                        if let Ok(blob_object) = crate::jobs::helpers::upload_image_to_bluesky(
-                            &state, &token, &blob_data,
-                        )
-                        .await
-                        {
-                            // Save the blob object to our custom PDS collection
-                            if let Err(e) = crate::jobs::helpers::save_original_profile_picture(
-                                &state,
-                                &token,
-                                blob_object,
-                            )
-                            .await
-                            {
-                                error!(
-                                    "Failed to save original profile picture to PDS for DID {}: {:?}",
-                                    token.did, e
-                                );
-                                // We continue even if this fails - the feature will still work just without an original picture
-                            } else {
-                                info!(
-                                    "Automatically saved original profile picture to PDS collection for DID {}",
-                                    token.did
-                                );
-                            }
-                        }
-                    }
-                }
-            }
+            let profile_info = crate::api::get_profile_with_avatar(&token.did, &state)
+                .await
+                .wrap_err("Failed to fetch profile info")
+                .with_redirect(Redirect::to("/me"))?;
+
+            let avatar = profile_info
+                .avatar
+                .ok_or_else(|| eyre!("No avatar found in profile"))
+                .with_redirect(Redirect::to("/me"))?;
+
+            // Get the blob data
+            let blob_data = crate::routes::bsky::fetch_blob_by_cid(&token.did, &avatar.cid, &state)
+                .await
+                .wrap_err("Failed to fetch avatar blob data")
+                .with_redirect(Redirect::to("/me"))?;
+
+            // Upload to get a proper blob object
+            let blob_object =
+                crate::jobs::helpers::upload_image_to_bluesky(&state, &token, &blob_data)
+                    .await
+                    .wrap_err("Failed to upload image to Bluesky")
+                    .with_redirect(Redirect::to("/me"))?;
+
+            // Save the blob object to our custom PDS collection
+            crate::jobs::helpers::save_original_profile_picture(&state, &token, blob_object)
+                .await
+                .wrap_err("Failed to save original profile picture to PDS")
+                .with_redirect(Redirect::to("/me"))?;
+
+            info!(
+                "Automatically saved original profile picture to PDS collection for DID {}",
+                token.did
+            );
 
             // Enqueue a job to update the profile picture
             let job = crate::jobs::UpdateProfilePictureProgressJob::new(token_id);
-            if let Err(e) = job
-                .enqueue(state.clone(), "enabled_profile_progress".to_string())
+            job.enqueue(state.clone(), "enabled_profile_progress".to_string())
                 .await
-            {
-                error!("Failed to enqueue profile picture update job: {:?}", e);
-                // Even if job enqueueing fails, we continue - it's not critical
-            } else {
-                info!("Enqueued profile picture update job for token {}", token_id);
-            }
+                .wrap_err("Failed to enqueue profile picture update job")
+                .with_redirect(Redirect::to("/me"))?;
+
+            info!("Enqueued profile picture update job for token {}", token_id);
+        } else {
+            return Err(eyre!("Token not found for DID {}", token_id))
+                .with_redirect(Redirect::to("/me"));
         }
     }
 
@@ -414,7 +409,7 @@ async fn toggle_profile_progress(
 // Previous set_original_profile_picture handler removed - functionality is now part of toggle_profile_progress
 
 /// Helper function to validate token ownership and return token ID
-async fn validate_token_ownership(state: &AppState, did: &str, user_id: Uuid) -> cja::Result<Uuid> {
+async fn validate_did_ownership(state: &AppState, did: &str, user_id: Uuid) -> cja::Result<Uuid> {
     let token_result = sqlx::query!(
         r#"
         SELECT id FROM oauth_tokens

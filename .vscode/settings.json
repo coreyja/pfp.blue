@@ -1,3 +1,12 @@
 {
-  "cSpell.words": ["atproto", "bsky", "dpop"]
+  "cSpell.words": [
+    "appview",
+    "atproto",
+    "bsky",
+    "chrono",
+    "dpop",
+    "reqwest",
+    "rkey",
+    "xrpc"
+  ]
 }

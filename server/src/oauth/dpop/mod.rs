@@ -53,7 +53,7 @@ fn create_dpop_proof_impl(
 
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_err(|e| eyre!("Failed to get current time: {}", e))?
+        .wrap_err("Failed to get current time")?
         .as_secs();
 
     // Generate JWK for header
@@ -119,15 +119,15 @@ fn create_dpop_proof_impl(
     let message = format!("{}.{}", header_b64, payload_b64);
 
     // 4. Create a temporary file for the message
-    let mut message_file = NamedTempFile::new()
-        .map_err(|e| eyre!("Failed to create temporary file for message: {}", e))?;
+    let mut message_file =
+        NamedTempFile::new().wrap_err("Failed to create temporary file with message")?;
     message_file
         .write_all(message.as_bytes())
-        .map_err(|e| eyre!("Failed to write message to temporary file: {}", e))?;
+        .wrap_err("Failed to write message to temporary file")?;
 
     // 5. Create a temporary file for the ES256 private key
-    let mut key_file = NamedTempFile::new()
-        .map_err(|e| eyre!("Failed to create temporary file for private key: {}", e))?;
+    let mut key_file =
+        NamedTempFile::new().wrap_err("Failed to create temporary file for private key")?;
 
     // Decode base64-encoded private key
     let decoded_key = base64::Engine::decode(

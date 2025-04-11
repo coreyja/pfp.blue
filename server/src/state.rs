@@ -122,7 +122,7 @@ impl EncryptionConfig {
         use std::str::FromStr;
 
         let key_str = std::env::var("ENCRYPTION_KEY")
-            .map_err(|_| eyre!("ENCRYPTION_KEY environment variable not set"))?;
+            .wrap_err("ENCRYPTION_KEY environment variable not set")?;
 
         let key = Identity::from_str(&key_str)
             .map_err(|e| eyre!("Failed to parse ENCRYPTION_KEY: {}", e))?;
@@ -178,33 +178,16 @@ impl AppState {
     }
 
     /// Returns the OAuth client ID for Bluesky
-    /// This should return a consistent value regardless of local development or production
     pub fn client_id(&self) -> String {
-        // For OAuth, we need to use a consistent client ID
-        // During local dev, we'll use the production domain for the client ID
-        // but still use localhost for the actual callbacks
-
-        // If we're running on localhost, use prod domain for client ID
-        if self.domain.contains("localhost") || self.domain.contains("127.0.0.1") {
-            "https://pfp.blue/oauth/bsky/metadata.json".to_string()
-        } else {
-            // Otherwise use the actual domain
-            format!(
-                "{}://{}/oauth/bsky/metadata.json",
-                self.protocol, self.domain
-            )
-        }
+        format!(
+            "{}://{}/oauth/bsky/metadata.json",
+            self.protocol, self.domain
+        )
     }
 
     /// Returns the canonical redirect URI for OAuth
     pub fn redirect_uri(&self) -> String {
         format!("{}://{}/oauth/bsky/callback", self.protocol, self.domain)
-    }
-
-    /// Returns the configured AppView URL
-    #[allow(dead_code)]
-    pub fn appview_url(&self) -> String {
-        env::var("APPVIEW_URL").unwrap_or_else(|_| "https://bsky.social".to_string())
     }
 
     /// Returns the configured Avatar CDN URL

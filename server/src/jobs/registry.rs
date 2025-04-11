@@ -1,4 +1,5 @@
 use cja::jobs::Job;
+use color_eyre::eyre::Context as _;
 use std::collections::HashMap;
 use std::str::FromStr;
 
@@ -52,7 +53,7 @@ impl JobType {
         };
 
         // Convert the EnqueueError to cja::Result
-        result.map_err(|e| color_eyre::eyre::eyre!("Failed to enqueue job: {}", e))
+        result.wrap_err("Failed to enqueue job")
     }
 
     pub fn name(&self) -> &'static str {
