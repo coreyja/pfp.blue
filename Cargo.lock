@@ -713,7 +713,7 @@ dependencies = [
 [[package]]
 name = "cja"
 version = "0.0.0"
-source = "git+https://github.com/coreyja/coreyja.com?branch=main#fcff8490bb308a42d33e3f5839e3bdb2ab0c0390"
+source = "git+https://github.com/coreyja/cja?branch=main#a8ec4a4750a35065aba6e9fac5f29835379173fd"
 dependencies = [
  "async-trait",
  "axum",
@@ -721,8 +721,10 @@ dependencies = [
  "chrono",
  "color-eyre",
  "http 1.2.0",
+ "listenfd",
  "serde",
  "serde_json",
+ "socket2",
  "sqlx",
  "thiserror 1.0.69",
  "tokio",
@@ -2927,6 +2929,17 @@ name = "linux-raw-sys"
 version = "0.4.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d26c52dbd32dccf2d10cac7725f8eae5296885fb5703b261f7d0a0739ec807ab"
+
+[[package]]
+name = "listenfd"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b87bc54a4629b4294d0b3ef041b64c40c611097a677d9dc07b2c67739fe39dba"
+dependencies = [
+ "libc",
+ "uuid",
+ "winapi",
+]
 
 [[package]]
 name = "litemap"
@@ -5662,7 +5675,7 @@ dependencies = [
 [[package]]
 name = "tracing-common"
 version = "0.1.0"
-source = "git+https://github.com/coreyja/coreyja.com?branch=main#fcff8490bb308a42d33e3f5839e3bdb2ab0c0390"
+source = "git+https://github.com/coreyja/cja?branch=main#a8ec4a4750a35065aba6e9fac5f29835379173fd"
 dependencies = [
  "color-eyre",
  "opentelemetry 0.23.0",
