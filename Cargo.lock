@@ -713,7 +713,7 @@ dependencies = [
 [[package]]
 name = "cja"
 version = "0.0.0"
-source = "git+https://github.com/coreyja/cja?branch=main#a8ec4a4750a35065aba6e9fac5f29835379173fd"
+source = "git+https://github.com/coreyja/cja?branch=main#b866b67c3ee13dae054b98ee4e99d33c08bcc7d3"
 dependencies = [
  "async-trait",
  "axum",
@@ -2698,7 +2698,7 @@ dependencies = [
  "approx",
  "conv",
  "image",
- "itertools 0.10.5",
+ "itertools",
  "nalgebra",
  "num",
  "rand 0.7.3",
@@ -2813,15 +2813,6 @@ name = "itertools"
 version = "0.10.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b0fd2260e829bddf4cb6ea802289de2f86d6a7a690192fbe91b3f46e0f2c8473"
-dependencies = [
- "either",
-]
-
-[[package]]
-name = "itertools"
-version = "0.12.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba291022dbbd398a455acf126c1e341954079855bc60dfdda641363bd6922569"
 dependencies = [
  "either",
 ]
@@ -3673,7 +3664,6 @@ dependencies = [
  "time",
  "tokio",
  "tower 0.4.13",
- "tower-cookies",
  "tower-http",
  "tracing",
  "tracing-opentelemetry 0.23.0",
@@ -3886,7 +3876,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "81bddcdb20abf9501610992b6759a4c888aef7d1a7247ef75e2404275ac24af1"
 dependencies = [
  "anyhow",
- "itertools 0.12.1",
+ "itertools",
  "proc-macro2",
  "quote",
  "syn 2.0.98",
@@ -5675,7 +5665,7 @@ dependencies = [
 [[package]]
 name = "tracing-common"
 version = "0.1.0"
-source = "git+https://github.com/coreyja/cja?branch=main#a8ec4a4750a35065aba6e9fac5f29835379173fd"
+source = "git+https://github.com/coreyja/cja?branch=main#b866b67c3ee13dae054b98ee4e99d33c08bcc7d3"
 dependencies = [
  "color-eyre",
  "opentelemetry 0.23.0",

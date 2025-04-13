@@ -3,13 +3,12 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Redirect},
 };
-use cja::{app_state::AppState as _, jobs::Job};
+use cja::{app_state::AppState as _, jobs::Job, server::cookies::CookieJar};
 use serde::Deserialize;
 use tracing::{error, info};
 use uuid::Uuid;
 
 use crate::{
-    cookies::CookieJar,
     oauth::{self, OAuthTokenSet},
     state::AppState,
 };
@@ -143,7 +142,7 @@ async fn get_or_create_user_id_for_token(
 
 /// Helper function to create a user session if needed
 async fn ensure_user_session(
-    cookies: &CookieJar,
+    cookies: &CookieJar<AppState>,
     state: &AppState,
     user_id: uuid::Uuid,
     token_set: &OAuthTokenSet,
@@ -189,7 +188,10 @@ async fn ensure_user_session(
 }
 
 /// Check if there's an existing user session and return user ID if found
-async fn check_existing_user_session(cookies: &CookieJar, state: &AppState) -> Option<uuid::Uuid> {
+async fn check_existing_user_session(
+    cookies: &CookieJar<AppState>,
+    state: &AppState,
+) -> Option<uuid::Uuid> {
     if let Some(session_id) = crate::auth::get_session_id_from_cookie(cookies) {
         match crate::auth::validate_session(state.db(), session_id).await {
             Ok(Some(user_session)) => {
@@ -215,7 +217,7 @@ async fn check_existing_user_session(cookies: &CookieJar, state: &AppState) -> O
 /// Handle the OAuth callback - main entry point
 pub async fn callback(
     State(state): State<AppState>,
-    cookies: CookieJar,
+    cookies: CookieJar<AppState>,
     Query(params): Query<CallbackParams>,
 ) -> impl IntoResponse {
     // Use the consistent helpers

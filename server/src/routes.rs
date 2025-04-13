@@ -1,7 +1,6 @@
 use crate::{
     auth::{AdminUser, AuthUser, OptionalUser},
     components::layout::Page,
-    cookies::CookieJar,
     errors::{ServerResult, WithRedirect},
     profile_progress::ProfilePictureProgress,
     state::AppState,
@@ -15,7 +14,7 @@ use axum::{
     response::{IntoResponse, Redirect},
     routing::{get, post},
 };
-use cja::jobs::Job as _;
+use cja::{jobs::Job as _, server::cookies::CookieJar};
 use color_eyre::eyre::{eyre, WrapErr};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -443,7 +442,7 @@ async fn validate_did_ownership(state: &AppState, did: &str, user_id: Uuid) -> c
 /// Logout route - clears authentication cookies and redirects to home
 async fn logout(
     State(state): State<AppState>,
-    cookies: CookieJar,
+    cookies: CookieJar<AppState>,
 ) -> ServerResult<impl IntoResponse, StatusCode> {
     // End the session
     crate::auth::end_session(&state, &cookies)
