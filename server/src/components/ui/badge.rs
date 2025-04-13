@@ -1,7 +1,7 @@
 use maud::{html, Markup, Render};
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 pub enum BadgeColor {
     Blue,
     Green,
@@ -32,12 +32,6 @@ impl Badge {
 
     pub fn rounded(mut self, rounded: bool) -> Self {
         self.rounded = rounded;
-        self
-    }
-
-    #[allow(dead_code)]
-    pub fn extra_classes(mut self, classes: &str) -> Self {
-        self.extra_classes = Some(classes.to_string());
         self
     }
 

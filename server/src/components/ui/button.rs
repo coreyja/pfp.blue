@@ -1,7 +1,7 @@
 use maud::{html, Markup, Render};
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 pub enum ButtonVariant {
     Primary,
     Secondary,
@@ -9,8 +9,8 @@ pub enum ButtonVariant {
     Link,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 pub enum ButtonSize {
     Small,
     Medium,
@@ -64,38 +64,10 @@ impl Button {
         self
     }
 
-    #[allow(dead_code)]
     pub fn primary(text: &str) -> Self {
         Self {
             text: text.to_string(),
             variant: ButtonVariant::Primary,
-            ..Default::default()
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn secondary(text: &str) -> Self {
-        Self {
-            text: text.to_string(),
-            variant: ButtonVariant::Secondary,
-            ..Default::default()
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn outline(text: &str) -> Self {
-        Self {
-            text: text.to_string(),
-            variant: ButtonVariant::Outline,
-            ..Default::default()
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn link(text: &str) -> Self {
-        Self {
-            text: text.to_string(),
-            variant: ButtonVariant::Link,
             ..Default::default()
         }
     }
@@ -123,12 +95,6 @@ impl Button {
 
     pub fn button_type(mut self, button_type: &str) -> Self {
         self.button_type = Some(button_type.to_string());
-        self
-    }
-
-    #[allow(dead_code)]
-    pub fn extra_classes(mut self, classes: &str) -> Self {
-        self.extra_classes = Some(classes.to_string());
         self
     }
 

@@ -8,37 +8,6 @@ pub struct Avatar {
     pub placeholder_text: Option<String>,
 }
 
-impl Avatar {
-    #[allow(dead_code)]
-    pub fn new(src: Option<String>, alt: &str) -> Self {
-        Self {
-            src,
-            alt: alt.to_string(),
-            size: "w-12 h-12".to_string(),
-            border: false,
-            placeholder_text: None,
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn size(mut self, size: &str) -> Self {
-        self.size = size.to_string();
-        self
-    }
-
-    #[allow(dead_code)]
-    pub fn with_border(mut self, border: bool) -> Self {
-        self.border = border;
-        self
-    }
-
-    #[allow(dead_code)]
-    pub fn placeholder_text(mut self, text: &str) -> Self {
-        self.placeholder_text = Some(text.to_string());
-        self
-    }
-}
-
 impl Render for Avatar {
     fn render(&self) -> Markup {
         let border_class = if self.border {

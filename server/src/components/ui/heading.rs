@@ -7,8 +7,8 @@ pub struct Heading {
     pub classes: Option<String>,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(dead_code)]
 pub enum HeadingLevel {
     H1,
     H2,

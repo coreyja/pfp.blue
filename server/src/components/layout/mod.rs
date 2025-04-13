@@ -109,12 +109,6 @@ impl CurvedHeader {
             content: None,
         }
     }
-
-    #[allow(dead_code)]
-    pub fn with_content(mut self, content: impl Render + 'static) -> Self {
-        self.content = Some(Box::new(content));
-        self
-    }
 }
 
 impl Render for CurvedHeader {
@@ -160,18 +154,6 @@ impl ContentSection {
             content: Box::new(content),
             negative_margin_top: None,
         }
-    }
-
-    #[allow(dead_code)]
-    pub fn with_padding(mut self, padding: &str) -> Self {
-        self.padding = padding.to_string();
-        self
-    }
-
-    #[allow(dead_code)]
-    pub fn with_negative_margin_top(mut self, margin: &str) -> Self {
-        self.negative_margin_top = Some(margin.to_string());
-        self
     }
 }
 
