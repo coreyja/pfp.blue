@@ -295,6 +295,9 @@ async fn display_profile_multi(
                     // Profile info - adapt font sizes for mobile
                     div class="text-center md:text-left max-w-full overflow-hidden" {
                         h1 class="text-2xl sm:text-3xl md:text-4xl font-bold mb-2 md:mb-3 text-gray-800 truncate" title=(primary_token.did) { (display_name) }
+                        @if let Some(handle) = &primary_token.handle {
+                            p class="text-md text-gray-500" { "@" (handle) }
+                        }
                         // We just display the display name now, no need to show handle separately
                         // DID is shown as a tooltip on the display name instead of directly
 
