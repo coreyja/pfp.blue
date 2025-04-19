@@ -63,6 +63,7 @@ async fn root_page(optional_user: OptionalUser, State(state): State<AppState>) -
         layout::Card,
         profile::feature_card::{FeatureCard, FeatureCardColor},
         ui::{
+            badge::BetaBadge,
             button::{Button, ButtonSize, IconPosition},
             heading::Heading,
         },
@@ -146,11 +147,7 @@ async fn root_page(optional_user: OptionalUser, State(state): State<AppState>) -
             }
 
             // BETA badge
-            div class="mb-3" {
-                span class="inline-flex items-center px-4 py-1.5 rounded-full text-sm sm:text-base font-bold bg-gradient-to-r from-blue-400 to-purple-400 text-white shadow-sm transform hover:scale-105 transition-transform duration-200" {
-                    "BETA"
-                }
-            }
+            (BetaBadge::new())
 
             // Display personalized greeting
             h2 class="text-xl sm:text-2xl font-semibold text-indigo-700 mt-2" { (greeting) }
