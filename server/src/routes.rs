@@ -145,6 +145,13 @@ async fn root_page(optional_user: OptionalUser, State(state): State<AppState>) -
                 (crate::static_assets::banner_img("w-64 sm:w-80 md:w-96 mx-auto"))
             }
 
+            // BETA badge
+            div class="mb-3" {
+                span class="inline-flex items-center px-4 py-1.5 rounded-full text-sm sm:text-base font-bold bg-gradient-to-r from-blue-400 to-purple-400 text-white shadow-sm transform hover:scale-105 transition-transform duration-200" {
+                    "BETA"
+                }
+            }
+
             // Display personalized greeting
             h2 class="text-xl sm:text-2xl font-semibold text-indigo-700 mt-2" { (greeting) }
             p class="text-base sm:text-lg text-gray-600 mb-6 sm:mb-8" { "Your Bluesky Profile Manager" }
@@ -187,7 +194,7 @@ async fn root_page(optional_user: OptionalUser, State(state): State<AppState>) -
 
             div class="mt-8 sm:mt-10 p-4 sm:p-5 bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg sm:rounded-xl border border-purple-100 shadow-sm" {
                 h3 class="text-base sm:text-lg font-medium text-purple-800" { "Coming Soon" }
-                p class="text-xs sm:text-sm text-gray-700 mt-1 sm:mt-2" { "More profile customization! Reach out on"
+                p class="text-xs sm:text-sm text-gray-700 mt-1 sm:mt-2" { "More profile customization! Reach out on "
                     a href="https://bsky.app/profile/coreyja.com" target="_blank" class="text-indigo-600 hover:text-indigo-800 underline" {
                         "Bluesky"
                     }
