@@ -4,15 +4,13 @@ use axum::{
     http::{request::Parts, StatusCode},
     response::{IntoResponse, Redirect, Response},
 };
-use cja::app_state::AppState as _;
+use cja::{app_state::AppState as _, server::cookies::Cookie, server::cookies::CookieJar};
 use color_eyre::eyre::Context;
 use time::Duration;
 use tracing::{error, info};
 use uuid::Uuid;
 
 use crate::{
-    cookies::Cookie,
-    cookies::CookieJar,
     state::AppState,
     user::{Session, User},
 };
@@ -171,7 +169,7 @@ impl FromRequestParts<AppState> for OptionalUser {
 }
 
 /// Get the session ID from the cookie
-pub fn get_session_id_from_cookie(cookies: &CookieJar) -> Option<Uuid> {
+pub fn get_session_id_from_cookie(cookies: &CookieJar<AppState>) -> Option<Uuid> {
     cookies
         .get(SESSION_COOKIE_NAME)
         .and_then(|cookie| cookie.value().parse::<Uuid>().ok())
@@ -200,8 +198,8 @@ pub async fn validate_session(
 }
 
 /// Creates a session cookie for the given session ID
-fn create_session_cookie(session_id: Uuid, duration_days: i64) -> crate::cookies::Cookie<'static> {
-    let mut cookie = crate::cookies::Cookie::new(SESSION_COOKIE_NAME, session_id.to_string());
+fn create_session_cookie(session_id: Uuid, duration_days: i64) -> Cookie<'static> {
+    let mut cookie = Cookie::new(SESSION_COOKIE_NAME, session_id.to_string());
     cookie.set_path("/");
     cookie.set_http_only(true);
     cookie.set_secure(std::env::var("PROTO").ok() == Some("https".to_owned()));
@@ -212,7 +210,7 @@ fn create_session_cookie(session_id: Uuid, duration_days: i64) -> crate::cookies
 /// Create a new session for a user and set a cookie
 pub async fn create_session_and_set_cookie(
     state: &AppState,
-    cookies: &CookieJar,
+    cookies: &CookieJar<AppState>,
     user_id: Uuid,
     primary_token_id: Option<Uuid>,
 ) -> cja::Result<Session> {
@@ -230,7 +228,7 @@ pub async fn create_session_and_set_cookie(
 }
 
 /// Clear the session cookie and invalidate the session in the database
-pub async fn end_session(state: &AppState, cookies: &CookieJar) -> cja::Result<()> {
+pub async fn end_session(state: &AppState, cookies: &CookieJar<AppState>) -> cja::Result<()> {
     if let Some(session_id) = get_session_id_from_cookie(cookies) {
         if let Ok(Some(mut session)) = Session::get_by_id(state.db(), session_id).await {
             session

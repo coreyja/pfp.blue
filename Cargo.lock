@@ -713,7 +713,7 @@ dependencies = [
 [[package]]
 name = "cja"
 version = "0.0.0"
-source = "git+https://github.com/coreyja/coreyja.com?branch=main#fcff8490bb308a42d33e3f5839e3bdb2ab0c0390"
+source = "git+https://github.com/coreyja/cja?branch=main#b866b67c3ee13dae054b98ee4e99d33c08bcc7d3"
 dependencies = [
  "async-trait",
  "axum",
@@ -721,8 +721,10 @@ dependencies = [
  "chrono",
  "color-eyre",
  "http 1.2.0",
+ "listenfd",
  "serde",
  "serde_json",
+ "socket2",
  "sqlx",
  "thiserror 1.0.69",
  "tokio",
@@ -2696,7 +2698,7 @@ dependencies = [
  "approx",
  "conv",
  "image",
- "itertools 0.10.5",
+ "itertools",
  "nalgebra",
  "num",
  "rand 0.7.3",
@@ -2816,15 +2818,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "itertools"
-version = "0.12.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba291022dbbd398a455acf126c1e341954079855bc60dfdda641363bd6922569"
-dependencies = [
- "either",
-]
-
-[[package]]
 name = "itoa"
 version = "1.0.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2927,6 +2920,17 @@ name = "linux-raw-sys"
 version = "0.4.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d26c52dbd32dccf2d10cac7725f8eae5296885fb5703b261f7d0a0739ec807ab"
+
+[[package]]
+name = "listenfd"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b87bc54a4629b4294d0b3ef041b64c40c611097a677d9dc07b2c67739fe39dba"
+dependencies = [
+ "libc",
+ "uuid",
+ "winapi",
+]
 
 [[package]]
 name = "litemap"
@@ -3660,7 +3664,6 @@ dependencies = [
  "time",
  "tokio",
  "tower 0.4.13",
- "tower-cookies",
  "tower-http",
  "tracing",
  "tracing-opentelemetry 0.23.0",
@@ -3873,7 +3876,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "81bddcdb20abf9501610992b6759a4c888aef7d1a7247ef75e2404275ac24af1"
 dependencies = [
  "anyhow",
- "itertools 0.12.1",
+ "itertools",
  "proc-macro2",
  "quote",
  "syn 2.0.98",
@@ -5662,7 +5665,7 @@ dependencies = [
 [[package]]
 name = "tracing-common"
 version = "0.1.0"
-source = "git+https://github.com/coreyja/coreyja.com?branch=main#fcff8490bb308a42d33e3f5839e3bdb2ab0c0390"
+source = "git+https://github.com/coreyja/cja?branch=main#b866b67c3ee13dae054b98ee4e99d33c08bcc7d3"
 dependencies = [
  "color-eyre",
  "opentelemetry 0.23.0",

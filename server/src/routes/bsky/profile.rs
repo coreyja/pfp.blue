@@ -1,11 +1,10 @@
 use axum::{extract::State, http::StatusCode, response::IntoResponse};
-use cja::jobs::Job;
+use cja::{jobs::Job, server::cookies::CookieJar};
 use maud::html;
 use sqlx::Row;
 use tracing::error;
 
 use crate::{
-    cookies::CookieJar,
     oauth::{self, OAuthTokenSet},
     state::AppState,
 };
@@ -13,7 +12,7 @@ use crate::{
 /// Profile page that requires authentication
 pub async fn profile(
     State(state): State<AppState>,
-    cookies: CookieJar,
+    cookies: CookieJar<AppState>,
     crate::auth::AuthUser(user): crate::auth::AuthUser,
 ) -> impl IntoResponse {
     // Get all tokens for this user

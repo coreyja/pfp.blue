@@ -9,7 +9,6 @@ use tracing::info;
 mod api;
 mod auth;
 mod components;
-mod cookies;
 mod cron;
 mod did;
 mod encryption;
