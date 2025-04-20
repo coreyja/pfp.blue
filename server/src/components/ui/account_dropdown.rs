@@ -72,9 +72,13 @@ impl Render for AccountDropdown {
                                 div class="min-w-0 flex-1" {
                                     div class="font-medium truncate" {
                                         @if let Some(display_name) = &token.display_name {
-                                            "@" (display_name)
+                                            (display_name)
                                         } @else {
-                                            "did:..." (token.did.chars().skip(token.did.len().saturating_sub(8)).collect::<String>())
+                                            "did:" (token.did)
+                                        }
+
+                                        @if let Some(handle) = &token.handle {
+                                            div class="text-sm text-gray-500" { "@" (handle) }
                                         }
                                     }
                                     @if is_current {

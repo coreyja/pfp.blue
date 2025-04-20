@@ -115,7 +115,7 @@ pub struct SetPrimaryAccountParams {
 pub async fn set_primary_account(
     State(state): State<AppState>,
     cookies: CookieJar<AppState>,
-    crate::auth::AuthUser(user): crate::auth::AuthUser,
+    crate::auth::AuthUser { user, .. }: crate::auth::AuthUser,
     Query(params): Query<SetPrimaryAccountParams>,
 ) -> impl IntoResponse {
     // Get the session

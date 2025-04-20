@@ -1,8 +1,9 @@
+use atrium_api::did_doc::DidDocument;
 use cja::jobs::Job;
 use color_eyre::eyre::eyre;
 use color_eyre::eyre::Context as _;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info};
+use tracing::info;
 
 use crate::{
     oauth::{create_dpop_proof_with_ath, OAuthTokenSet},
@@ -23,6 +24,14 @@ impl UpdateProfileInfoJob {
             did: token.did.clone(),
         }
     }
+}
+
+pub fn get_handle(did: &DidDocument) -> Option<String> {
+    let aka = did.also_known_as.as_ref()?;
+
+    aka.iter()
+        .find_map(|handle| handle.strip_prefix("at://"))
+        .map(|s| s.to_string())
 }
 
 #[async_trait::async_trait]
@@ -180,83 +189,21 @@ impl Job<AppState> for UpdateProfileInfoJob {
             None
         };
 
-        // Extract the handle from the profile data
-        let extracted_handle = if let Some(value) = profile_data.get("value") {
-            if let Some(handle_val) = value.get("handle") {
-                handle_val.as_str().map(|s| s.to_string())
-            } else {
-                None
-            }
-        } else {
-            None
-        };
+        let extracted_handle = get_handle(&did_document);
 
-        // If we found a display name in the profile, make sure it's updated in the database
-        if let Some(display_name_str) = extracted_display_name {
-            // Check if display name is different than what we have saved
-            let should_update = match &token.display_name {
-                Some(current_display_name) => current_display_name != &display_name_str,
-                None => true, // No display name stored yet, need to update
-            };
-
-            if should_update {
-                // Update the display name in the database
-                crate::oauth::db::update_token_display_name(
-                    &app_state.db,
-                    &self.did,
-                    &display_name_str,
-                )
-                .await
-                .wrap_err_with(|| {
-                    format!(
-                        "Failed to update display name in database for DID {}",
-                        self.did
-                    )
-                })?;
-
-                info!(
-                    "Updated display name for DID {}: {}",
-                    self.did, display_name_str
-                );
-            } else {
-                debug!(
-                    "Display name for DID {} already up to date: {}",
-                    self.did, display_name_str
-                );
-            }
-        } else {
-            debug!(
-                "No display name found in profile data for DID: {}",
+        crate::oauth::db::update_token_display_name_and_handle(
+            &app_state.db,
+            &self.did,
+            extracted_display_name.as_deref(),
+            extracted_handle.as_deref(),
+        )
+        .await
+        .wrap_err_with(|| {
+            format!(
+                "Failed to update display name in database for DID {}",
                 self.did
-            );
-        }
-
-        // If we found a handle in the profile, make sure it's updated in the database
-        if let Some(handle_str) = extracted_handle {
-            // Check if handle is different than what we have saved
-            let should_update = match &token.handle {
-                Some(current_handle) => current_handle != &handle_str,
-                None => true, // No handle stored yet, need to update
-            };
-
-            if should_update {
-                // Update the handle in the database
-                crate::oauth::db::update_token_handle(&app_state.db, &self.did, &handle_str)
-                    .await
-                    .wrap_err_with(|| {
-                        format!("Failed to update handle in database for DID {}", self.did)
-                    })?;
-
-                info!("Updated handle for DID {}: {}", self.did, handle_str);
-            } else {
-                debug!(
-                    "Handle for DID {} already up to date: {}",
-                    self.did, handle_str
-                );
-            }
-        } else {
-            debug!("No handle found in profile data for DID: {}", self.did);
-        }
+            )
+        })?;
 
         Ok(())
     }

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE oauth_tokens\n        SET display_name = $2, handle = $3, updated_at_utc = NOW()\n        WHERE did = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b8e4ea7049ad449438afa6ff3fdf109bb0ea1fa98f00f468bbf070537f42326e"
+}

@@ -1,5 +1,5 @@
 use axum::{extract::State, http::StatusCode, response::IntoResponse};
-use cja::{jobs::Job, server::cookies::CookieJar};
+use cja::jobs::Job;
 use maud::html;
 use sqlx::Row;
 use tracing::error;
@@ -12,8 +12,7 @@ use crate::{
 /// Profile page that requires authentication
 pub async fn profile(
     State(state): State<AppState>,
-    cookies: CookieJar<AppState>,
-    crate::auth::AuthUser(user): crate::auth::AuthUser,
+    crate::auth::AuthUser { user, session }: crate::auth::AuthUser,
 ) -> impl IntoResponse {
     // Get all tokens for this user
     let tokens = match oauth::db::get_tokens_for_user(&state, user.user_id).await {
@@ -43,115 +42,11 @@ pub async fn profile(
     }
 
     if tokens.is_empty() {
-        use crate::components::{
-            form::{Form, InputField},
-            layout::Page,
-            profile::FeatureCard,
-            ui::{
-                button::{Button, ButtonVariant, IconPosition},
-                heading::Heading,
-            },
-        };
-        use maud::Render;
-
-        let form_content = html! {
-            (InputField::new("did")
-                .placeholder("Enter Bluesky handle or DID")
-                .icon("fa-solid fa-user")
-                .required(true))
-
-            (Button::primary("Link Bluesky Account")
-                .icon("fa-solid fa-link", IconPosition::Left)
-                .button_type("submit")
-                .full_width(true))
-        };
-
-        let content = html! {
-            div class="max-w-3xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden text-center p-8" {
-                // App logo
-                div class="mb-6 flex justify-center" {
-                    i class="fa-solid fa-user-circle text-indigo-600 text-4xl sm:text-5xl" {}
-                }
-
-                (Heading::h1("Welcome to Your Profile!")
-                    .with_classes("text-center"))
-                p class="text-gray-600 mb-8 text-center" {
-                    "You don't have any Bluesky accounts linked yet. Let's get started!"
-                }
-
-                // Auth form in a feature card style
-                div class="mb-8" {
-                    (Form::new("/oauth/bsky/authorize", "get", form_content)
-                        .extra_classes("bg-gradient-to-r from-indigo-50 to-blue-50 rounded-xl p-6 border border-dashed border-indigo-200"))
-                }
-
-                // Features section with cards
-                (Heading::h3("Why link your Bluesky account?"))
-
-                div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8" {
-                    (FeatureCard::new(
-                        "Profile Management",
-                        "Manage your Bluesky profile with ease, including custom profile pictures",
-                        "⚙️",
-                        crate::components::profile::feature_card::FeatureCardColor::Blue
-                    ))
-
-                    (FeatureCard::new(
-                        "Multiple Accounts",
-                        "Link and manage multiple Bluesky accounts in one place",
-                        "👥",
-                        crate::components::profile::feature_card::FeatureCardColor::Indigo
-                    ))
-
-                    (FeatureCard::new(
-                        "Authentication",
-                        "Seamless authentication with your Bluesky identity",
-                        "🔐",
-                        crate::components::profile::feature_card::FeatureCardColor::Purple
-                    ))
-                }
-
-                // Footer links
-                div class="mt-8 pt-4 border-t border-gray-200 flex justify-center gap-4" {
-                    (Button::new("Back to Home")
-                        .variant(ButtonVariant::Link)
-                        .href("/")
-                        .icon("fa-solid fa-home", IconPosition::Left))
-
-                    span class="text-gray-300 self-center" { "|" }
-
-                    (Button::new("Try Different Login")
-                        .variant(ButtonVariant::Link)
-                        .href("/login")
-                        .icon("fa-solid fa-sign-in-alt", IconPosition::Left))
-                }
-            }
-        };
-
-        return Page::new("Your Profile - pfp.blue".to_string(), Box::new(content))
-            .render()
-            .into_response();
+        return empty_profile().into_response();
     }
 
-    // Get session to check for a set primary token
-    let session_id = match crate::auth::get_session_id_from_cookie(&cookies) {
-        Some(id) => id,
-        None => {
-            error!("No valid session found");
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Session not found").into_response();
-        }
-    };
-
-    let session = match crate::auth::validate_session(&state.db, session_id).await {
-        Ok(Some(s)) => s,
-        _ => {
-            error!("Session validation failed");
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Invalid session").into_response();
-        }
-    };
-
     // Use primary token from session if available, otherwise use the first token
-    let primary_token = if let Ok(Some(token)) = session.get_primary_token(&state.db).await {
+    let mut primary_token = if let Ok(Some(token)) = session.get_primary_token(&state.db).await {
         token
     } else if !tokens.is_empty() {
         tokens[0].clone()
@@ -165,16 +60,7 @@ pub async fn profile(
         // Use our consolidated function to get a valid token
         match oauth::get_valid_token_by_did(&primary_token.did, &state).await {
             Ok(new_token) => {
-                // Refresh all tokens
-                let tokens = match oauth::db::get_tokens_for_user(&state, user.user_id).await {
-                    Ok(tokens) => tokens,
-                    Err(_) => vec![new_token.clone()],
-                };
-
-                // Display the profile with the refreshed token and all tokens
-                return display_profile_multi(&state, new_token, tokens)
-                    .await
-                    .into_response();
+                primary_token = new_token;
             }
             Err(err) => {
                 error!("Failed to refresh token: {:?}", err);
@@ -187,6 +73,95 @@ pub async fn profile(
     // Display profile with all tokens
     display_profile_multi(&state, primary_token, tokens)
         .await
+        .into_response()
+}
+
+fn empty_profile() -> impl IntoResponse {
+    use crate::components::{
+        form::{Form, InputField},
+        layout::Page,
+        profile::FeatureCard,
+        ui::{
+            button::{Button, ButtonVariant, IconPosition},
+            heading::Heading,
+        },
+    };
+    use maud::Render;
+    let form_content = html! {
+        (InputField::new("did")
+            .placeholder("Enter Bluesky handle or DID")
+            .icon("fa-solid fa-user")
+            .required(true))
+
+        (Button::primary("Link Bluesky Account")
+            .icon("fa-solid fa-link", IconPosition::Left)
+            .button_type("submit")
+            .full_width(true))
+    };
+    let content = html! {
+        div class="max-w-3xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden text-center p-8" {
+            // App logo
+            div class="mb-6 flex justify-center" {
+                i class="fa-solid fa-user-circle text-indigo-600 text-4xl sm:text-5xl" {}
+            }
+
+            (Heading::h1("Welcome to Your Profile!")
+                .with_classes("text-center"))
+            p class="text-gray-600 mb-8 text-center" {
+                "You don't have any Bluesky accounts linked yet. Let's get started!"
+            }
+
+            // Auth form in a feature card style
+            div class="mb-8" {
+                (Form::new("/oauth/bsky/authorize", "get", form_content)
+                    .extra_classes("bg-gradient-to-r from-indigo-50 to-blue-50 rounded-xl p-6 border border-dashed border-indigo-200"))
+            }
+
+            // Features section with cards
+            (Heading::h3("Why link your Bluesky account?"))
+
+            div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8" {
+                (FeatureCard::new(
+                    "Profile Management",
+                    "Manage your Bluesky profile with ease, including custom profile pictures",
+                    "⚙️",
+                    crate::components::profile::feature_card::FeatureCardColor::Blue
+                ))
+
+                (FeatureCard::new(
+                    "Multiple Accounts",
+                    "Link and manage multiple Bluesky accounts in one place",
+                    "👥",
+                    crate::components::profile::feature_card::FeatureCardColor::Indigo
+                ))
+
+                (FeatureCard::new(
+                    "Authentication",
+                    "Seamless authentication with your Bluesky identity",
+                    "🔐",
+                    crate::components::profile::feature_card::FeatureCardColor::Purple
+                ))
+            }
+
+            // Footer links
+            div class="mt-8 pt-4 border-t border-gray-200 flex justify-center gap-4" {
+                (Button::new("Back to Home")
+                    .variant(ButtonVariant::Link)
+                    .href("/")
+                    .icon("fa-solid fa-home", IconPosition::Left))
+
+                span class="text-gray-300 self-center" { "|" }
+
+                (Button::new("Try Different Login")
+                    .variant(ButtonVariant::Link)
+                    .href("/login")
+                    .icon("fa-solid fa-sign-in-alt", IconPosition::Left))
+            }
+        }
+    };
+
+    Page::new("Your Profile - pfp.blue".to_string(), Box::new(content))
+        .render()
         .into_response()
 }
 
@@ -295,6 +270,9 @@ async fn display_profile_multi(
                     // Profile info - adapt font sizes for mobile
                     div class="text-center md:text-left max-w-full overflow-hidden" {
                         h1 class="text-2xl sm:text-3xl md:text-4xl font-bold mb-2 md:mb-3 text-gray-800 truncate" title=(primary_token.did) { (display_name) }
+                        @if let Some(handle) = &primary_token.handle {
+                            p class="text-md text-gray-500" { "@" (handle) }
+                        }
                         // We just display the display name now, no need to show handle separately
                         // DID is shown as a tooltip on the display name instead of directly
 

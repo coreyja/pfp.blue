@@ -752,15 +752,10 @@ pub async fn get_valid_token_by_did(
     // Then try to refresh
     let refreshed_token_result = refresh_token_if_needed(&token, state, &token_endpoint).await?;
 
-    match refreshed_token_result {
-        Some(refreshed_token) => {
-            tracing::info!("Token for DID {} was refreshed", did);
-            Ok(refreshed_token)
-        }
-        None => {
-            // This shouldn't happen since we already checked the token is expired
-            tracing::warn!("Token wasn't refreshed despite being expired");
-            Ok(token) // Return the original token as a fallback
-        }
-    }
+    let refreshed_token = refreshed_token_result.ok_or_else(|| {
+        eyre!("Token wasn't refreshed despite being expired. Likely need to re-authenticate")
+    })?;
+    tracing::info!("Token for DID {} was refreshed", did);
+
+    Ok(refreshed_token)
 }

@@ -302,35 +302,20 @@ pub async fn delete_token(pool: &PgPool, did: &str) -> cja::Result<()> {
 }
 
 /// Updates the display name for a token
-pub async fn update_token_display_name(
+pub async fn update_token_display_name_and_handle(
     pool: &PgPool,
     did: &str,
-    display_name: &str,
+    display_name: Option<&str>,
+    handle: Option<&str>,
 ) -> cja::Result<()> {
     sqlx::query!(
         r#"
         UPDATE oauth_tokens
-        SET display_name = $2, updated_at_utc = NOW()
+        SET display_name = $2, handle = $3, updated_at_utc = NOW()
         WHERE did = $1
         "#,
         did,
-        display_name
-    )
-    .execute(pool)
-    .await?;
-
-    Ok(())
-}
-
-/// Updates the handle for a token
-pub async fn update_token_handle(pool: &PgPool, did: &str, handle: &str) -> cja::Result<()> {
-    sqlx::query!(
-        r#"
-        UPDATE oauth_tokens
-        SET handle = $2, updated_at_utc = NOW()
-        WHERE did = $1
-        "#,
-        did,
+        display_name,
         handle
     )
     .execute(pool)

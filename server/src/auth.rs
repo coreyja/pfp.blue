@@ -23,7 +23,10 @@ pub const DEFAULT_SESSION_DURATION_DAYS: i64 = 30;
 
 /// Extract the current user from the request if authenticated
 #[derive(Debug, Clone)]
-pub struct AuthUser(pub User);
+pub struct AuthUser {
+    pub user: User,
+    pub session: Session,
+}
 
 #[async_trait]
 impl FromRequestParts<AppState> for AuthUser {
@@ -76,14 +79,18 @@ impl FromRequestParts<AppState> for AuthUser {
             }
         };
 
-        Ok(AuthUser(user))
+        Ok(AuthUser { user, session })
     }
 }
 
 /// Extract an authenticated admin user from the request
 /// Requires both authentication and admin privileges
 #[derive(Debug, Clone)]
-pub struct AdminUser(pub User);
+pub struct AdminUser {
+    pub user: User,
+    #[allow(dead_code)]
+    pub session: Session,
+}
 
 #[async_trait]
 impl FromRequestParts<AppState> for AdminUser {
@@ -100,15 +107,18 @@ impl FromRequestParts<AppState> for AdminUser {
         };
 
         // Check if user has admin privileges
-        if !auth_user.0.is_admin {
+        if !auth_user.user.is_admin {
             error!(
                 "User {} attempted to access admin area without admin privileges",
-                auth_user.0.user_id
+                auth_user.user.user_id
             );
             return Err(StatusCode::FORBIDDEN.into_response());
         }
 
-        Ok(AdminUser(auth_user.0))
+        Ok(AdminUser {
+            user: auth_user.user,
+            session: auth_user.session,
+        })
     }
 }
 
@@ -116,6 +126,8 @@ impl FromRequestParts<AppState> for AdminUser {
 #[derive(Debug, Clone)]
 pub struct OptionalUser {
     pub user: Option<User>,
+    #[allow(dead_code)]
+    pub session: Option<Session>,
 }
 
 #[async_trait]
@@ -138,8 +150,11 @@ impl FromRequestParts<AppState> for OptionalUser {
         let session_id = match get_session_id_from_cookie(&cookies) {
             Some(id) => id,
             None => {
-                // No cookie, return None for user
-                return Ok(OptionalUser { user: None });
+                // No cookie, return None for user and session
+                return Ok(OptionalUser {
+                    user: None,
+                    session: None,
+                });
             }
         };
 
@@ -147,8 +162,11 @@ impl FromRequestParts<AppState> for OptionalUser {
         let session = match validate_session(&state.db, session_id).await {
             Ok(Some(session)) => session,
             Ok(None) => {
-                // Invalid session, return None for user
-                return Ok(OptionalUser { user: None });
+                // Invalid session, return None for user and session
+                return Ok(OptionalUser {
+                    user: None,
+                    session: None,
+                });
             }
             Err(err) => {
                 error!("Error validating session {}: {:?}", session_id, err);
@@ -158,8 +176,14 @@ impl FromRequestParts<AppState> for OptionalUser {
 
         // Get the user for this session
         match session.get_user(&state.db).await {
-            Ok(Some(user)) => Ok(OptionalUser { user: Some(user) }),
-            Ok(None) => Ok(OptionalUser { user: None }),
+            Ok(Some(user)) => Ok(OptionalUser {
+                user: Some(user),
+                session: Some(session),
+            }),
+            Ok(None) => Ok(OptionalUser {
+                user: None,
+                session: Some(session),
+            }),
             Err(err) => {
                 error!("Error getting user for session {}: {:?}", session_id, err);
                 return Err(StatusCode::INTERNAL_SERVER_ERROR.into_response());

@@ -63,6 +63,7 @@ async fn root_page(optional_user: OptionalUser, State(state): State<AppState>) -
         layout::Card,
         profile::feature_card::{FeatureCard, FeatureCardColor},
         ui::{
+            badge::BetaBadge,
             button::{Button, ButtonSize, IconPosition},
             heading::Heading,
         },
@@ -145,6 +146,9 @@ async fn root_page(optional_user: OptionalUser, State(state): State<AppState>) -
                 (crate::static_assets::banner_img("w-64 sm:w-80 md:w-96 mx-auto"))
             }
 
+            // BETA badge
+            (BetaBadge::new())
+
             // Display personalized greeting
             h2 class="text-xl sm:text-2xl font-semibold text-indigo-700 mt-2" { (greeting) }
             p class="text-base sm:text-lg text-gray-600 mb-6 sm:mb-8" { "Your Bluesky Profile Manager" }
@@ -187,11 +191,12 @@ async fn root_page(optional_user: OptionalUser, State(state): State<AppState>) -
 
             div class="mt-8 sm:mt-10 p-4 sm:p-5 bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg sm:rounded-xl border border-purple-100 shadow-sm" {
                 h3 class="text-base sm:text-lg font-medium text-purple-800" { "Coming Soon" }
-                p class="text-xs sm:text-sm text-gray-700 mt-1 sm:mt-2" { "More profile customization! Reach out on" }
-                a href="https://bsky.app/profile/coreyja.com" target="_blank" class="text-indigo-600 hover:text-indigo-800 underline" {
-                    "Bluesky"
+                p class="text-xs sm:text-sm text-gray-700 mt-1 sm:mt-2" { "More profile customization! Reach out on "
+                    a href="https://bsky.app/profile/coreyja.com" target="_blank" class="text-indigo-600 hover:text-indigo-800 underline" {
+                        "Bluesky"
+                    }
+                    " with your ideas or suggestions."
                 }
-                " with your ideas or suggestions."
             }
         }
     };
@@ -290,7 +295,7 @@ struct ToggleProfileProgressParams {
 /// Handler for toggling profile picture progress
 async fn toggle_profile_progress(
     State(state): State<AppState>,
-    AuthUser(user): AuthUser,
+    AuthUser { user, .. }: AuthUser,
     Form(params): Form<ToggleProfileProgressParams>,
 ) -> ServerResult<Response, Redirect> {
     let token_id = validate_did_ownership(&state, &params.did, user.user_id)
@@ -336,69 +341,67 @@ async fn toggle_profile_progress(
         .wrap_err("Database error when fetching token")
         .with_redirect(Redirect::to("/me"))?;
 
-        // Check if the token was found
-        if let Some(row) = row {
-            // Get token data
-            let token = crate::oauth::OAuthTokenSet {
-                did: row.did.clone(),
-                display_name: row.display_name.clone(),
-                handle: row.handle.clone(),
-                access_token: row.access_token.clone(),
-                refresh_token: row.refresh_token.clone(),
-                token_type: row.token_type.clone(),
-                scope: row.scope.clone(),
-                expires_at: row.expires_at as u64,
-                dpop_jkt: row.dpop_jkt.clone(),
-                user_id: Some(row.user_id),
-            };
-
-            // Fetch profile info to get the current avatar blob CID
-            let profile_info = crate::api::get_profile_with_avatar(&token.did, &state)
-                .await
-                .wrap_err("Failed to fetch profile info")
-                .with_redirect(Redirect::to("/me"))?;
-
-            let avatar = profile_info
-                .avatar
-                .ok_or_else(|| eyre!("No avatar found in profile"))
-                .with_redirect(Redirect::to("/me"))?;
-
-            // Get the blob data
-            let blob_data = crate::routes::bsky::fetch_blob_by_cid(&token.did, &avatar.cid, &state)
-                .await
-                .wrap_err("Failed to fetch avatar blob data")
-                .with_redirect(Redirect::to("/me"))?;
-
-            // Upload to get a proper blob object
-            let blob_object =
-                crate::jobs::helpers::upload_image_to_bluesky(&state, &token, &blob_data)
-                    .await
-                    .wrap_err("Failed to upload image to Bluesky")
-                    .with_redirect(Redirect::to("/me"))?;
-
-            // Save the blob object to our custom PDS collection
-            crate::jobs::helpers::save_original_profile_picture(&state, &token, blob_object)
-                .await
-                .wrap_err("Failed to save original profile picture to PDS")
-                .with_redirect(Redirect::to("/me"))?;
-
-            info!(
-                "Automatically saved original profile picture to PDS collection for DID {}",
-                token.did
-            );
-
-            // Enqueue a job to update the profile picture
-            let job = crate::jobs::UpdateProfilePictureProgressJob::new(token_id);
-            job.enqueue(state.clone(), "enabled_profile_progress".to_string())
-                .await
-                .wrap_err("Failed to enqueue profile picture update job")
-                .with_redirect(Redirect::to("/me"))?;
-
-            info!("Enqueued profile picture update job for token {}", token_id);
-        } else {
+        let Some(row) = row else {
             return Err(eyre!("Token not found for DID {}", token_id))
                 .with_redirect(Redirect::to("/me"));
-        }
+        };
+
+        // Get token data
+        let token = crate::oauth::OAuthTokenSet {
+            did: row.did.clone(),
+            display_name: row.display_name.clone(),
+            handle: row.handle.clone(),
+            access_token: row.access_token.clone(),
+            refresh_token: row.refresh_token.clone(),
+            token_type: row.token_type.clone(),
+            scope: row.scope.clone(),
+            expires_at: row.expires_at as u64,
+            dpop_jkt: row.dpop_jkt.clone(),
+            user_id: Some(row.user_id),
+        };
+
+        // Fetch profile info to get the current avatar blob CID
+        let profile_info = crate::api::get_profile_with_avatar(&token.did, &state)
+            .await
+            .wrap_err("Failed to fetch profile info")
+            .with_redirect(Redirect::to("/me"))?;
+
+        let avatar = profile_info
+            .avatar
+            .ok_or_else(|| eyre!("No avatar found in profile"))
+            .with_redirect(Redirect::to("/me"))?;
+
+        // Get the blob data
+        let blob_data = crate::routes::bsky::fetch_blob_by_cid(&token.did, &avatar.cid, &state)
+            .await
+            .wrap_err("Failed to fetch avatar blob data")
+            .with_redirect(Redirect::to("/me"))?;
+
+        // Upload to get a proper blob object
+        let blob_object = crate::jobs::helpers::upload_image_to_bluesky(&state, &token, &blob_data)
+            .await
+            .wrap_err("Failed to upload image to Bluesky")
+            .with_redirect(Redirect::to("/me"))?;
+
+        // Save the blob object to our custom PDS collection
+        crate::jobs::helpers::save_original_profile_picture(&state, &token, blob_object)
+            .await
+            .wrap_err("Failed to save original profile picture to PDS")
+            .with_redirect(Redirect::to("/me"))?;
+
+        info!(
+            "Automatically saved original profile picture to PDS collection for DID {}",
+            token.did
+        );
+
+        // Enqueue a job to update the profile picture
+        let job = crate::jobs::UpdateProfilePictureProgressJob::new(token_id);
+        job.enqueue(state.clone(), "enabled_profile_progress".to_string())
+            .await
+            .wrap_err("Failed to enqueue profile picture update job")
+            .with_redirect(Redirect::to("/me"))?;
+
+        info!("Enqueued profile picture update job for token {}", token_id);
     }
 
     // Redirect back to profile page
@@ -581,7 +584,7 @@ async fn privacy_policy_page(_optional_user: OptionalUser, State(_state): State<
 
 /// Admin panel page - shows available jobs and provides a UI to run them
 async fn admin_panel(
-    AdminUser(user): AdminUser,
+    AdminUser { user, .. }: AdminUser,
     State(_state): State<AppState>,
 ) -> impl IntoResponse {
     use crate::components::{layout::Page, ui::heading::Heading};
@@ -665,7 +668,7 @@ struct JobParams {
 
 /// Handler for enqueueing a job
 async fn admin_enqueue_job(
-    AdminUser(_): AdminUser,
+    AdminUser { .. }: AdminUser,
     State(state): State<AppState>,
     Form(params): Form<JobParams>,
 ) -> impl IntoResponse {
@@ -738,7 +741,7 @@ async fn admin_enqueue_job(
 
 /// Handler for running a job immediately
 async fn admin_run_job(
-    AdminUser(_): AdminUser,
+    AdminUser { .. }: AdminUser,
     State(state): State<AppState>,
     Form(params): Form<JobParams>,
 ) -> impl IntoResponse {
