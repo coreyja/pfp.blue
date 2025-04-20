@@ -46,7 +46,7 @@ pub async fn profile(
     }
 
     // Use primary token from session if available, otherwise use the first token
-    let primary_token = if let Ok(Some(token)) = session.get_primary_token(&state.db).await {
+    let mut primary_token = if let Ok(Some(token)) = session.get_primary_token(&state.db).await {
         token
     } else if !tokens.is_empty() {
         tokens[0].clone()
@@ -60,16 +60,7 @@ pub async fn profile(
         // Use our consolidated function to get a valid token
         match oauth::get_valid_token_by_did(&primary_token.did, &state).await {
             Ok(new_token) => {
-                // Refresh all tokens
-                let tokens = match oauth::db::get_tokens_for_user(&state, user.user_id).await {
-                    Ok(tokens) => tokens,
-                    Err(_) => vec![new_token.clone()],
-                };
-
-                // Display the profile with the refreshed token and all tokens
-                return display_profile_multi(&state, new_token, tokens)
-                    .await
-                    .into_response();
+                primary_token = new_token;
             }
             Err(err) => {
                 error!("Failed to refresh token: {:?}", err);
