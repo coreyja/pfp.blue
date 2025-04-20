@@ -1,12 +1,12 @@
 use std::fmt::{Debug, Display};
 
 use axum::http::StatusCode;
-use axum::response::{IntoResponse, Redirect};
+use axum::response::{IntoResponse, Redirect, Response};
 
 #[derive(Debug)]
 pub struct ServerError<R: IntoResponse>(pub(crate) cja::color_eyre::Report, pub(crate) R);
 
-pub type ServerResult<S, F> = Result<S, ServerError<F>>;
+pub type ServerResult<S, F = Response> = Result<S, ServerError<F>>;
 
 impl<R: IntoResponse> Display for ServerError<R> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

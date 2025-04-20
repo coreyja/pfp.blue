@@ -1,7 +1,7 @@
 use axum::response::IntoResponse;
 use cja::server::cookies::CookieJar;
 use color_eyre::eyre::eyre;
-use maud::{html, Render};
+use maud::html;
 use uuid::Uuid;
 
 use crate::{
@@ -119,7 +119,7 @@ pub async fn get_session_id_and_data(
     state_param: Option<&str>,
     cookies: &CookieJar<AppState>,
     app_state: &AppState,
-) -> ServerResult<(Uuid, OAuthSession), axum::http::StatusCode> {
+) -> ServerResult<(Uuid, OAuthSession)> {
     // Get the session ID from the state parameter or the cookie
     let session_id = match state_param
         .and_then(|s| Uuid::parse_str(s).ok())
@@ -133,7 +133,7 @@ pub async fn get_session_id_and_data(
             tracing::error!("No valid session ID found in state or cookie");
             return Err(ServerError(
                 eyre!("No valid session found. Please try authenticating again."),
-                axum::http::StatusCode::BAD_REQUEST,
+                axum::http::StatusCode::BAD_REQUEST.into_response(),
             ));
         }
     };
@@ -145,14 +145,14 @@ pub async fn get_session_id_and_data(
             tracing::error!("Session not found: {}", session_id);
             return Err(ServerError(
                 eyre!("Session not found: {}", session_id),
-                axum::http::StatusCode::BAD_REQUEST,
+                axum::http::StatusCode::BAD_REQUEST.into_response(),
             ));
         }
         Err(err) => {
             tracing::error!("Failed to retrieve session: {:?}", err);
             return Err(ServerError(
                 eyre!("Failed to retrieve session data: {:?}", err),
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response(),
             ));
         }
     };
@@ -162,7 +162,7 @@ pub async fn get_session_id_and_data(
         tracing::error!("Session expired: {}", session_id);
         return Err(ServerError(
             eyre!("Session expired. Please try authenticating again."),
-            axum::http::StatusCode::BAD_REQUEST,
+            axum::http::StatusCode::BAD_REQUEST.into_response(),
         ));
     }
 
