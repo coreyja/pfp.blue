@@ -341,69 +341,67 @@ async fn toggle_profile_progress(
         .wrap_err("Database error when fetching token")
         .with_redirect(Redirect::to("/me"))?;
 
-        // Check if the token was found
-        if let Some(row) = row {
-            // Get token data
-            let token = crate::oauth::OAuthTokenSet {
-                did: row.did.clone(),
-                display_name: row.display_name.clone(),
-                handle: row.handle.clone(),
-                access_token: row.access_token.clone(),
-                refresh_token: row.refresh_token.clone(),
-                token_type: row.token_type.clone(),
-                scope: row.scope.clone(),
-                expires_at: row.expires_at as u64,
-                dpop_jkt: row.dpop_jkt.clone(),
-                user_id: Some(row.user_id),
-            };
-
-            // Fetch profile info to get the current avatar blob CID
-            let profile_info = crate::api::get_profile_with_avatar(&token.did, &state)
-                .await
-                .wrap_err("Failed to fetch profile info")
-                .with_redirect(Redirect::to("/me"))?;
-
-            let avatar = profile_info
-                .avatar
-                .ok_or_else(|| eyre!("No avatar found in profile"))
-                .with_redirect(Redirect::to("/me"))?;
-
-            // Get the blob data
-            let blob_data = crate::routes::bsky::fetch_blob_by_cid(&token.did, &avatar.cid, &state)
-                .await
-                .wrap_err("Failed to fetch avatar blob data")
-                .with_redirect(Redirect::to("/me"))?;
-
-            // Upload to get a proper blob object
-            let blob_object =
-                crate::jobs::helpers::upload_image_to_bluesky(&state, &token, &blob_data)
-                    .await
-                    .wrap_err("Failed to upload image to Bluesky")
-                    .with_redirect(Redirect::to("/me"))?;
-
-            // Save the blob object to our custom PDS collection
-            crate::jobs::helpers::save_original_profile_picture(&state, &token, blob_object)
-                .await
-                .wrap_err("Failed to save original profile picture to PDS")
-                .with_redirect(Redirect::to("/me"))?;
-
-            info!(
-                "Automatically saved original profile picture to PDS collection for DID {}",
-                token.did
-            );
-
-            // Enqueue a job to update the profile picture
-            let job = crate::jobs::UpdateProfilePictureProgressJob::new(token_id);
-            job.enqueue(state.clone(), "enabled_profile_progress".to_string())
-                .await
-                .wrap_err("Failed to enqueue profile picture update job")
-                .with_redirect(Redirect::to("/me"))?;
-
-            info!("Enqueued profile picture update job for token {}", token_id);
-        } else {
+        let Some(row) = row else {
             return Err(eyre!("Token not found for DID {}", token_id))
                 .with_redirect(Redirect::to("/me"));
-        }
+        };
+
+        // Get token data
+        let token = crate::oauth::OAuthTokenSet {
+            did: row.did.clone(),
+            display_name: row.display_name.clone(),
+            handle: row.handle.clone(),
+            access_token: row.access_token.clone(),
+            refresh_token: row.refresh_token.clone(),
+            token_type: row.token_type.clone(),
+            scope: row.scope.clone(),
+            expires_at: row.expires_at as u64,
+            dpop_jkt: row.dpop_jkt.clone(),
+            user_id: Some(row.user_id),
+        };
+
+        // Fetch profile info to get the current avatar blob CID
+        let profile_info = crate::api::get_profile_with_avatar(&token.did, &state)
+            .await
+            .wrap_err("Failed to fetch profile info")
+            .with_redirect(Redirect::to("/me"))?;
+
+        let avatar = profile_info
+            .avatar
+            .ok_or_else(|| eyre!("No avatar found in profile"))
+            .with_redirect(Redirect::to("/me"))?;
+
+        // Get the blob data
+        let blob_data = crate::routes::bsky::fetch_blob_by_cid(&token.did, &avatar.cid, &state)
+            .await
+            .wrap_err("Failed to fetch avatar blob data")
+            .with_redirect(Redirect::to("/me"))?;
+
+        // Upload to get a proper blob object
+        let blob_object = crate::jobs::helpers::upload_image_to_bluesky(&state, &token, &blob_data)
+            .await
+            .wrap_err("Failed to upload image to Bluesky")
+            .with_redirect(Redirect::to("/me"))?;
+
+        // Save the blob object to our custom PDS collection
+        crate::jobs::helpers::save_original_profile_picture(&state, &token, blob_object)
+            .await
+            .wrap_err("Failed to save original profile picture to PDS")
+            .with_redirect(Redirect::to("/me"))?;
+
+        info!(
+            "Automatically saved original profile picture to PDS collection for DID {}",
+            token.did
+        );
+
+        // Enqueue a job to update the profile picture
+        let job = crate::jobs::UpdateProfilePictureProgressJob::new(token_id);
+        job.enqueue(state.clone(), "enabled_profile_progress".to_string())
+            .await
+            .wrap_err("Failed to enqueue profile picture update job")
+            .with_redirect(Redirect::to("/me"))?;
+
+        info!("Enqueued profile picture update job for token {}", token_id);
     }
 
     // Redirect back to profile page
