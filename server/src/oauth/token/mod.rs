@@ -462,22 +462,20 @@ pub async fn refresh_token(
         tracing::debug!("DPoP proof length (refresh): {}", dpop_proof.len());
 
         // Build the token request body as a URL-encoded string
-        let body_parts = [
-            format!("grant_type={}", urlencoding::encode("refresh_token")),
-            format!("refresh_token={}", urlencoding::encode(refresh_token)),
-            format!(
-                "client_assertion_type={}",
-                urlencoding::encode("urn:ietf:params:oauth:client-assertion-type:jwt-bearer")
+        // Create a struct to hold the form data
+        let form_data = serde_urlencoded::to_string([
+            ("grant_type", "refresh_token"),
+            ("refresh_token", refresh_token),
+            (
+                "client_assertion_type",
+                "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
             ),
-            format!(
-                "client_assertion={}",
-                urlencoding::encode(&client_assertion)
-            ),
-            format!("client_id={}", urlencoding::encode(client_id)),
-        ];
+            ("client_assertion", &client_assertion),
+            ("client_id", client_id),
+        ])?;
 
-        // Create the complete request body
-        let request_body = body_parts.join("&");
+        // Use the serialized form data as the request body
+        let request_body = form_data;
         tracing::debug!("Refresh token request body: {}", request_body);
 
         // Send the token request

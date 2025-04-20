@@ -62,7 +62,7 @@ pub async fn profile(
                     redirect_uri: None,
                     state: None,
                 };
-                let param_string = serde_urlencoded::to_string(&params).unwrap();
+                let param_string = serde_urlencoded::to_string(&params)?;
                 let redirect_url = format!("/oauth/bsky/authorize?{}", param_string);
                 return Ok(axum::response::Redirect::to(&redirect_url).into_response());
             }
