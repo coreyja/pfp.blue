@@ -1,5 +1,5 @@
 use axum::{extract::State, http::StatusCode, response::IntoResponse};
-use cja::{jobs::Job, server::cookies::CookieJar};
+use cja::jobs::Job;
 use maud::html;
 use sqlx::Row;
 use tracing::error;
@@ -12,8 +12,7 @@ use crate::{
 /// Profile page that requires authentication
 pub async fn profile(
     State(state): State<AppState>,
-    cookies: CookieJar<AppState>,
-    crate::auth::AuthUser(user): crate::auth::AuthUser,
+    crate::auth::AuthUser { user, session }: crate::auth::AuthUser,
 ) -> impl IntoResponse {
     // Get all tokens for this user
     let tokens = match oauth::db::get_tokens_for_user(&state, user.user_id).await {
@@ -132,23 +131,6 @@ pub async fn profile(
             .render()
             .into_response();
     }
-
-    // Get session to check for a set primary token
-    let session_id = match crate::auth::get_session_id_from_cookie(&cookies) {
-        Some(id) => id,
-        None => {
-            error!("No valid session found");
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Session not found").into_response();
-        }
-    };
-
-    let session = match crate::auth::validate_session(&state.db, session_id).await {
-        Ok(Some(s)) => s,
-        _ => {
-            error!("Session validation failed");
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Invalid session").into_response();
-        }
-    };
 
     // Use primary token from session if available, otherwise use the first token
     let primary_token = if let Ok(Some(token)) = session.get_primary_token(&state.db).await {

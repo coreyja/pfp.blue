@@ -295,7 +295,7 @@ struct ToggleProfileProgressParams {
 /// Handler for toggling profile picture progress
 async fn toggle_profile_progress(
     State(state): State<AppState>,
-    AuthUser(user): AuthUser,
+    AuthUser { user, .. }: AuthUser,
     Form(params): Form<ToggleProfileProgressParams>,
 ) -> ServerResult<Response, Redirect> {
     let token_id = validate_did_ownership(&state, &params.did, user.user_id)
@@ -584,7 +584,7 @@ async fn privacy_policy_page(_optional_user: OptionalUser, State(_state): State<
 
 /// Admin panel page - shows available jobs and provides a UI to run them
 async fn admin_panel(
-    AdminUser(user): AdminUser,
+    AdminUser { user, .. }: AdminUser,
     State(_state): State<AppState>,
 ) -> impl IntoResponse {
     use crate::components::{layout::Page, ui::heading::Heading};
@@ -668,7 +668,7 @@ struct JobParams {
 
 /// Handler for enqueueing a job
 async fn admin_enqueue_job(
-    AdminUser(_): AdminUser,
+    AdminUser { .. }: AdminUser,
     State(state): State<AppState>,
     Form(params): Form<JobParams>,
 ) -> impl IntoResponse {
@@ -741,7 +741,7 @@ async fn admin_enqueue_job(
 
 /// Handler for running a job immediately
 async fn admin_run_job(
-    AdminUser(_): AdminUser,
+    AdminUser { .. }: AdminUser,
     State(state): State<AppState>,
     Form(params): Form<JobParams>,
 ) -> impl IntoResponse {
