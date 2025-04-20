@@ -159,9 +159,10 @@ fn empty_profile() -> impl IntoResponse {
             }
         }
     };
-    return Page::new("Your Profile - pfp.blue".to_string(), Box::new(content))
+
+    Page::new("Your Profile - pfp.blue".to_string(), Box::new(content))
         .render()
-        .into_response();
+        .into_response()
 }
 
 /// Display profile information with multiple linked accounts
