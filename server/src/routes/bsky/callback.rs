@@ -4,11 +4,14 @@ use axum::{
     response::{IntoResponse, Redirect},
 };
 use cja::{app_state::AppState as _, jobs::Job, server::cookies::CookieJar};
+use color_eyre::eyre::eyre;
 use serde::Deserialize;
 use tracing::{error, info};
 use uuid::Uuid;
 
 use crate::{
+    components::layout::Page,
+    errors::ServerError,
     oauth::{self, OAuthTokenSet},
     state::AppState,
 };
@@ -219,7 +222,7 @@ pub async fn callback(
     State(state): State<AppState>,
     cookies: CookieJar<AppState>,
     Query(params): Query<CallbackParams>,
-) -> impl IntoResponse {
+) -> ServerResult<Redirect, Page> {
     // Use the consistent helpers
     let client_id = state.client_id();
     let redirect_uri = state.redirect_uri();
@@ -239,14 +242,20 @@ pub async fn callback(
 
     // If we have an error, display it
     if let Some(error) = params.error {
-        return handle_oauth_error(&error, params.error_description, &client_id, &redirect_uri);
+        return Err(ServerError(
+            eyre!("Oauth Error"),
+            handle_oauth_error(&error, params.error_description, &client_id, &redirect_uri),
+        ));
     }
 
     // Make sure we have a code
     let code = match params.code {
         Some(code) => code,
         None => {
-            return handle_missing_code_error(params.state.as_deref(), &client_id, &redirect_uri);
+            return Err(ServerError(
+                eyre!("No code parameter in callback"),
+                handle_missing_code_error(params.state.as_deref(), &client_id, &redirect_uri),
+            ));
         }
     };
 

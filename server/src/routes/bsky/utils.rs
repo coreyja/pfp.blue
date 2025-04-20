@@ -1,5 +1,6 @@
 use axum::response::IntoResponse;
 use cja::server::cookies::CookieJar;
+use color_eyre::eyre::eyre;
 use maud::{html, Render};
 use uuid::Uuid;
 
@@ -12,6 +13,7 @@ use crate::{
             heading::Heading,
         },
     },
+    errors::{ServerError, ServerResult},
     oauth::OAuthSession,
     state::AppState,
 };
@@ -22,7 +24,7 @@ pub fn handle_oauth_error(
     error_description: Option<String>,
     client_id: &str,
     redirect_uri: &str,
-) -> axum::response::Response {
+) -> Page {
     let error_description =
         error_description.unwrap_or_else(|| "No error description provided".to_string());
     tracing::error!("OAuth error: {} - {}", error, error_description);
@@ -64,8 +66,6 @@ pub fn handle_oauth_error(
         "Authentication Error - pfp.blue".to_string(),
         Box::new(content),
     )
-    .render()
-    .into_response()
 }
 
 /// Helper function to handle missing code error
@@ -73,7 +73,7 @@ pub fn handle_missing_code_error(
     state_param: Option<&str>,
     client_id: &str,
     redirect_uri: &str,
-) -> axum::response::Response {
+) -> Page {
     tracing::error!("No code parameter in callback");
 
     // Create error page content
@@ -112,8 +112,6 @@ pub fn handle_missing_code_error(
         "Authentication Error - pfp.blue".to_string(),
         Box::new(content),
     )
-    .render()
-    .into_response()
 }
 
 /// Helper function to get session ID from state or cookie
@@ -121,7 +119,7 @@ pub async fn get_session_id_and_data(
     state_param: Option<&str>,
     cookies: &CookieJar<AppState>,
     app_state: &AppState,
-) -> Result<(Uuid, OAuthSession), (axum::http::StatusCode, String)> {
+) -> ServerResult<(Uuid, OAuthSession), axum::http::StatusCode> {
     // Get the session ID from the state parameter or the cookie
     let session_id = match state_param
         .and_then(|s| Uuid::parse_str(s).ok())
@@ -133,9 +131,9 @@ pub async fn get_session_id_and_data(
         Some(id) => id,
         None => {
             tracing::error!("No valid session ID found in state or cookie");
-            return Err((
+            return Err(ServerError(
+                eyre!("No valid session found. Please try authenticating again."),
                 axum::http::StatusCode::BAD_REQUEST,
-                "No valid session found. Please try authenticating again.".to_string(),
             ));
         }
     };
@@ -145,16 +143,16 @@ pub async fn get_session_id_and_data(
         Ok(Some(session)) => session,
         Ok(None) => {
             tracing::error!("Session not found: {}", session_id);
-            return Err((
+            return Err(ServerError(
+                eyre!("Session not found: {}", session_id),
                 axum::http::StatusCode::BAD_REQUEST,
-                "Session not found. Please try authenticating again.".to_string(),
             ));
         }
         Err(err) => {
             tracing::error!("Failed to retrieve session: {:?}", err);
-            return Err((
+            return Err(ServerError(
+                eyre!("Failed to retrieve session data: {:?}", err),
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to retrieve session data".to_string(),
             ));
         }
     };
@@ -162,9 +160,9 @@ pub async fn get_session_id_and_data(
     // Check if the session is expired
     if session.is_expired() {
         tracing::error!("Session expired: {}", session_id);
-        return Err((
+        return Err(ServerError(
+            eyre!("Session expired. Please try authenticating again."),
             axum::http::StatusCode::BAD_REQUEST,
-            "Session expired. Please try authenticating again.".to_string(),
         ));
     }
 

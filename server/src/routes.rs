@@ -207,8 +207,7 @@ async fn root_page(optional_user: OptionalUser, State(state): State<AppState>) -
     )
 }
 
-/// Login page handler - displays the login form
-async fn login_page() -> impl IntoResponse {
+async fn login_page() -> Page {
     use crate::components::{
         form::{Form, InputField},
         layout::{Card, ContentSection, CurvedHeader, Page},
@@ -282,7 +281,7 @@ async fn login_page() -> impl IntoResponse {
 
     let content = Card::new(card_content).with_max_width("max-w-md").render();
 
-    Page::new("Login - pfp.blue".to_string(), Box::new(content)).render()
+    Page::new("Login - pfp.blue".to_string(), Box::new(content))
 }
 
 /// Parameters for toggling profile picture progress
