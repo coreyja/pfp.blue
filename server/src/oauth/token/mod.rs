@@ -641,15 +641,23 @@ pub async fn resolve_token_endpoint_for_did(
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum TokenError {
+    #[error("Token error: {0}")]
+    Error(#[from] color_eyre::eyre::Error),
+    #[error("Token needs re-authentication")]
+    NeedsReauth,
+}
+
 /// Attempt to refresh a token if it's expired
 pub async fn refresh_token_if_needed(
-    token: &OAuthTokenSet,
+    token: OAuthTokenSet,
     state: &crate::state::AppState,
     token_endpoint: &str,
-) -> cja::Result<Option<OAuthTokenSet>> {
+) -> Result<OAuthTokenSet, TokenError> {
     // Only refresh if token is expired and we have a refresh token
     if !token.is_expired() || token.refresh_token.is_none() {
-        return Ok(None);
+        return Ok(token);
     }
 
     let refresh_token_str = token.refresh_token.as_ref().unwrap();
@@ -674,34 +682,21 @@ pub async fn refresh_token_if_needed(
         dpop_nonce.as_deref(),
     )
     .await
-    .wrap_err_with(|| format!("Failed to refresh token for DID {}", token.did))?;
+    .map_err(|e| {
+        tracing::warn!("Failed to refresh token for DID {}: {:?}", token.did, e);
+        TokenError::NeedsReauth
+    })?;
 
     // Create a new token set preserving the user ID and display name
-    let new_token = OAuthTokenSet::from_token_response_with_jwk(
+    let mut token_with_id = OAuthTokenSet::from_token_response_with_jwk(
         &token_response,
         token.did.clone(),
         &state.bsky_oauth.public_key,
-    )
-    .wrap_err_with(|| format!("Failed to create token set with JWK for DID {}", token.did))
-    .map_or_else(
-        |_err| {
-            // Fallback to standard token creation
-            let mut standard_token =
-                OAuthTokenSet::from_token_response(token_response, token.did.clone());
-            standard_token.user_id = token.user_id;
-            standard_token.display_name = token.display_name.clone();
-            standard_token.handle = token.handle.clone();
-            standard_token
-        },
-        |new_token| {
-            // Set user ID, display name, and handle from original token
-            let mut token_with_id = new_token.clone();
-            token_with_id.user_id = token.user_id;
-            token_with_id.display_name = token.display_name.clone();
-            token_with_id.handle = token.handle.clone();
-            token_with_id
-        },
-    );
+    )?;
+    token_with_id.user_id = token.user_id;
+    token_with_id.display_name = token.display_name.clone();
+    token_with_id.handle = token.handle.clone();
+    let new_token = token_with_id;
 
     // Store the new token with encryption
     crate::oauth::db::store_token(state, &new_token)
@@ -710,23 +705,17 @@ pub async fn refresh_token_if_needed(
 
     // Also fetch profile to update display name if needed
     use cja::jobs::Job;
-    if let Err(err) = crate::jobs::UpdateProfileInfoJob::from_token(&new_token)
+    crate::jobs::UpdateProfileInfoJob::from_token(&new_token)
         .enqueue(state.clone(), "token_refresh".to_string())
         .await
-    {
-        // Just log this error but continue - not fatal
-        tracing::warn!(
-            "Failed to enqueue display name update job after token refresh: {:?}",
-            err
-        );
-    } else {
-        tracing::info!(
-            "Queued display name update job after token refresh for {}",
-            new_token.did
-        );
-    }
+        .map_err(|e| TokenError::Error(e.into()))?;
 
-    Ok(Some(new_token))
+    tracing::info!(
+        "Queued display name update job after token refresh for {}",
+        new_token.did
+    );
+
+    Ok(new_token)
 }
 
 /// Get a token by DID and refresh it if needed
@@ -734,28 +723,18 @@ pub async fn refresh_token_if_needed(
 pub async fn get_valid_token_by_did(
     did: &str,
     state: &crate::state::AppState,
-) -> cja::Result<OAuthTokenSet> {
-    // Get the token from the database with decryption
+) -> Result<OAuthTokenSet, TokenError> {
     let token = crate::oauth::db::get_token(state, did)
         .await?
         .ok_or_else(|| eyre!("No token found for DID: {}", did))?;
 
-    // If token is not expired, just return it
     if !token.is_expired() {
         return Ok(token);
     }
 
-    // If token is expired, try to refresh it
-    // First resolve the token endpoint
     let token_endpoint = resolve_token_endpoint_for_did(did, state).await?;
+    let refreshed_token = refresh_token_if_needed(token, state, &token_endpoint).await?;
 
-    // Then try to refresh
-    let refreshed_token_result = refresh_token_if_needed(&token, state, &token_endpoint).await?;
-
-    let refreshed_token = refreshed_token_result.ok_or_else(|| {
-        eyre!("Token wasn't refreshed despite being expired. Likely need to re-authenticate")
-    })?;
     tracing::info!("Token for DID {} was refreshed", did);
-
     Ok(refreshed_token)
 }

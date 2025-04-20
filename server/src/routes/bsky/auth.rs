@@ -5,7 +5,7 @@ use axum::{
 };
 use cja::server::cookies::{Cookie, CookieJar};
 use color_eyre::eyre::WrapErr;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tracing::info;
 
 use crate::{
@@ -14,7 +14,7 @@ use crate::{
     state::AppState,
 };
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 pub struct AuthParams {
     /// The user's Bluesky DID or Handle (will be resolved to DID if needed)
     pub did: String,

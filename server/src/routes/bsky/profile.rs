@@ -5,7 +5,8 @@ use sqlx::Row;
 use tracing::error;
 
 use crate::{
-    oauth::{self, OAuthTokenSet},
+    errors::{ServerError, ServerResult},
+    oauth::{self, OAuthTokenSet, TokenError},
     state::AppState,
 };
 
@@ -13,19 +14,9 @@ use crate::{
 pub async fn profile(
     State(state): State<AppState>,
     crate::auth::AuthUser { user, session }: crate::auth::AuthUser,
-) -> impl IntoResponse {
+) -> ServerResult<impl IntoResponse, StatusCode> {
     // Get all tokens for this user
-    let tokens = match oauth::db::get_tokens_for_user(&state, user.user_id).await {
-        Ok(tokens) => tokens,
-        Err(err) => {
-            error!("Failed to retrieve tokens for user: {:?}", err);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to retrieve tokens".to_string(),
-            )
-                .into_response();
-        }
-    };
+    let tokens = oauth::db::get_tokens_for_user(&state, user.user_id).await?;
 
     // Start background jobs to update display names for all tokens
     // This ensures we have the latest display name data when showing the profile
@@ -42,7 +33,7 @@ pub async fn profile(
     }
 
     if tokens.is_empty() {
-        return empty_profile().into_response();
+        return Ok(empty_profile().into_response());
     }
 
     // Use primary token from session if available, otherwise use the first token
@@ -52,7 +43,10 @@ pub async fn profile(
         tokens[0].clone()
     } else {
         error!("No tokens available for this user");
-        return (StatusCode::BAD_REQUEST, "No Bluesky accounts linked").into_response();
+        return Err(ServerError(
+            color_eyre::eyre::eyre!("No Bluesky accounts linked"),
+            StatusCode::BAD_REQUEST,
+        ));
     };
 
     // Check if the primary token is expired and try to refresh it
@@ -62,18 +56,26 @@ pub async fn profile(
             Ok(new_token) => {
                 primary_token = new_token;
             }
-            Err(err) => {
-                error!("Failed to refresh token: {:?}", err);
-                // Token refresh failed, but we still show the profile with expired token
-                // so the user can see other linked accounts
+            Err(TokenError::NeedsReauth) => {
+                let params = super::AuthParams {
+                    did: primary_token.did,
+                    redirect_uri: None,
+                    state: None,
+                };
+                let param_string = serde_urlencoded::to_string(&params).unwrap();
+                let redirect_url = format!("/oauth/bsky/authorize?{}", param_string);
+                return Ok(axum::response::Redirect::to(&redirect_url).into_response());
+            }
+            Err(TokenError::Error(e)) => {
+                return Err(ServerError(e, StatusCode::INTERNAL_SERVER_ERROR));
             }
         }
     }
 
     // Display profile with all tokens
-    display_profile_multi(&state, primary_token, tokens)
+    Ok(display_profile_multi(&state, primary_token, tokens)
         .await
-        .into_response()
+        .into_response())
 }
 
 fn empty_profile() -> impl IntoResponse {
