@@ -361,7 +361,7 @@ async fn authorize(
         code: auth_code,
         state: params.state.as_deref(),
     };
-    let query_string = serde_urlencoded::to_string(&redirect_params)?;
+    let query_string = serde_urlencoded::to_string(&redirect_params).unwrap(); // SAFETY: We are in fixtures so a panic is fine
     let redirect_url = format!("{}?{}", params.redirect_uri, query_string);
 
     println!("PDS: Redirecting to: {}", redirect_url);
