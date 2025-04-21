@@ -713,7 +713,7 @@ dependencies = [
 [[package]]
 name = "cja"
 version = "0.0.0"
-source = "git+https://github.com/coreyja/cja?branch=main#e9c00b46fa50c11e69f0724d1b023f89e4e43255"
+source = "git+https://github.com/coreyja/cja?branch=main#1e35ba9f9f3a576bcf8adbbf09d511c6f0f7f914"
 dependencies = [
  "async-trait",
  "axum",
@@ -722,6 +722,7 @@ dependencies = [
  "color-eyre",
  "http 1.2.0",
  "listenfd",
+ "maud",
  "serde",
  "serde_json",
  "socket2",
@@ -5668,7 +5669,7 @@ dependencies = [
 [[package]]
 name = "tracing-common"
 version = "0.1.0"
-source = "git+https://github.com/coreyja/cja?branch=main#e9c00b46fa50c11e69f0724d1b023f89e4e43255"
+source = "git+https://github.com/coreyja/cja?branch=main#1e35ba9f9f3a576bcf8adbbf09d511c6f0f7f914"
 dependencies = [
  "color-eyre",
  "opentelemetry 0.23.0",
@@ -5761,6 +5762,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tracing-serde"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "704b1aeb7be0d0a84fc9828cae51dab5970fee5088f83d1dd7ee6f6246fc6ff1"
+dependencies = [
+ "serde",
+ "tracing-core",
+]
+
+[[package]]
 name = "tracing-subscriber"
 version = "0.3.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5770,12 +5781,15 @@ dependencies = [
  "nu-ansi-term 0.46.0",
  "once_cell",
  "regex",
+ "serde",
+ "serde_json",
  "sharded-slab",
  "smallvec",
  "thread_local",
  "tracing",
  "tracing-core",
  "tracing-log 0.2.0",
+ "tracing-serde",
 ]
 
 [[package]]
