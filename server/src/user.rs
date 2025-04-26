@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use color_eyre::eyre::Context as _;
 use sqlx::postgres::PgPool;
-use tracing::{error, info};
+use tracing::info;
 use uuid::Uuid;
 
 use crate::{encryption, oauth::OAuthTokenSet, state::AppState};
@@ -263,7 +263,7 @@ impl Session {
             None => None,
         };
 
-        return Ok(Some(OAuthTokenSet {
+        Ok(Some(OAuthTokenSet {
             did: row.did,
             access_token,
             token_type: row.token_type,
@@ -274,6 +274,6 @@ impl Session {
             handle: row.handle,
             dpop_jkt: row.dpop_jkt,
             user_id: Some(row.user_id),
-        }));
+        }))
     }
 }
