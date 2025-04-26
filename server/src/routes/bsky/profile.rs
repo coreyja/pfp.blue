@@ -37,17 +37,18 @@ pub async fn profile(
     }
 
     // Use primary token from session if available, otherwise use the first token
-    let mut primary_token = if let Ok(Some(token)) = session.get_primary_token(&state.db).await {
-        token
-    } else if !tokens.is_empty() {
-        tokens[0].clone()
-    } else {
-        error!("No tokens available for this user");
-        return Err(ServerError(
-            color_eyre::eyre::eyre!("No Bluesky accounts linked"),
-            StatusCode::BAD_REQUEST,
-        ));
-    };
+    let mut primary_token =
+        if let Ok(Some(token)) = session.get_primary_token(&state.db, &state).await {
+            token
+        } else if !tokens.is_empty() {
+            tokens[0].clone()
+        } else {
+            error!("No tokens available for this user");
+            return Err(ServerError(
+                color_eyre::eyre::eyre!("No Bluesky accounts linked"),
+                StatusCode::BAD_REQUEST,
+            ));
+        };
 
     // Check if the primary token is expired and try to refresh it
     if primary_token.is_expired() {
