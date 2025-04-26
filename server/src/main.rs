@@ -37,7 +37,7 @@ fn main() -> color_eyre::Result<()> {
 
 async fn run_application() -> cja::Result<()> {
     // Initialize tracing
-    setup_tracing("domains")?;
+    setup_tracing("pfp-blue")?;
 
     // Initialize application state
     println!("\n========== 🔑 PFP.BLUE STARTING ==========");

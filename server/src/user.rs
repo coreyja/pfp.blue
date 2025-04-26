@@ -1,8 +1,10 @@
 use chrono::{DateTime, Utc};
 use color_eyre::eyre::Context as _;
 use sqlx::postgres::PgPool;
-use tracing::{error, info};
+use tracing::info;
 use uuid::Uuid;
+
+use crate::{encryption, oauth::OAuthTokenSet, state::AppState};
 
 /// Represents a user in the system
 #[derive(Debug, Clone)]
@@ -225,44 +227,53 @@ impl Session {
     pub async fn get_primary_token(
         &self,
         pool: &PgPool,
+        app_state: &AppState,
     ) -> cja::Result<Option<crate::oauth::OAuthTokenSet>> {
-        if let Some(token_id) = self.primary_token_id {
-            // Query the oauth_tokens table to get the token by ID
-            let row = sqlx::query!(
-                r#"
+        let Some(token_id) = self.primary_token_id else {
+            return Ok(None);
+        };
+
+        // Query the oauth_tokens table to get the token by ID
+        let row = sqlx::query!(
+            r#"
                 SELECT did, access_token, token_type, expires_at, refresh_token, 
                        scope, dpop_jkt, user_id, display_name, handle, id as token_id
                 FROM oauth_tokens
                 WHERE uuid_id = $1
                 "#,
-                token_id
-            )
-            .fetch_optional(pool)
-            .await?;
+            token_id
+        )
+        .fetch_optional(pool)
+        .await?;
 
-            if let Some(row) = row {
-                // Convert the row to an OAuthTokenSet
-                return Ok(Some(crate::oauth::OAuthTokenSet {
-                    did: row.did,
-                    access_token: row.access_token,
-                    token_type: row.token_type,
-                    expires_at: row.expires_at as u64,
-                    refresh_token: row.refresh_token,
-                    scope: row.scope,
-                    display_name: row.display_name,
-                    handle: row.handle,
-                    dpop_jkt: row.dpop_jkt,
-                    user_id: Some(row.user_id),
-                }));
-            } else {
-                error!(
-                    "Primary token {} for session {} not found",
-                    token_id, self.id
-                );
+        let row = match row {
+            Some(row) => row,
+            None => {
+                return Ok(None);
             }
-        }
+        };
 
-        // If no primary token is set or it's not found, return None
-        Ok(None)
+        // Decrypt access token and refresh token
+        let access_token =
+            encryption::decrypt(&row.access_token, &app_state.encryption.key).await?;
+        let refresh_token = match row.refresh_token {
+            Some(ref encrypted_refresh_token) => {
+                Some(encryption::decrypt(encrypted_refresh_token, &app_state.encryption.key).await?)
+            }
+            None => None,
+        };
+
+        Ok(Some(OAuthTokenSet {
+            did: row.did,
+            access_token,
+            token_type: row.token_type,
+            expires_at: row.expires_at as u64,
+            refresh_token,
+            scope: row.scope,
+            display_name: row.display_name,
+            handle: row.handle,
+            dpop_jkt: row.dpop_jkt,
+            user_id: Some(row.user_id),
+        }))
     }
 }

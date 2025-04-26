@@ -1,14 +1,16 @@
 use axum::{
     extract::{Query, State},
     http::StatusCode,
-    response::{IntoResponse, Redirect},
+    response::{IntoResponse, Redirect, Response},
 };
 use cja::{app_state::AppState as _, jobs::Job, server::cookies::CookieJar};
+use color_eyre::eyre::eyre;
 use serde::Deserialize;
 use tracing::{error, info};
 use uuid::Uuid;
 
 use crate::{
+    errors::{ServerError, ServerResult},
     oauth::{self, OAuthTokenSet},
     state::AppState,
 };
@@ -219,7 +221,7 @@ pub async fn callback(
     State(state): State<AppState>,
     cookies: CookieJar<AppState>,
     Query(params): Query<CallbackParams>,
-) -> impl IntoResponse {
+) -> ServerResult<Redirect, Response> {
     // Use the consistent helpers
     let client_id = state.client_id();
     let redirect_uri = state.redirect_uri();
@@ -239,14 +241,22 @@ pub async fn callback(
 
     // If we have an error, display it
     if let Some(error) = params.error {
-        return handle_oauth_error(&error, params.error_description, &client_id, &redirect_uri);
+        return Err(ServerError(
+            eyre!("Oauth Error"),
+            handle_oauth_error(&error, params.error_description, &client_id, &redirect_uri)
+                .into_response(),
+        ));
     }
 
     // Make sure we have a code
     let code = match params.code {
         Some(code) => code,
         None => {
-            return handle_missing_code_error(params.state.as_deref(), &client_id, &redirect_uri);
+            return Err(ServerError(
+                eyre!("No code parameter in callback"),
+                handle_missing_code_error(params.state.as_deref(), &client_id, &redirect_uri)
+                    .into_response(),
+            ));
         }
     };
 
@@ -254,12 +264,7 @@ pub async fn callback(
 
     // Get the session ID and data
     let (session_id, session) =
-        match utils::get_session_id_and_data(params.state.as_deref(), &cookies, &state).await {
-            Ok(result) => result,
-            Err((status, message)) => {
-                return (status, message).into_response();
-            }
-        };
+        utils::get_session_id_and_data(params.state.as_deref(), &cookies, &state).await?;
 
     // Exchange the authorization code for an access token
     let token_response = match exchange_auth_code_for_token(
@@ -275,7 +280,13 @@ pub async fn callback(
     {
         Ok(token) => token,
         Err((status, message)) => {
-            return (status, message).into_response();
+            return Err(ServerError(
+                eyre!(
+                    "Failed to exchange authorization code for token: {:?}",
+                    message
+                ),
+                (status, message).into_response(),
+            ));
         }
     };
 
@@ -304,11 +315,14 @@ pub async fn callback(
     // Store the token in the database with encryption
     if let Err(err) = oauth::db::store_token(&state, &token_set).await {
         error!("Failed to store token: {:?}", err);
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Failed to store access token".to_string(),
-        )
-            .into_response();
+        return Err(ServerError(
+            eyre!("Failed to store access token"),
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to store access token".to_string(),
+            )
+                .into_response(),
+        ));
     }
 
     // Schedule a background job to update the display name
@@ -328,17 +342,23 @@ pub async fn callback(
     let user_id = match get_or_create_user_id_for_token(&token_set, &session.did, &state.db).await {
         Ok(id) => id,
         Err((status, message)) => {
-            return (status, message).into_response();
+            return Err(ServerError(
+                eyre!("Failed to get or create user ID: {:?}", message),
+                (status, message).into_response(),
+            ));
         }
     };
 
     // Ensure we have a user session
     if let Err((status, message)) = ensure_user_session(&cookies, &state, user_id, &token_set).await
     {
-        return (status, message).into_response();
+        return Err(ServerError(
+            eyre!("Failed to ensure user session: {:?}", message),
+            (status, message).into_response(),
+        ));
     }
 
     // Redirect to the profile page
     info!("Setting auth cookies and redirecting to /me");
-    Redirect::to("/me").into_response()
+    Ok(Redirect::to("/me"))
 }

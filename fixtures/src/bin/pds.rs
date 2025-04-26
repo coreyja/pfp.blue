@@ -6,6 +6,7 @@ use axum::{
 };
 use clap::Parser;
 use fixtures::{run_server, FixtureArgs};
+use serde::Serialize;
 use serde_json::json;
 
 /// PDS (Personal Data Server) fixture server
@@ -20,6 +21,13 @@ struct Cli {
 #[derive(Clone)]
 struct AppState {
     port: u16,
+}
+
+#[derive(Serialize)]
+struct OAuthRedirectParams<'a> {
+    code: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    state: Option<&'a str>,
 }
 
 #[tokio::main]
@@ -349,13 +357,12 @@ async fn authorize(
     };
 
     // For fixtures, we'll auto-authorize and redirect back with a code
-    let redirect_url = if let Some(state) = params.state {
-        // Include state if provided
-        format!("{}?code={}&state={}", params.redirect_uri, auth_code, state)
-    } else {
-        // Just code if no state
-        format!("{}?code={}", params.redirect_uri, auth_code)
+    let redirect_params = OAuthRedirectParams {
+        code: auth_code,
+        state: params.state.as_deref(),
     };
+    let query_string = serde_urlencoded::to_string(&redirect_params).unwrap(); // SAFETY: We are in fixtures so a panic is fine
+    let redirect_url = format!("{}?{}", params.redirect_uri, query_string);
 
     println!("PDS: Redirecting to: {}", redirect_url);
 

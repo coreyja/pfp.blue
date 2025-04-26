@@ -1,5 +1,6 @@
 use crate::oauth::OAuthTokenSet;
 use maud::{html, Markup, Render};
+use serde::Serialize;
 
 pub struct AccountDropdown {
     pub tokens: Vec<OAuthTokenSet>,
@@ -19,6 +20,12 @@ impl AccountDropdown {
             current_path: current_path.to_string(),
         }
     }
+}
+
+#[derive(Serialize)]
+struct SetPrimaryParams<'a> {
+    did: &'a str,
+    redirect: &'a str,
 }
 
 impl Render for AccountDropdown {
@@ -56,7 +63,12 @@ impl Render for AccountDropdown {
                             @let is_current = token.did == self.primary_token.did;
 
                             // For each account, show a menu item
-                            a href={"/oauth/bsky/set-primary?did=" (token.did) "&redirect=" (self.current_path)}
+                            @let params = SetPrimaryParams {
+                                did: &token.did,
+                                redirect: &self.current_path,
+                            };
+                            @let query_string = serde_urlencoded::to_string(&params).unwrap();
+                            a href={"/oauth/bsky/set-primary?" (query_string)}
                               class="flex items-center px-3 sm:px-4 py-2 text-sm hover:bg-gray-100 transition-colors duration-150" {
 
                                 // Show a checkmark for currently active account

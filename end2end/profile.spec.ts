@@ -15,7 +15,7 @@ test.describe('Profile page', () => {
     // Check for profile elements using a more reliable approach
     // Use a similar technique as in auth.spec.ts for consistency
     await page.waitForSelector('body', {state: 'visible', timeout: 15000});
-    const bodyText = await page.locator('body').textContent();
+    const bodyText = await page.locator('body').textContent() ?? '';
     
     // The profile page should contain something related to profile/Bluesky
     expect(bodyText).toContain('rofile'); // Could be Profile or profile
@@ -91,5 +91,32 @@ test.describe('Profile Picture Progress Feature', () => {
     // Check that we can at least find the profile picture progress section
     const bodyText = await page.locator('body').textContent();
     expect(bodyText).toContain('Profile Picture Progress');
+  });
+});
+
+test.describe('Profile Picture Upload', () => {
+  test('can enable profile picture progress', async ({ page, mockAuthenticatedUser }) => {
+    test.skip(!process.env.USE_FIXTURES, 'This test only runs when fixtures are enabled');
+    
+    await mockAuthenticatedUser(page);
+    await page.goto('/me');
+    
+    // Wait for the profile picture upload section to be visible
+    const uploadSection = page.getByRole('heading', { name: 'Profile Picture Progress' });
+    await expect(uploadSection).toBeVisible();
+    
+    // Find any button in the profile picture section
+    const buttons = page.getByRole('button');
+    await expect(buttons.first()).toBeVisible();
+    
+    // Click the button and verify no errors
+    await buttons.first().click();
+    
+    // Wait a moment and verify we're still on the page
+    await page.waitForTimeout(1000);
+    expect(page.url()).toContain('/me');
+    
+    // Verify the section is still visible
+    await expect(uploadSection).toBeVisible();
   });
 });

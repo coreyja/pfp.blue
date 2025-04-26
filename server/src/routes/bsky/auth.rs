@@ -5,7 +5,8 @@ use axum::{
 };
 use cja::server::cookies::{Cookie, CookieJar};
 use color_eyre::eyre::WrapErr;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use serde_urlencoded;
 use tracing::info;
 
 use crate::{
@@ -14,7 +15,7 @@ use crate::{
     state::AppState,
 };
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 pub struct AuthParams {
     /// The user's Bluesky DID or Handle (will be resolved to DID if needed)
     pub did: String,
@@ -22,6 +23,17 @@ pub struct AuthParams {
     pub redirect_uri: Option<String>,
     /// Optional state parameter to maintain state between requests
     pub state: Option<String>,
+}
+
+#[derive(Serialize)]
+struct AuthUrlParams<'a> {
+    client_id: &'a str,
+    response_type: &'static str,
+    scope: &'static str,
+    redirect_uri: &'a str,
+    state: &'a str,
+    code_challenge: &'a str,
+    code_challenge_method: &'static str,
 }
 
 /// Start the Bluesky OAuth flow
@@ -88,14 +100,17 @@ pub async fn authorize(
     let code_challenge = session.code_challenge.as_deref().unwrap_or_default();
 
     // Build the URL with PKCE parameters
-    let auth_url = format!(
-        "{}?client_id={}&response_type=code&scope=atproto%20transition:generic&redirect_uri={}&state={}&code_challenge={}&code_challenge_method=S256",
-        auth_metadata.authorization_endpoint,
-        client_id,
-        redirect_uri,
-        state_param,
-        code_challenge
-    );
+    let auth_params = AuthUrlParams {
+        client_id: &client_id,
+        response_type: "code",
+        scope: "atproto transition:generic",
+        redirect_uri: &redirect_uri,
+        state: &state_param,
+        code_challenge,
+        code_challenge_method: "S256",
+    };
+    let query_string = serde_urlencoded::to_string(&auth_params)?;
+    let auth_url = format!("{}?{}", auth_metadata.authorization_endpoint, query_string);
 
     info!("Redirecting to auth URL: {}", auth_url);
     info!(

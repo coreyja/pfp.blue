@@ -2,6 +2,7 @@ use crate::{
     auth::{AdminUser, AuthUser, OptionalUser},
     components::layout::Page,
     errors::{ServerResult, WithRedirect},
+    oauth::get_valid_token_by_did,
     profile_progress::ProfilePictureProgress,
     state::AppState,
 };
@@ -207,8 +208,7 @@ async fn root_page(optional_user: OptionalUser, State(state): State<AppState>) -
     )
 }
 
-/// Login page handler - displays the login form
-async fn login_page() -> impl IntoResponse {
+async fn login_page() -> Page {
     use crate::components::{
         form::{Form, InputField},
         layout::{Card, ContentSection, CurvedHeader, Page},
@@ -282,7 +282,7 @@ async fn login_page() -> impl IntoResponse {
 
     let content = Card::new(card_content).with_max_width("max-w-md").render();
 
-    Page::new("Login - pfp.blue".to_string(), Box::new(content)).render()
+    Page::new("Login - pfp.blue".to_string(), Box::new(content))
 }
 
 /// Parameters for toggling profile picture progress
@@ -328,36 +328,9 @@ async fn toggle_profile_progress(
 
     // If we're enabling the feature, automatically save the current profile picture as the base
     if is_enabling {
-        // Get the token information
-        let row = sqlx::query!(
-            r#"
-            SELECT * FROM oauth_tokens
-            WHERE id = $1
-            "#,
-            token_id
-        )
-        .fetch_optional(&state.db)
-        .await
-        .wrap_err("Database error when fetching token")
-        .with_redirect(Redirect::to("/me"))?;
-
-        let Some(row) = row else {
+        let Ok(token) = get_valid_token_by_did(&params.did, &state).await else {
             return Err(eyre!("Token not found for DID {}", token_id))
                 .with_redirect(Redirect::to("/me"));
-        };
-
-        // Get token data
-        let token = crate::oauth::OAuthTokenSet {
-            did: row.did.clone(),
-            display_name: row.display_name.clone(),
-            handle: row.handle.clone(),
-            access_token: row.access_token.clone(),
-            refresh_token: row.refresh_token.clone(),
-            token_type: row.token_type.clone(),
-            scope: row.scope.clone(),
-            expires_at: row.expires_at as u64,
-            dpop_jkt: row.dpop_jkt.clone(),
-            user_id: Some(row.user_id),
         };
 
         // Fetch profile info to get the current avatar blob CID

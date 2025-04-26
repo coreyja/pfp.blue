@@ -1,4 +1,5 @@
 use color_eyre::eyre::{eyre, WrapErr};
+use serde::Serialize;
 use tracing::info;
 
 /// Fetch a blob by its CID directly from the user's PDS
@@ -25,9 +26,17 @@ pub async fn fetch_blob_by_cid(
         .wrap_err_with(|| format!("Failed to find PDS endpoint for DID: {}", did_str))?;
 
     // Construct the getBlob URL using the PDS endpoint with the resolved DID
+    #[derive(Serialize)]
+    struct BlobUrlParams<'a> {
+        did: &'a str,
+        cid: &'a str,
+    }
+
+    let blob_params = BlobUrlParams { did: &did_str, cid };
+    let query_string = serde_urlencoded::to_string(&blob_params)?;
     let blob_url = format!(
-        "{}/xrpc/com.atproto.sync.getBlob?did={}&cid={}",
-        pds_endpoint, did_str, cid
+        "{}/xrpc/com.atproto.sync.getBlob?{}",
+        pds_endpoint, query_string
     );
     info!("Requesting blob from PDS: {}", blob_url);
 
