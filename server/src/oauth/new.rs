@@ -89,8 +89,15 @@ fn convert_jwk(from: JwkEcKey) -> cja::Result<jose_jwk::Jwk> {
     jwk.prm.cls = Some(jose_jwk::Class::Signing);
     jwk.prm.ops = Some(BTreeSet::from([jose_jwk::Operations::Sign]));
     jwk.prm.kid = Some(
-        generate_key_id(point.x().unwrap(), point.y().unwrap())
-            .wrap_err("Failed to generate key ID from elliptic_curve::JwkEcKey")?,
+        generate_key_id(
+            point
+                .x()
+                .ok_or_else(|| cja::color_eyre::eyre::eyre!("Failed to get x coordinate"))?,
+            point
+                .y()
+                .ok_or_else(|| cja::color_eyre::eyre::eyre!("Failed to get y coordinate"))?,
+        )
+        .wrap_err("Failed to generate key ID from elliptic_curve::JwkEcKey")?,
     );
     Ok(jwk)
 }
@@ -147,7 +154,7 @@ impl
     }
 
     async fn set(&self, key: Did, value: Session) -> Result<(), Self::Error> {
-        let json = serde_json::to_string(&value).unwrap();
+        let json = serde_json::to_string(&value)?;
         let encrypted = crate::encryption::encrypt(&json, &self.encryption.key).await?;
 
         sqlx::query!(
@@ -230,10 +237,6 @@ pub fn get_atrium_oauth_client(
         },
     };
 
-    // let Ok(client) = OAuthClient::new(config) else {
-    //     panic!("failed to create oauth client");
-    // };
-
     let client = OAuthClient::new(config).wrap_err("failed to create oauth client")?;
 
     Ok(client)
@@ -243,8 +246,6 @@ pub struct DbStateStore {
     db: PgPool,
     encryption: EncryptionConfig,
 }
-
-pub enum DbStateStoreError {}
 
 impl atrium_common::store::Store<String, InternalStateData> for DbStateStore {
     type Error = DbStoreError;
@@ -266,7 +267,7 @@ impl atrium_common::store::Store<String, InternalStateData> for DbStateStore {
     }
 
     async fn set(&self, key: String, value: InternalStateData) -> Result<(), Self::Error> {
-        let json = serde_json::to_string(&value).unwrap();
+        let json = serde_json::to_string(&value)?;
         let encrypted_state = crate::encryption::encrypt(&json, &self.encryption.key).await?;
         sqlx::query!(
             "INSERT INTO atproto_states (key, encrypted_state) VALUES ($1, $2)",
