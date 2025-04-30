@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO atproto_sessions (did, encrypted_session) VALUES ($1, $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5efc06f586121b3dd1c46fa0f49dd390f22091905f77e6d5ca6511b83a233ba8"
+}

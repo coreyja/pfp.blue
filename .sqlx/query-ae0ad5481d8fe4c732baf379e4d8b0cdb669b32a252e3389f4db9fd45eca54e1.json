@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO atproto_states (key, encrypted_state) VALUES ($1, $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ae0ad5481d8fe4c732baf379e4d8b0cdb669b32a252e3389f4db9fd45eca54e1"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "TRUNCATE TABLE atproto_sessions",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "88b810ebd6b0df09b42675eea8c6d0b74e334b4e1a8c2f2c2034d191c66b939e"
+}
