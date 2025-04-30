@@ -202,7 +202,8 @@ impl AppState {
             protocol: std::env::var("PROTO").unwrap_or_else(|_| "https".to_string()),
         };
 
-        let atrium_oauth_client = crate::oauth::new::get_atrium_oauth_client(&bsky_oauth, &domain)?;
+        let atrium_oauth_client =
+            crate::oauth::new::get_atrium_oauth_client(&bsky_oauth, &domain, &encryption, &pool)?;
         let atrium_oauth_client = Arc::new(atrium_oauth_client);
 
         Ok(Self {

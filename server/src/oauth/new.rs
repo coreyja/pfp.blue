@@ -1,11 +1,15 @@
-use std::{collections::BTreeSet, error::Error, sync::Arc};
+use std::{collections::BTreeSet, error::Error, fmt::Display, sync::Arc};
 
+use atrium_api::types::string::Did;
 use atrium_identity::{
     did::{CommonDidResolver, CommonDidResolverConfig, DEFAULT_PLC_DIRECTORY_URL},
     handle::{AtprotoHandleResolver, AtprotoHandleResolverConfig, DnsTxtResolver},
 };
 use atrium_oauth::{
-    store::{session::MemorySessionStore, state::MemoryStateStore},
+    store::{
+        session::{MemorySessionStore, Session},
+        state::{InternalStateData, MemoryStateStore, StateStore},
+    },
     AtprotoClientMetadata, AtprotoLocalhostClientMetadata, DefaultHttpClient, GrantType,
     KnownScope, OAuthClient, OAuthClientConfig, OAuthResolverConfig, Scope,
 };
@@ -14,8 +18,12 @@ use color_eyre::eyre::Context as _;
 use elliptic_curve::{JwkEcKey, SecretKey};
 use reqwest::redirect;
 use sec1::{der::DecodePem as _, pkcs8::DecodePrivateKey as _, EcPrivateKey};
+use sqlx::{error, PgPool};
 
-use crate::state::{AppState, BlueskyOAuthConfig, DomainSettings};
+use crate::{
+    encryption::decrypt,
+    state::{AppState, BlueskyOAuthConfig, DomainSettings, EncryptionConfig},
+};
 
 pub struct SomeDnsTxtResolver;
 
@@ -34,14 +42,8 @@ impl DnsTxtResolver for SomeDnsTxtResolver {
 }
 
 pub type AtriumOAuthClient = atrium_oauth::OAuthClient<
-    atrium_common::store::memory::MemoryStore<
-        std::string::String,
-        atrium_oauth::store::state::InternalStateData,
-    >,
-    atrium_common::store::memory::MemoryStore<
-        atrium_api::types::string::Did,
-        atrium_oauth::store::session::Session,
-    >,
+    DbStateStore,
+    DbSessionStore,
     atrium_identity::did::CommonDidResolver<atrium_oauth::DefaultHttpClient>,
     atrium_identity::handle::AtprotoHandleResolver<
         SomeDnsTxtResolver,
@@ -93,22 +95,99 @@ fn convert_jwk(from: JwkEcKey) -> cja::Result<jose_jwk::Jwk> {
     Ok(jwk)
 }
 
+pub struct DbSessionStore {
+    db: PgPool,
+    encryption: EncryptionConfig,
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum DbStoreError {
+    #[error(transparent)]
+    DbError(#[from] sqlx::Error),
+    #[error(transparent)]
+    SerdeError(#[from] serde_json::Error),
+    #[error(transparent)]
+    EncryptionError(#[from] cja::color_eyre::Report),
+}
+
+#[allow(dead_code)]
+struct DbAtprotoSession {
+    atproto_session_id: uuid::Uuid,
+    did: String,
+    encrypted_session: String,
+    created_at: chrono::DateTime<chrono::Utc>,
+    updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl
+    atrium_common::store::Store<
+        atrium_api::types::string::Did,
+        atrium_oauth::store::session::Session,
+    > for DbSessionStore
+{
+    type Error = DbStoreError;
+
+    async fn get(&self, key: &Did) -> Result<Option<Session>, Self::Error> {
+        let session = sqlx::query_as!(
+            DbAtprotoSession,
+            "SELECT * FROM atproto_sessions WHERE did = $1",
+            key.as_str()
+        )
+        .fetch_optional(&self.db)
+        .await?;
+
+        if let Some(s) = session {
+            let decrypted = decrypt(&s.encrypted_session, &self.encryption.key).await?;
+            let session = serde_json::from_str(&decrypted)?;
+
+            Ok(Some(session))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn set(&self, key: Did, value: Session) -> Result<(), Self::Error> {
+        let json = serde_json::to_string(&value).unwrap();
+        let encrypted = crate::encryption::encrypt(&json, &self.encryption.key).await?;
+
+        sqlx::query!(
+            "INSERT INTO atproto_sessions (did, encrypted_session) VALUES ($1, $2)",
+            key.as_str(),
+            encrypted,
+        )
+        .execute(&self.db)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn del(&self, key: &Did) -> Result<(), Self::Error> {
+        sqlx::query!("DELETE FROM atproto_sessions WHERE did = $1", key.as_str())
+            .execute(&self.db)
+            .await?;
+
+        Ok(())
+    }
+
+    async fn clear(&self) -> Result<(), Self::Error> {
+        sqlx::query!("TRUNCATE TABLE atproto_sessions")
+            .execute(&self.db)
+            .await?;
+
+        Ok(())
+    }
+}
+
+impl atrium_oauth::store::session::SessionStore for DbSessionStore {}
+
 pub fn get_atrium_oauth_client(
     bsky_oauth: &BlueskyOAuthConfig,
     domain: &DomainSettings,
+    encryption: &EncryptionConfig,
+    db: &PgPool,
 ) -> cja::Result<AtriumOAuthClient> {
     let http_client = Arc::new(DefaultHttpClient::default());
-    // // Generate JWK for the client metadata
-    // // let base64_decoded = base64::decode(&bsky_oauth.private_key)?;
-    // let decoded_private_key = base64::Engine::decode(
-    //     &base64::engine::general_purpose::STANDARD,
-    //     &bsky_oauth.private_key,
-    // )
-    // .wrap_err("Failed to decode base64-encoded private key")?;
-    // // let decoded_private_key = String::from_utf8(decoded_private_key)?;
-    // // dbg!(&decoded_private_key);
-    // let private_jwk = jose_jwk::Jwk::from_ec_pem(&decoded_private_key);
-    let private_jwk = get_private_jwk(&bsky_oauth)?;
+    let private_jwk = get_private_jwk(bsky_oauth)?;
     dbg!(&private_jwk);
     let jose = convert_jwk(private_jwk)
         .wrap_err("Failed to convert elliptic_curve::JwkEcKey to jose_jwk::Jwk")?;
@@ -141,10 +220,14 @@ pub fn get_atrium_oauth_client(
             authorization_server_metadata: Default::default(),
             protected_resource_metadata: Default::default(),
         },
-        // A store for saving state data while the user is being redirected to the authorization server.
-        state_store: MemoryStateStore::default(),
-        // A store for saving session data.
-        session_store: MemorySessionStore::default(),
+        state_store: DbStateStore {
+            db: db.clone(),
+            encryption: encryption.clone(),
+        },
+        session_store: DbSessionStore {
+            db: db.clone(),
+            encryption: encryption.clone(),
+        },
     };
 
     // let Ok(client) = OAuthClient::new(config) else {
@@ -155,3 +238,62 @@ pub fn get_atrium_oauth_client(
 
     Ok(client)
 }
+
+pub struct DbStateStore {
+    db: PgPool,
+    encryption: EncryptionConfig,
+}
+
+pub enum DbStateStoreError {}
+
+impl atrium_common::store::Store<String, InternalStateData> for DbStateStore {
+    type Error = DbStoreError;
+
+    async fn get(&self, key: &String) -> Result<Option<InternalStateData>, Self::Error> {
+        let value = sqlx::query!("SELECT * FROM atproto_states WHERE key = $1", key.as_str())
+            .fetch_optional(&self.db)
+            .await?;
+
+        if let Some(v) = value {
+            let decrypted_state = decrypt(&v.encrypted_state, &self.encryption.key).await?;
+
+            let s = serde_json::from_str(&decrypted_state)?;
+
+            Ok(Some(s))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn set(&self, key: String, value: InternalStateData) -> Result<(), Self::Error> {
+        let json = serde_json::to_string(&value).unwrap();
+        let encrypted_state = crate::encryption::encrypt(&json, &self.encryption.key).await?;
+        sqlx::query!(
+            "INSERT INTO atproto_states (key, encrypted_state) VALUES ($1, $2)",
+            key.as_str(),
+            encrypted_state,
+        )
+        .execute(&self.db)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn del(&self, key: &String) -> Result<(), Self::Error> {
+        sqlx::query!("DELETE FROM atproto_states WHERE key = $1", key.as_str())
+            .execute(&self.db)
+            .await?;
+
+        Ok(())
+    }
+
+    async fn clear(&self) -> Result<(), Self::Error> {
+        sqlx::query!("TRUNCATE TABLE atproto_states")
+            .execute(&self.db)
+            .await?;
+
+        Ok(())
+    }
+}
+
+impl StateStore for DbStateStore {}
