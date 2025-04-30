@@ -8,7 +8,7 @@ use crate::{oauth, state::AppState};
 pub async fn client_metadata(
     state: State<AppState>,
 ) -> ServerResult<Json<serde_json::Value>, StatusCode> {
-    let fqdn = format!("{}://{}", state.protocol, state.domain);
+    let fqdn = state.domain.fqdn();
     let metadata_url = state.client_id();
     let redirect_uri = state.redirect_uri();
 

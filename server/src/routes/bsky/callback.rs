@@ -1,3 +1,4 @@
+use atrium_oauth::CallbackParams;
 use axum::{
     extract::{Query, State},
     http::StatusCode,
@@ -6,7 +7,7 @@ use axum::{
 use cja::{app_state::AppState as _, jobs::Job, server::cookies::CookieJar};
 use color_eyre::eyre::eyre;
 use serde::Deserialize;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 use uuid::Uuid;
 
 use crate::{
@@ -18,14 +19,6 @@ use crate::{
 use super::utils::{
     self, extract_dpop_nonce_from_error, handle_missing_code_error, handle_oauth_error,
 };
-
-#[derive(Deserialize)]
-pub struct CallbackParams {
-    pub code: Option<String>,
-    pub state: Option<String>,
-    pub error: Option<String>,
-    pub error_description: Option<String>,
-}
 
 /// Helper function to exchange code for token
 async fn exchange_auth_code_for_token(
@@ -222,143 +215,150 @@ pub async fn callback(
     cookies: CookieJar<AppState>,
     Query(params): Query<CallbackParams>,
 ) -> ServerResult<Redirect, Response> {
-    // Use the consistent helpers
-    let client_id = state.client_id();
-    let redirect_uri = state.redirect_uri();
+    // // Use the consistent helpers
+    // let client_id = state.client_id();
+    // let redirect_uri = state.redirect_uri();
 
-    // Log all parameters for debugging
-    info!(
-        "Callback received: code: {:?}, state: {:?}, error: {:?}, error_description: {:?}",
-        params.code, params.state, params.error, params.error_description
-    );
+    // // Log all parameters for debugging
+    // info!(
+    //     "Callback received: code: {:?}, state: {:?}, error: {:?}, error_description: {:?}",
+    //     params.code, params.state, params.error, params.error_description
+    // );
 
-    // Also log cookie info
-    if let Some(session_cookie) = cookies.get("bsky_session_id") {
-        info!("Found session cookie: {}", session_cookie.value());
-    } else {
-        info!("No session cookie found");
-    }
+    // // Also log cookie info
+    // if let Some(session_cookie) = cookies.get("bsky_session_id") {
+    //     info!("Found session cookie: {}", session_cookie.value());
+    // } else {
+    //     info!("No session cookie found");
+    // }
 
-    // If we have an error, display it
-    if let Some(error) = params.error {
-        return Err(ServerError(
-            eyre!("Oauth Error"),
-            handle_oauth_error(&error, params.error_description, &client_id, &redirect_uri)
-                .into_response(),
-        ));
-    }
+    // // If we have an error, display it
+    // if let Some(error) = params.error {
+    //     return Err(ServerError(
+    //         eyre!("Oauth Error"),
+    //         handle_oauth_error(&error, params.error_description, &client_id, &redirect_uri)
+    //             .into_response(),
+    //     ));
+    // }
 
-    // Make sure we have a code
-    let code = match params.code {
-        Some(code) => code,
-        None => {
-            return Err(ServerError(
-                eyre!("No code parameter in callback"),
-                handle_missing_code_error(params.state.as_deref(), &client_id, &redirect_uri)
-                    .into_response(),
-            ));
-        }
-    };
+    // // Make sure we have a code
+    // let code = match params.code {
+    //     Some(code) => code,
+    //     None => {
+    //         return Err(ServerError(
+    //             eyre!("No code parameter in callback"),
+    //             handle_missing_code_error(params.state.as_deref(), &client_id, &redirect_uri)
+    //                 .into_response(),
+    //         ));
+    //     }
+    // };
 
-    info!("Received code: {}, state: {:?}", code, params.state);
+    info!("Received code: {}, state: {:?}", params.code, params.state);
 
-    // Get the session ID and data
-    let (session_id, session) =
-        utils::get_session_id_and_data(params.state.as_deref(), &cookies, &state).await?;
+    let (oauth_session, _) = state.atrium_oauth.callback(params).await.unwrap();
 
-    // Exchange the authorization code for an access token
-    let token_response = match exchange_auth_code_for_token(
-        &state.bsky_oauth,
-        session_id,
-        &session,
-        &code,
-        &client_id,
-        &redirect_uri,
-        &state,
-    )
-    .await
-    {
-        Ok(token) => token,
-        Err((status, message)) => {
-            return Err(ServerError(
-                eyre!(
-                    "Failed to exchange authorization code for token: {:?}",
-                    message
-                ),
-                (status, message).into_response(),
-            ));
-        }
-    };
+    use atrium_api::agent::SessionManager;
+    debug!("OAuth session DID: {:?}", oauth_session.did().await);
 
-    // Check if there's an existing user session
-    let current_user_id = check_existing_user_session(&cookies, &state).await;
-
-    // Create a token set with JWK thumbprint and user_id if we have one
-    let mut token_set = match OAuthTokenSet::from_token_response_with_jwk(
-        &token_response,
-        session.did.clone(),
-        &state.bsky_oauth.public_key,
-    ) {
-        Ok(token) => token,
-        Err(err) => {
-            error!("Failed to create token set with JWK: {:?}", err);
-            // Fallback to standard token creation without JWK calculation
-            OAuthTokenSet::from_token_response(token_response, session.did.clone())
-        }
-    };
-
-    // If we found a user session, associate this token with that user
-    if let Some(user_id) = current_user_id {
-        token_set.user_id = Some(user_id);
-    }
-
-    // Store the token in the database with encryption
-    if let Err(err) = oauth::db::store_token(&state, &token_set).await {
-        error!("Failed to store token: {:?}", err);
-        return Err(ServerError(
-            eyre!("Failed to store access token"),
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to store access token".to_string(),
-            )
-                .into_response(),
-        ));
-    }
-
-    // Schedule a background job to update the display name
-    if let Err(err) = crate::jobs::UpdateProfileInfoJob::from_token(&token_set)
-        .enqueue(state.clone(), "callback".to_string())
-        .await
-    {
-        // Log the error but continue - not fatal
-        error!("Failed to enqueue display name update job: {:?}", err);
-    } else {
-        info!("Queued display name update job for DID: {}", session.did);
-    }
-
-    info!("Authentication successful for DID: {}", session.did);
-
-    // Get or create a user ID for this token
-    let user_id = match get_or_create_user_id_for_token(&token_set, &session.did, &state.db).await {
-        Ok(id) => id,
-        Err((status, message)) => {
-            return Err(ServerError(
-                eyre!("Failed to get or create user ID: {:?}", message),
-                (status, message).into_response(),
-            ));
-        }
-    };
-
-    // Ensure we have a user session
-    if let Err((status, message)) = ensure_user_session(&cookies, &state, user_id, &token_set).await
-    {
-        return Err(ServerError(
-            eyre!("Failed to ensure user session: {:?}", message),
-            (status, message).into_response(),
-        ));
-    }
-
-    // Redirect to the profile page
-    info!("Setting auth cookies and redirecting to /me");
     Ok(Redirect::to("/me"))
+
+    // // Get the session ID and data
+    // let (session_id, session) =
+    //     utils::get_session_id_and_data(params.state.as_deref(), &cookies, &state).await?;
+
+    // // Exchange the authorization code for an access token
+    // let token_response = match exchange_auth_code_for_token(
+    //     &state.bsky_oauth,
+    //     session_id,
+    //     &session,
+    //     &code,
+    //     &client_id,
+    //     &redirect_uri,
+    //     &state,
+    // )
+    // .await
+    // {
+    //     Ok(token) => token,
+    //     Err((status, message)) => {
+    //         return Err(ServerError(
+    //             eyre!(
+    //                 "Failed to exchange authorization code for token: {:?}",
+    //                 message
+    //             ),
+    //             (status, message).into_response(),
+    //         ));
+    //     }
+    // };
+
+    // // Check if there's an existing user session
+    // let current_user_id = check_existing_user_session(&cookies, &state).await;
+
+    // // Create a token set with JWK thumbprint and user_id if we have one
+    // let mut token_set = match OAuthTokenSet::from_token_response_with_jwk(
+    //     &token_response,
+    //     session.did.clone(),
+    //     &state.bsky_oauth.public_key,
+    // ) {
+    //     Ok(token) => token,
+    //     Err(err) => {
+    //         error!("Failed to create token set with JWK: {:?}", err);
+    //         // Fallback to standard token creation without JWK calculation
+    //         OAuthTokenSet::from_token_response(token_response, session.did.clone())
+    //     }
+    // };
+
+    // // If we found a user session, associate this token with that user
+    // if let Some(user_id) = current_user_id {
+    //     token_set.user_id = Some(user_id);
+    // }
+
+    // // Store the token in the database with encryption
+    // if let Err(err) = oauth::db::store_token(&state, &token_set).await {
+    //     error!("Failed to store token: {:?}", err);
+    //     return Err(ServerError(
+    //         eyre!("Failed to store access token"),
+    //         (
+    //             StatusCode::INTERNAL_SERVER_ERROR,
+    //             "Failed to store access token".to_string(),
+    //         )
+    //             .into_response(),
+    //     ));
+    // }
+
+    // // Schedule a background job to update the display name
+    // if let Err(err) = crate::jobs::UpdateProfileInfoJob::from_token(&token_set)
+    //     .enqueue(state.clone(), "callback".to_string())
+    //     .await
+    // {
+    //     // Log the error but continue - not fatal
+    //     error!("Failed to enqueue display name update job: {:?}", err);
+    // } else {
+    //     info!("Queued display name update job for DID: {}", session.did);
+    // }
+
+    // info!("Authentication successful for DID: {}", session.did);
+
+    // // Get or create a user ID for this token
+    // let user_id = match get_or_create_user_id_for_token(&token_set, &session.did, &state.db).await {
+    //     Ok(id) => id,
+    //     Err((status, message)) => {
+    //         return Err(ServerError(
+    //             eyre!("Failed to get or create user ID: {:?}", message),
+    //             (status, message).into_response(),
+    //         ));
+    //     }
+    // };
+
+    // // Ensure we have a user session
+    // if let Err((status, message)) = ensure_user_session(&cookies, &state, user_id, &token_set).await
+    // {
+    //     return Err(ServerError(
+    //         eyre!("Failed to ensure user session: {:?}", message),
+    //         (status, message).into_response(),
+    //     ));
+    // }
+
+    // // Redirect to the profile page
+    // info!("Setting auth cookies and redirecting to /me");
+    // Ok(Redirect::to("/me"))
 }

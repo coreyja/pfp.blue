@@ -6,6 +6,8 @@ use atrium_xrpc_client::reqwest::{ReqwestClient, ReqwestClientBuilder};
 use color_eyre::eyre::{eyre, WrapErr};
 use sqlx::{postgres::PgPoolOptions, PgPool};
 
+use crate::oauth::new::AtriumOAuthClient;
+
 #[derive(Clone)]
 pub struct BlueskyOAuthConfig {
     pub private_key: String,
@@ -132,14 +134,43 @@ impl EncryptionConfig {
 }
 
 #[derive(Clone)]
+pub struct DomainSettings {
+    pub domain: String,
+    pub protocol: String,
+}
+
+impl DomainSettings {
+    /// Returns the OAuth client ID for Bluesky
+    pub fn client_id(&self) -> String {
+        format!(
+            "{}://{}/oauth/bsky/metadata.json",
+            self.protocol, self.domain
+        )
+    }
+
+    pub fn fqdn(&self) -> String {
+        format!("{}://{}", self.protocol, self.domain)
+    }
+
+    /// Returns the canonical redirect URI for OAuth
+    pub fn redirect_uri(&self) -> String {
+        format!("{}://{}/oauth/bsky/callback", self.protocol, self.domain)
+    }
+
+    pub(crate) fn jwks_uri(&self) -> String {
+        format!("{}://{}/oauth/bsky/jwks", self.protocol, self.domain)
+    }
+}
+
+#[derive(Clone)]
 pub struct AppState {
     pub db: sqlx::Pool<sqlx::Postgres>,
     pub cookie_key: cja::server::cookies::CookieKey,
-    pub domain: String,
-    pub protocol: String,
+    pub domain: DomainSettings,
     pub bsky_client: Arc<ReqwestClient>,
     pub bsky_oauth: BlueskyOAuthConfig,
     pub encryption: EncryptionConfig,
+    pub atrium_oauth: Arc<AtriumOAuthClient>,
 }
 
 impl AppState {
@@ -166,28 +197,33 @@ impl AppState {
         let bsky_oauth = BlueskyOAuthConfig::from_env()?;
         let encryption = EncryptionConfig::from_env()?;
 
+        let domain = DomainSettings {
+            domain: std::env::var("DOMAIN")?,
+            protocol: std::env::var("PROTO").unwrap_or_else(|_| "https".to_string()),
+        };
+
+        let atrium_oauth_client = crate::oauth::new::get_atrium_oauth_client(&bsky_oauth, &domain)?;
+        let atrium_oauth_client = Arc::new(atrium_oauth_client);
+
         Ok(Self {
             db: pool,
             cookie_key,
-            domain: std::env::var("DOMAIN")?,
-            protocol: std::env::var("PROTO").unwrap_or_else(|_| "https".to_string()),
+            domain,
             bsky_client: Arc::new(client),
             bsky_oauth,
             encryption,
+            atrium_oauth: atrium_oauth_client,
         })
     }
 
     /// Returns the OAuth client ID for Bluesky
     pub fn client_id(&self) -> String {
-        format!(
-            "{}://{}/oauth/bsky/metadata.json",
-            self.protocol, self.domain
-        )
+        self.domain.client_id()
     }
 
     /// Returns the canonical redirect URI for OAuth
     pub fn redirect_uri(&self) -> String {
-        format!("{}://{}/oauth/bsky/callback", self.protocol, self.domain)
+        self.domain.redirect_uri()
     }
 
     /// Returns the configured Avatar CDN URL

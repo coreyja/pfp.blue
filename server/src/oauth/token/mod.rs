@@ -118,148 +118,149 @@ pub fn create_client_assertion(
     token_endpoint: &str,
     client_id: &str,
 ) -> cja::Result<String> {
-    use crate::oauth::utils::base64_url_encode;
-    use crate::oauth::utils::der_signature_to_raw_signature;
-    use jsonwebtoken::Algorithm;
-    use std::io::Write;
-    use std::process::Command;
-    use tempfile::NamedTempFile;
+    return todo!();
+    // use crate::oauth::utils::base64_url_encode;
+    // use crate::oauth::utils::der_signature_to_raw_signature;
+    // use jsonwebtoken::Algorithm;
+    // use std::io::Write;
+    // use std::process::Command;
+    // use tempfile::NamedTempFile;
 
-    // Debug info
-    let key_preview = if oauth_config.private_key.len() > 10 {
-        format!(
-            "{}...{}",
-            &oauth_config.private_key[..5],
-            &oauth_config.private_key[oauth_config.private_key.len() - 5..]
-        )
-    } else {
-        oauth_config.private_key.clone()
-    };
-    tracing::debug!(
-        "Creating client assertion with private key: {}",
-        key_preview
-    );
+    // // Debug info
+    // let key_preview = if oauth_config.private_key.len() > 10 {
+    //     format!(
+    //         "{}...{}",
+    //         &oauth_config.private_key[..5],
+    //         &oauth_config.private_key[oauth_config.private_key.len() - 5..]
+    //     )
+    // } else {
+    //     oauth_config.private_key.clone()
+    // };
+    // tracing::debug!(
+    //     "Creating client assertion with private key: {}",
+    //     key_preview
+    // );
 
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .wrap_err("Failed to get current time")?
-        .as_secs();
+    // let now = SystemTime::now()
+    //     .duration_since(UNIX_EPOCH)
+    //     .wrap_err("Failed to get current time")?
+    //     .as_secs();
 
-    // Get the JWK for header
-    let jwk = crate::oauth::jwk::generate_jwk(&oauth_config.public_key)?;
+    // // Get the JWK for header
+    // let jwk = crate::oauth::jwk::generate_jwk(&oauth_config.public_key)?;
 
-    // Create the JWT header with the key ID
-    let mut header = jsonwebtoken::Header::new(Algorithm::ES256);
-    header.kid = Some(jwk.kid.clone());
-    header.typ = Some("JWT".to_string());
+    // // Create the JWT header with the key ID
+    // let mut header = jsonwebtoken::Header::new(Algorithm::ES256);
+    // header.kid = Some(jwk.kid.clone());
+    // header.typ = Some("JWT".to_string());
 
-    // For Bluesky, the 'aud' should be a fixed value rather than the token endpoint
-    // According to the error message, they're expecting a specific value
-    let payload = TokenRequestPayload {
-        iss: client_id.to_string(),
-        sub: client_id.to_string(),
-        // Use the configured Bluesky audience or default
-        aud: std::env::var("APPVIEW_URL").unwrap_or_else(|_| "https://bsky.social".to_string()),
-        jti: uuid::Uuid::new_v4().to_string(),
-        exp: now + 300, // 5 minutes in the future
-        iat: now,
-    };
+    // // For Bluesky, the 'aud' should be a fixed value rather than the token endpoint
+    // // According to the error message, they're expecting a specific value
+    // let payload = TokenRequestPayload {
+    //     iss: client_id.to_string(),
+    //     sub: client_id.to_string(),
+    //     // Use the configured Bluesky audience or default
+    //     aud: std::env::var("APPVIEW_URL").unwrap_or_else(|_| "https://bsky.social".to_string()),
+    //     jti: uuid::Uuid::new_v4().to_string(),
+    //     exp: now + 300, // 5 minutes in the future
+    //     iat: now,
+    // };
 
-    // Create a temporary file for the ES256 private key
-    let mut key_file =
-        NamedTempFile::new().wrap_err("Failed to create temporary file for private key")?;
+    // // Create a temporary file for the ES256 private key
+    // let mut key_file =
+    //     NamedTempFile::new().wrap_err("Failed to create temporary file for private key")?;
 
-    // Decode base64-encoded private key
-    let decoded_key = base64::Engine::decode(
-        &base64::engine::general_purpose::STANDARD,
-        &oauth_config.private_key,
-    )
-    .wrap_err("Failed to decode base64-encoded private key")?;
+    // // Decode base64-encoded private key
+    // let decoded_key = base64::Engine::decode(
+    //     &base64::engine::general_purpose::STANDARD,
+    //     &oauth_config.private_key,
+    // )
+    // .wrap_err("Failed to decode base64-encoded private key")?;
 
-    // Write the decoded PEM-encoded private key to the file
-    key_file
-        .write_all(&decoded_key)
-        .wrap_err("Failed to write private key to temporary file")?;
+    // // Write the decoded PEM-encoded private key to the file
+    // key_file
+    //     .write_all(&decoded_key)
+    //     .wrap_err("Failed to write private key to temporary file")?;
 
-    // Create a temporary file for the payload
-    let mut payload_file =
-        NamedTempFile::new().wrap_err("Failed to create temporary file for payload")?;
+    // // Create a temporary file for the payload
+    // let mut payload_file =
+    //     NamedTempFile::new().wrap_err("Failed to create temporary file for payload")?;
 
-    // Create payload JSON
-    let payload_json = serde_json::to_string(&payload).wrap_err("Failed to serialize payload")?;
+    // // Create payload JSON
+    // let payload_json = serde_json::to_string(&payload).wrap_err("Failed to serialize payload")?;
 
-    // Write payload to file
-    payload_file
-        .write_all(payload_json.as_bytes())
-        .wrap_err("Failed to write payload to temporary file")?;
+    // // Write payload to file
+    // payload_file
+    //     .write_all(payload_json.as_bytes())
+    //     .wrap_err("Failed to write payload to temporary file")?;
 
-    // Create header JSON with proper format for OpenSSL
-    // Ensure we're using the exact format expected by Bluesky
-    let header_json = serde_json::json!({
-        "alg": "ES256",
-        "typ": "JWT",
-        "kid": jwk.kid
-    })
-    .to_string();
+    // // Create header JSON with proper format for OpenSSL
+    // // Ensure we're using the exact format expected by Bluesky
+    // let header_json = serde_json::json!({
+    //     "alg": "ES256",
+    //     "typ": "JWT",
+    //     "kid": jwk.kid
+    // })
+    // .to_string();
 
-    // Log the JWT header and payload for debugging
-    tracing::debug!("JWT Header: {}", header_json);
-    tracing::debug!("JWT Payload: {}", payload_json);
+    // // Log the JWT header and payload for debugging
+    // tracing::debug!("JWT Header: {}", header_json);
+    // tracing::debug!("JWT Payload: {}", payload_json);
 
-    // Also log the token_endpoint and audience for comparison
-    tracing::debug!("Token endpoint: {}", token_endpoint);
-    tracing::debug!("JWT audience: {}", payload.aud);
+    // // Also log the token_endpoint and audience for comparison
+    // tracing::debug!("Token endpoint: {}", token_endpoint);
+    // tracing::debug!("JWT audience: {}", payload.aud);
 
-    // Use OpenSSL directly to create the JWT
-    // 1. Create Base64URL-encoded header
-    let header_b64 = base64_url_encode(header_json.as_bytes());
+    // // Use OpenSSL directly to create the JWT
+    // // 1. Create Base64URL-encoded header
+    // let header_b64 = base64_url_encode(header_json.as_bytes());
 
-    // 2. Create Base64URL-encoded payload
-    let payload_b64 = base64_url_encode(payload_json.as_bytes());
+    // // 2. Create Base64URL-encoded payload
+    // let payload_b64 = base64_url_encode(payload_json.as_bytes());
 
-    // 3. Combine to form the message to sign
-    let message = format!("{}.{}", header_b64, payload_b64);
+    // // 3. Combine to form the message to sign
+    // let message = format!("{}.{}", header_b64, payload_b64);
 
-    // 4. Create a temporary file for the message
-    let mut message_file =
-        NamedTempFile::new().wrap_err("Failed to create temporary file for message")?;
-    message_file
-        .write_all(message.as_bytes())
-        .wrap_err("Failed to write message to temporary file")?;
+    // // 4. Create a temporary file for the message
+    // let mut message_file =
+    //     NamedTempFile::new().wrap_err("Failed to create temporary file for message")?;
+    // message_file
+    //     .write_all(message.as_bytes())
+    //     .wrap_err("Failed to write message to temporary file")?;
 
-    // 5. Use OpenSSL to create the signature, but with specific parameters for ES256
-    // For ES256, the signature format is different than just the raw digest output
-    let output = Command::new("openssl")
-        .arg("dgst")
-        .arg("-sha256")
-        .arg("-sign")
-        .arg(key_file.path())
-        // Use the binary DER format
-        .arg("-binary")
-        .arg(message_file.path())
-        .output()
-        .wrap_err("Failed to execute OpenSSL for signing")?;
+    // // 5. Use OpenSSL to create the signature, but with specific parameters for ES256
+    // // For ES256, the signature format is different than just the raw digest output
+    // let output = Command::new("openssl")
+    //     .arg("dgst")
+    //     .arg("-sha256")
+    //     .arg("-sign")
+    //     .arg(key_file.path())
+    //     // Use the binary DER format
+    //     .arg("-binary")
+    //     .arg(message_file.path())
+    //     .output()
+    //     .wrap_err("Failed to execute OpenSSL for signing")?;
 
-    if !output.status.success() {
-        let error = String::from_utf8_lossy(&output.stderr);
-        return Err(eyre!("OpenSSL signing failed: {}", error));
-    }
+    // if !output.status.success() {
+    //     let error = String::from_utf8_lossy(&output.stderr);
+    //     return Err(eyre!("OpenSSL signing failed: {}", error));
+    // }
 
-    // The raw signature from OpenSSL is in ASN.1 DER format
-    // We need to convert this to the R+S concatenated format for ES256 JWT
-    let signature_der = output.stdout;
+    // // The raw signature from OpenSSL is in ASN.1 DER format
+    // // We need to convert this to the R+S concatenated format for ES256 JWT
+    // let signature_der = output.stdout;
 
-    // 6. Convert DER-encoded signature to raw R||S format for JWT
-    let signature_raw = der_signature_to_raw_signature(&signature_der)
-        .wrap_err("Failed to convert DER signature to raw format")?;
+    // // 6. Convert DER-encoded signature to raw R||S format for JWT
+    // let signature_raw = der_signature_to_raw_signature(&signature_der)
+    //     .wrap_err("Failed to convert DER signature to raw format")?;
 
-    // 7. Base64URL-encode the raw signature
-    let signature_b64 = base64_url_encode(&signature_raw);
+    // // 7. Base64URL-encode the raw signature
+    // let signature_b64 = base64_url_encode(&signature_raw);
 
-    // 7. Combine to form the complete JWT
-    let token = format!("{}.{}.{}", header_b64, payload_b64, signature_b64);
+    // // 7. Combine to form the complete JWT
+    // let token = format!("{}.{}.{}", header_b64, payload_b64, signature_b64);
 
-    Ok(token)
+    // Ok(token)
 }
 
 /// Exchange authorization code for access token
