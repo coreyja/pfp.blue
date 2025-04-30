@@ -97,6 +97,7 @@ atrium-xrpc-client = "0.5.13"
 sec1 = { version = "0.7.3", features = ["pem", "std"] }
 elliptic-curve = { version = "0.13.8", features = ["pem", "jwk", "std"] }
 jose-jwk = "0.1.2"
+trust-dns-resolver = { version = "0.23.2", features = ["tokio-rustls"] }
 
 [build-dependencies]
 vergen = { version = "8.3.1", features = [

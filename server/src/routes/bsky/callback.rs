@@ -258,7 +258,7 @@ pub async fn callback(
     let (oauth_session, _) = state.atrium_oauth.callback(params).await.unwrap();
 
     use atrium_api::agent::SessionManager;
-    debug!("OAuth session DID: {:?}", oauth_session.did().await);
+    info!("OAuth session DID: {:?}", oauth_session.did().await);
 
     Ok(Redirect::to("/me"))
 

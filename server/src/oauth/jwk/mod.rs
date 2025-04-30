@@ -62,12 +62,8 @@ pub fn generate_jwk(public_key_base64: &str) -> cja::Result<Jwk> {
         .ok_or_else(|| eyre!("Failed to extract y coordinate"))
         .wrap_err("Missing y coordinate in public key")?;
 
-    // Base64-URL encode the coordinates
-    let x = Base64UrlUnpadded::encode_string(x_bytes);
-    let y = Base64UrlUnpadded::encode_string(y_bytes);
-
     // Generate a unique ID for the key
-    let key_id = generate_key_id(&x, &y)?;
+    let key_id = crate::oauth::new::generate_key_id(x_bytes, y_bytes)?;
 
     let mut ops = BTreeSet::new();
     ops.insert(Operations::Verify);
@@ -86,18 +82,6 @@ pub fn generate_jwk(public_key_base64: &str) -> cja::Result<Jwk> {
             ..Default::default()
         },
     })
-}
-
-/// Generate a key ID from the key's coordinates
-fn generate_key_id(x: &str, y: &str) -> cja::Result<String> {
-    use ring::digest::{Context, SHA256};
-
-    let mut context = Context::new(&SHA256);
-    context.update(x.as_bytes());
-    context.update(y.as_bytes());
-    let digest = context.finish();
-
-    Ok(Base64UrlUnpadded::encode_string(digest.as_ref()))
 }
 
 /// Calculate the JWK thumbprint for the given public key

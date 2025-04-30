@@ -22,9 +22,14 @@ pub struct SomeDnsTxtResolver;
 impl DnsTxtResolver for SomeDnsTxtResolver {
     async fn resolve(
         &self,
-        _: &str,
+        domain: &str,
     ) -> Result<Vec<String>, Box<dyn Error + Send + Sync + 'static>> {
-        todo!()
+        let resolver = trust_dns_resolver::TokioAsyncResolver::tokio(
+            trust_dns_resolver::config::ResolverConfig::default(),
+            trust_dns_resolver::config::ResolverOpts::default(),
+        );
+        let response = resolver.txt_lookup(domain).await?;
+        Ok(response.iter().map(|r| r.to_string()).collect())
     }
 }
 
@@ -59,7 +64,7 @@ pub fn get_private_jwk(bsky_oauth: &BlueskyOAuthConfig) -> cja::Result<elliptic_
 }
 
 /// Generate a key ID from the key's coordinates
-fn generate_key_id(x: &[u8], y: &[u8]) -> cja::Result<String> {
+pub fn generate_key_id(x: &[u8], y: &[u8]) -> cja::Result<String> {
     use ring::digest::{Context, SHA256};
 
     let mut context = Context::new(&SHA256);
