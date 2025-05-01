@@ -7,6 +7,8 @@ CREATE TABLE
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW ()
   );
 
+CREATE UNIQUE INDEX ON atproto_sessions (did);
+
 CREATE FUNCTION update_updated_at () RETURNS TRIGGER AS $$
 BEGIN
     NEW.updated_at = NOW ();

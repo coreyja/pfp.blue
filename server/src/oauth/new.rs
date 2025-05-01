@@ -110,11 +110,11 @@ pub struct DbSessionStore {
 #[derive(thiserror::Error, Debug)]
 pub enum DbStoreError {
     #[error(transparent)]
-    DbError(#[from] sqlx::Error),
+    Db(#[from] sqlx::Error),
     #[error(transparent)]
-    SerdeError(#[from] serde_json::Error),
+    Serde(#[from] serde_json::Error),
     #[error(transparent)]
-    EncryptionError(#[from] cja::color_eyre::Report),
+    Encryption(#[from] cja::color_eyre::Report),
 }
 
 #[allow(dead_code)]

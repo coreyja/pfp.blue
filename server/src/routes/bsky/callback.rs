@@ -11,6 +11,7 @@ use tracing::{debug, error, info};
 use uuid::Uuid;
 
 use crate::{
+    auth::OptionalUser,
     errors::{ServerError, ServerResult},
     oauth::{self, OAuthTokenSet},
     state::AppState,
@@ -214,6 +215,7 @@ pub async fn callback(
     State(state): State<AppState>,
     cookies: CookieJar<AppState>,
     Query(params): Query<CallbackParams>,
+    OptionalUser { user, session }: OptionalUser,
 ) -> ServerResult<Redirect, Response> {
     // // Use the consistent helpers
     // let client_id = state.client_id();
@@ -259,6 +261,8 @@ pub async fn callback(
 
     use atrium_api::agent::SessionManager;
     info!("OAuth session DID: {:?}", oauth_session.did().await);
+
+    // TODO: If there is not a user, create one and create a session attached to it
 
     Ok(Redirect::to("/me"))
 

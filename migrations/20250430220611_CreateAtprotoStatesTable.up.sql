@@ -8,6 +8,8 @@ CREATE TABLE
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW ()
   );
 
+CREATE UNIQUE INDEX ON atproto_states (key);
+
 -- Automatically update the updated_at column
 CREATE TRIGGER update_atproto_states_updated_at BEFORE
 UPDATE ON atproto_states FOR EACH ROW EXECUTE FUNCTION update_updated_at ();
