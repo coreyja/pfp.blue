@@ -4,6 +4,7 @@ use std::sync::Arc;
 use age::x25519::Identity;
 use atrium_xrpc_client::reqwest::{ReqwestClient, ReqwestClientBuilder};
 use color_eyre::eyre::{eyre, WrapErr};
+use sea_orm::DatabaseConnection;
 use sqlx::{postgres::PgPoolOptions, PgPool};
 
 use crate::oauth::new::AtriumOAuthClient;
@@ -171,11 +172,13 @@ pub struct AppState {
     pub bsky_oauth: BlueskyOAuthConfig,
     pub encryption: EncryptionConfig,
     pub atrium_oauth: Arc<AtriumOAuthClient>,
+    pub orm: DatabaseConnection,
 }
 
 impl AppState {
     pub async fn from_env() -> cja::Result<Self> {
         let pool = setup_db_pool().await?;
+        let orm_pool: DatabaseConnection = pool.clone().into();
 
         let cookie_key = cja::server::cookies::CookieKey::from_env_or_generate()?;
 
@@ -202,8 +205,12 @@ impl AppState {
             protocol: std::env::var("PROTO").unwrap_or_else(|_| "https".to_string()),
         };
 
-        let atrium_oauth_client =
-            crate::oauth::new::get_atrium_oauth_client(&bsky_oauth, &domain, &encryption, &pool)?;
+        let atrium_oauth_client = crate::oauth::new::get_atrium_oauth_client(
+            &bsky_oauth,
+            &domain,
+            &encryption,
+            &orm_pool,
+        )?;
         let atrium_oauth_client = Arc::new(atrium_oauth_client);
 
         Ok(Self {
@@ -214,6 +221,7 @@ impl AppState {
             bsky_oauth,
             encryption,
             atrium_oauth: atrium_oauth_client,
+            orm: orm_pool,
         })
     }
 

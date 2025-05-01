@@ -17,6 +17,9 @@ use base64ct::Encoding as _;
 use color_eyre::eyre::Context as _;
 use elliptic_curve::{JwkEcKey, SecretKey};
 use reqwest::redirect;
+use sea_orm::{
+    ActiveValue, ColumnTrait as _, DatabaseConnection, EntityTrait as _, QueryFilter as _,
+};
 use sec1::{der::DecodePem as _, pkcs8::DecodePrivateKey as _, EcPrivateKey};
 use sqlx::{error, PgPool};
 
@@ -24,6 +27,8 @@ use crate::{
     encryption::decrypt,
     state::{AppState, BlueskyOAuthConfig, DomainSettings, EncryptionConfig},
 };
+
+use crate::orm::prelude::*;
 
 pub struct SomeDnsTxtResolver;
 
@@ -103,14 +108,14 @@ fn convert_jwk(from: JwkEcKey) -> cja::Result<jose_jwk::Jwk> {
 }
 
 pub struct DbSessionStore {
-    db: PgPool,
+    orm: DatabaseConnection,
     encryption: EncryptionConfig,
 }
 
 #[derive(thiserror::Error, Debug)]
 pub enum DbStoreError {
     #[error(transparent)]
-    Db(#[from] sqlx::Error),
+    Db(#[from] sea_orm::DbErr),
     #[error(transparent)]
     Serde(#[from] serde_json::Error),
     #[error(transparent)]
@@ -135,13 +140,10 @@ impl
     type Error = DbStoreError;
 
     async fn get(&self, key: &Did) -> Result<Option<Session>, Self::Error> {
-        let session = sqlx::query_as!(
-            DbAtprotoSession,
-            "SELECT * FROM atproto_sessions WHERE did = $1",
-            key.as_str()
-        )
-        .fetch_optional(&self.db)
-        .await?;
+        let session = AtprotoSessions::find()
+            .filter(crate::orm::atproto_sessions::Column::Did.eq(key.as_str()))
+            .one(&self.orm)
+            .await?;
 
         if let Some(s) = session {
             let decrypted = decrypt(&s.encrypted_session, &self.encryption.key).await?;
@@ -157,28 +159,36 @@ impl
         let json = serde_json::to_string(&value)?;
         let encrypted = crate::encryption::encrypt(&json, &self.encryption.key).await?;
 
-        sqlx::query!(
-            "INSERT INTO atproto_sessions (did, encrypted_session) VALUES ($1, $2)",
-            key.as_str(),
-            encrypted,
-        )
-        .execute(&self.db)
-        .await?;
+        let active_model = crate::orm::atproto_sessions::ActiveModel {
+            did: ActiveValue::set(key.to_string()),
+            encrypted_session: ActiveValue::set(encrypted),
+            ..Default::default()
+        };
+
+        crate::orm::atproto_sessions::Entity::insert(active_model)
+            .on_conflict(
+                sea_query::OnConflict::column(crate::orm::atproto_sessions::Column::Did)
+                    .update_column(crate::orm::atproto_sessions::Column::EncryptedSession)
+                    .to_owned(),
+            )
+            .exec(&self.orm)
+            .await?;
 
         Ok(())
     }
 
     async fn del(&self, key: &Did) -> Result<(), Self::Error> {
-        sqlx::query!("DELETE FROM atproto_sessions WHERE did = $1", key.as_str())
-            .execute(&self.db)
+        crate::orm::atproto_sessions::Entity::delete_many()
+            .filter(crate::orm::atproto_sessions::Column::Did.eq(key.as_str()))
+            .exec(&self.orm)
             .await?;
 
         Ok(())
     }
 
     async fn clear(&self) -> Result<(), Self::Error> {
-        sqlx::query!("TRUNCATE TABLE atproto_sessions")
-            .execute(&self.db)
+        crate::orm::atproto_sessions::Entity::delete_many()
+            .exec(&self.orm)
             .await?;
 
         Ok(())
@@ -191,7 +201,7 @@ pub fn get_atrium_oauth_client(
     bsky_oauth: &BlueskyOAuthConfig,
     domain: &DomainSettings,
     encryption: &EncryptionConfig,
-    db: &PgPool,
+    orm: &DatabaseConnection,
 ) -> cja::Result<AtriumOAuthClient> {
     let http_client = Arc::new(DefaultHttpClient::default());
     let private_jwk = get_private_jwk(bsky_oauth)?;
@@ -228,11 +238,11 @@ pub fn get_atrium_oauth_client(
             protected_resource_metadata: Default::default(),
         },
         state_store: DbStateStore {
-            db: db.clone(),
+            orm: orm.clone(),
             encryption: encryption.clone(),
         },
         session_store: DbSessionStore {
-            db: db.clone(),
+            orm: orm.clone(),
             encryption: encryption.clone(),
         },
     };
@@ -243,7 +253,7 @@ pub fn get_atrium_oauth_client(
 }
 
 pub struct DbStateStore {
-    db: PgPool,
+    orm: DatabaseConnection,
     encryption: EncryptionConfig,
 }
 
@@ -251,16 +261,16 @@ impl atrium_common::store::Store<String, InternalStateData> for DbStateStore {
     type Error = DbStoreError;
 
     async fn get(&self, key: &String) -> Result<Option<InternalStateData>, Self::Error> {
-        let value = sqlx::query!("SELECT * FROM atproto_states WHERE key = $1", key.as_str())
-            .fetch_optional(&self.db)
+        let state = AtprotoStates::find()
+            .filter(crate::orm::atproto_states::Column::Key.eq(key.as_str()))
+            .one(&self.orm)
             .await?;
 
-        if let Some(v) = value {
-            let decrypted_state = decrypt(&v.encrypted_state, &self.encryption.key).await?;
+        if let Some(s) = state {
+            let decrypted = decrypt(&s.encrypted_state, &self.encryption.key).await?;
+            let state = serde_json::from_str(&decrypted)?;
 
-            let s = serde_json::from_str(&decrypted_state)?;
-
-            Ok(Some(s))
+            Ok(Some(state))
         } else {
             Ok(None)
         }
@@ -269,28 +279,36 @@ impl atrium_common::store::Store<String, InternalStateData> for DbStateStore {
     async fn set(&self, key: String, value: InternalStateData) -> Result<(), Self::Error> {
         let json = serde_json::to_string(&value)?;
         let encrypted_state = crate::encryption::encrypt(&json, &self.encryption.key).await?;
-        sqlx::query!(
-            "INSERT INTO atproto_states (key, encrypted_state) VALUES ($1, $2)",
-            key.as_str(),
-            encrypted_state,
-        )
-        .execute(&self.db)
-        .await?;
+        let active_model = crate::orm::atproto_states::ActiveModel {
+            key: ActiveValue::set(key.to_string()),
+            encrypted_state: ActiveValue::set(encrypted_state),
+            ..Default::default()
+        };
+
+        crate::orm::atproto_states::Entity::insert(active_model)
+            .on_conflict(
+                sea_query::OnConflict::column(crate::orm::atproto_states::Column::Key)
+                    .update_column(crate::orm::atproto_states::Column::EncryptedState)
+                    .to_owned(),
+            )
+            .exec(&self.orm)
+            .await?;
 
         Ok(())
     }
 
     async fn del(&self, key: &String) -> Result<(), Self::Error> {
-        sqlx::query!("DELETE FROM atproto_states WHERE key = $1", key.as_str())
-            .execute(&self.db)
+        crate::orm::atproto_states::Entity::delete_many()
+            .filter(crate::orm::atproto_states::Column::Key.eq(key.as_str()))
+            .exec(&self.orm)
             .await?;
 
         Ok(())
     }
 
     async fn clear(&self) -> Result<(), Self::Error> {
-        sqlx::query!("TRUNCATE TABLE atproto_states")
-            .execute(&self.db)
+        crate::orm::atproto_states::Entity::delete_many()
+            .exec(&self.orm)
             .await?;
 
         Ok(())

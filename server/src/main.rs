@@ -21,6 +21,8 @@ mod state;
 mod static_assets;
 mod user;
 
+mod orm;
+
 use state::AppState;
 
 fn main() -> color_eyre::Result<()> {
