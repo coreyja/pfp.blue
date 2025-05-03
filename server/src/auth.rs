@@ -10,10 +10,9 @@ use time::Duration;
 use tracing::{error, info};
 use uuid::Uuid;
 
-use crate::{
-    state::AppState,
-    user::{Session, User},
-};
+use crate::{state::AppState, user::Session};
+
+use crate::orm::users::Model as User;
 
 /// Cookie name for storing the session ID
 pub const SESSION_COOKIE_NAME: &str = "pfp_session";
@@ -110,7 +109,7 @@ impl FromRequestParts<AppState> for AdminUser {
         if !auth_user.user.is_admin {
             error!(
                 "User {} attempted to access admin area without admin privileges",
-                auth_user.user.user_id
+                auth_user.user.id
             );
             return Err(StatusCode::FORBIDDEN.into_response());
         }
@@ -125,7 +124,7 @@ impl FromRequestParts<AppState> for AdminUser {
 /// Extract the optional user from the request if authenticated
 #[derive(Debug, Clone)]
 pub struct OptionalUser {
-    pub user: Option<User>,
+    pub user: Option<crate::orm::users::Model>,
     #[allow(dead_code)]
     pub session: Option<Session>,
 }

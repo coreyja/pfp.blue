@@ -648,92 +648,10 @@ pub enum TokenError {
     NeedsReauth,
 }
 
-/// Attempt to refresh a token if it's expired
-pub async fn refresh_token_if_needed(
-    token: OAuthTokenSet,
-    state: &crate::state::AppState,
-    token_endpoint: &str,
-) -> Result<OAuthTokenSet, TokenError> {
-    // Only refresh if token is expired and we have a refresh token
-    if !token.is_expired() || token.refresh_token.is_none() {
-        return Ok(token);
-    }
-
-    let refresh_token_str = token.refresh_token.as_ref().unwrap();
-    let client_id = state.client_id();
-
-    // Try to get the latest DPoP nonce
-    let dpop_nonce = match crate::oauth::db::get_latest_nonce(state, &token.did).await {
-        Ok(nonce) => nonce,
-        Err(e) => {
-            // Log the error but continue with None
-            tracing::warn!("Failed to get DPoP nonce: {:?}", e);
-            None
-        }
-    };
-
-    // Request a new token
-    let token_response = refresh_token(
-        &state.bsky_oauth,
-        token_endpoint,
-        &client_id,
-        refresh_token_str,
-        dpop_nonce.as_deref(),
-    )
-    .await
-    .map_err(|e| {
-        tracing::warn!("Failed to refresh token for DID {}: {:?}", token.did, e);
-        TokenError::NeedsReauth
-    })?;
-
-    // Create a new token set preserving the user ID and display name
-    let mut token_with_id = OAuthTokenSet::from_token_response_with_jwk(
-        &token_response,
-        token.did.clone(),
-        &state.bsky_oauth.public_key,
-    )?;
-    token_with_id.user_id = token.user_id;
-    token_with_id.display_name = token.display_name.clone();
-    token_with_id.handle = token.handle.clone();
-    let new_token = token_with_id;
-
-    // Store the new token with encryption
-    crate::oauth::db::store_token(state, &new_token)
-        .await
-        .wrap_err_with(|| format!("Failed to store refreshed token for DID {}", token.did))?;
-
-    // Also fetch profile to update display name if needed
-    use cja::jobs::Job;
-    crate::jobs::UpdateProfileInfoJob::from_token(&new_token)
-        .enqueue(state.clone(), "token_refresh".to_string())
-        .await
-        .map_err(|e| TokenError::Error(e.into()))?;
-
-    tracing::info!(
-        "Queued display name update job after token refresh for {}",
-        new_token.did
-    );
-
-    Ok(new_token)
-}
-
-/// Get a token by DID and refresh it if needed
 /// This provides a single entry point for getting a valid token
 pub async fn get_valid_token_by_did(
     did: &str,
     state: &crate::state::AppState,
 ) -> Result<OAuthTokenSet, TokenError> {
-    let token = crate::oauth::db::get_token(state, did)
-        .await?
-        .ok_or_else(|| eyre!("No token found for DID: {}", did))?;
-
-    if !token.is_expired() {
-        return Ok(token);
-    }
-
-    let token_endpoint = resolve_token_endpoint_for_did(did, state).await?;
-    let refreshed_token = refresh_token_if_needed(token, state, &token_endpoint).await?;
-
-    tracing::info!("Token for DID {} was refreshed", did);
-    Ok(refreshed_token)
+    todo!()
 }

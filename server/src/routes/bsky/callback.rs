@@ -5,6 +5,7 @@ use axum::{
     response::{Redirect, Response},
 };
 use cja::{app_state::AppState as _, server::cookies::CookieJar};
+use sea_orm::ActiveValue;
 use tracing::{error, info};
 use uuid::Uuid;
 
@@ -15,9 +16,7 @@ use crate::{
     state::AppState,
 };
 
-use super::utils::{
-    extract_dpop_nonce_from_error,
-};
+use super::utils::extract_dpop_nonce_from_error;
 
 /// Helper function to exchange code for token
 async fn exchange_auth_code_for_token(
@@ -97,43 +96,6 @@ async fn exchange_auth_code_for_token(
     }
 }
 
-/// Helper function to get or create a user ID for a token
-async fn get_or_create_user_id_for_token(
-    token_set: &OAuthTokenSet,
-    did: &str,
-    db_pool: &sqlx::PgPool,
-) -> Result<uuid::Uuid, (StatusCode, String)> {
-    if let Some(user_id) = token_set.user_id {
-        // We already have a linked user from the existing session
-        return Ok(user_id);
-    }
-
-    // We need to find or create a user for this token
-    match crate::user::User::get_by_did(db_pool, did).await {
-        Ok(Some(user)) => Ok(user.user_id),
-        Ok(None) => {
-            // Create a new user
-            match crate::user::User::create(db_pool, None).await {
-                Ok(user) => Ok(user.user_id),
-                Err(err) => {
-                    error!("Failed to create user: {:?}", err);
-                    Err((
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "Failed to create user".to_string(),
-                    ))
-                }
-            }
-        }
-        Err(err) => {
-            error!("Failed to find user: {:?}", err);
-            Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Database error".to_string(),
-            ))
-        }
-    }
-}
-
 /// Helper function to create a user session if needed
 async fn ensure_user_session(
     cookies: &CookieJar<AppState>,
@@ -181,34 +143,6 @@ async fn ensure_user_session(
     Ok(())
 }
 
-/// Check if there's an existing user session and return user ID if found
-async fn check_existing_user_session(
-    cookies: &CookieJar<AppState>,
-    state: &AppState,
-) -> Option<uuid::Uuid> {
-    if let Some(session_id) = crate::auth::get_session_id_from_cookie(cookies) {
-        match crate::auth::validate_session(state.db(), session_id).await {
-            Ok(Some(user_session)) => {
-                // User is already logged in, get their ID
-                match user_session.get_user(state.db()).await {
-                    Ok(Some(user)) => {
-                        info!(
-                            "Found existing user session, linking new account to user_id: {}",
-                            user.user_id
-                        );
-                        Some(user.user_id)
-                    }
-                    _ => None,
-                }
-            }
-            _ => None,
-        }
-    } else {
-        None
-    }
-}
-
-/// Handle the OAuth callback - main entry point
 pub async fn callback(
     State(state): State<AppState>,
     cookies: CookieJar<AppState>,
@@ -261,6 +195,14 @@ pub async fn callback(
     info!("OAuth session DID: {:?}", oauth_session.did().await);
 
     // TODO: If there is not a user, create one and create a session attached to it
+    let user: crate::orm::users::ActiveModel = if let Some(user) = user {
+        user.into()
+    } else {
+        crate::orm::users::ActiveModel {
+            is_admin: ActiveValue::Set(false),
+            ..Default::default()
+        }
+    };
 
     Ok(Redirect::to("/me"))
 

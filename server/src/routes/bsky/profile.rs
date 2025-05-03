@@ -16,7 +16,7 @@ pub async fn profile(
     crate::auth::AuthUser { user, session }: crate::auth::AuthUser,
 ) -> ServerResult<impl IntoResponse, StatusCode> {
     // Get all tokens for this user
-    let tokens = oauth::db::get_tokens_for_user(&state, user.user_id).await?;
+    let tokens = oauth::db::get_tokens_for_user(&state, user.id).await?;
 
     // Start background jobs to update display names for all tokens
     // This ensures we have the latest display name data when showing the profile

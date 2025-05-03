@@ -7,10 +7,7 @@ use axum::{
 use cja::server::cookies::CookieJar;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    errors::ServerResult,
-    state::AppState,
-};
+use crate::{errors::ServerResult, state::AppState};
 
 #[derive(Deserialize, Serialize)]
 pub struct AuthParams {
@@ -168,7 +165,7 @@ pub async fn set_primary_account(
         LIMIT 1
         "#,
         &params.did,
-        user.user_id
+        user.id
     )
     .fetch_optional(&state.db)
     .await

@@ -6,24 +6,6 @@ use uuid::Uuid;
 
 use crate::{encryption, oauth::OAuthTokenSet, state::AppState};
 
-/// Represents a user in the system
-#[derive(Debug, Clone)]
-// Fields needed for database operations
-pub struct User {
-    /// Unique user ID (matches database column 'id')
-    pub user_id: Uuid,
-    /// Optional username
-    pub username: Option<String>,
-    /// Whether this user has admin privileges
-    pub is_admin: bool,
-    /// When the user was created
-    #[allow(dead_code)]
-    pub created_at_utc: DateTime<Utc>,
-    /// When the user was last updated
-    #[allow(dead_code)]
-    pub updated_at_utc: DateTime<Utc>,
-}
-
 /// Represents a session for authenticated users
 #[derive(Debug, Clone)]
 // Fields needed for database operations
@@ -43,78 +25,6 @@ pub struct Session {
     pub created_at_utc: DateTime<Utc>,
     /// When the session was last updated
     pub updated_at_utc: DateTime<Utc>,
-}
-
-impl User {
-    /// Get a user by their ID
-    pub async fn get_by_id(pool: &PgPool, user_id: Uuid) -> cja::Result<Option<User>> {
-        let row = sqlx::query!(
-            r#"
-            SELECT id, username, is_admin, created_at_utc, updated_at_utc 
-            FROM users WHERE id = $1
-            "#,
-            user_id
-        )
-        .fetch_optional(pool)
-        .await?;
-
-        Ok(row.map(|r| User {
-            user_id: r.id,
-            username: r.username,
-            is_admin: r.is_admin,
-            created_at_utc: r.created_at_utc,
-            updated_at_utc: r.updated_at_utc,
-        }))
-    }
-
-    /// Create a new user with optional username and email
-    pub async fn create(pool: &PgPool, username: Option<String>) -> cja::Result<User> {
-        let row = sqlx::query!(
-            r#"
-            INSERT INTO users (username, is_admin)
-            VALUES ($1, false)
-            RETURNING id, username, is_admin, created_at_utc, updated_at_utc
-            "#,
-            username,
-        )
-        .fetch_one(pool)
-        .await?;
-
-        info!("Created new user with ID: {}", row.id);
-
-        Ok(User {
-            user_id: row.id,
-            username: row.username,
-            is_admin: row.is_admin,
-            created_at_utc: row.created_at_utc,
-            updated_at_utc: row.updated_at_utc,
-        })
-    }
-
-    /// Get a user by the DID of one of their OAuth tokens
-    pub async fn get_by_did(pool: &PgPool, did: &str) -> cja::Result<Option<User>> {
-        let row = sqlx::query!(
-            r#"
-            SELECT u.id, u.username, u.is_admin, u.created_at_utc, u.updated_at_utc FROM users u
-            JOIN oauth_tokens ot ON u.id = ot.user_id
-            WHERE ot.did = $1
-            LIMIT 1
-            "#,
-            did
-        )
-        .fetch_optional(pool)
-        .await?;
-
-        Ok(row.map(|r| User {
-            user_id: r.id,
-            username: r.username,
-            is_admin: r.is_admin,
-            created_at_utc: r.created_at_utc,
-            updated_at_utc: r.updated_at_utc,
-        }))
-    }
-
-    // Removed unused methods - can be added back when needed
 }
 
 impl Session {
@@ -191,8 +101,8 @@ impl Session {
     }
 
     /// Get a user for this session
-    pub async fn get_user(&self, pool: &PgPool) -> cja::Result<Option<User>> {
-        User::get_by_id(pool, self.user_id).await
+    pub async fn get_user(&self, pool: &PgPool) -> cja::Result<Option<crate::orm::users::Model>> {
+        todo!()
     }
 
     /// Update the primary token for this session

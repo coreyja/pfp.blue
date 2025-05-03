@@ -83,7 +83,7 @@ async fn root_page(optional_user: OptionalUser, State(state): State<AppState>) -
                 WHERE s.user_id = $1
                 LIMIT 1
                 "#,
-                user.user_id
+                user.id
             )
             .fetch_optional(&state.db)
             .await
@@ -298,7 +298,7 @@ async fn toggle_profile_progress(
     AuthUser { user, .. }: AuthUser,
     Form(params): Form<ToggleProfileProgressParams>,
 ) -> ServerResult<Response, Redirect> {
-    let token_id = validate_did_ownership(&state, &params.did, user.user_id)
+    let token_id = validate_did_ownership(&state, &params.did, user.id)
         .await
         .wrap_err("Failed to validate DID ownership")
         .with_redirect(Redirect::to("/me"))?;
