@@ -4,15 +4,11 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Redirect},
 };
-use cja::server::cookies::{Cookie, CookieJar};
-use color_eyre::eyre::WrapErr;
+use cja::server::cookies::CookieJar;
 use serde::{Deserialize, Serialize};
-use serde_urlencoded;
-use tracing::info;
 
 use crate::{
-    errors::{ServerResult, WithStatus},
-    oauth::{self, new::get_atrium_oauth_client, OAuthSession},
+    errors::ServerResult,
     state::AppState,
 };
 

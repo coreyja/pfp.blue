@@ -118,7 +118,7 @@ pub fn create_client_assertion(
     token_endpoint: &str,
     client_id: &str,
 ) -> cja::Result<String> {
-    return todo!();
+    todo!()
     // use crate::oauth::utils::base64_url_encode;
     // use crate::oauth::utils::der_signature_to_raw_signature;
     // use jsonwebtoken::Algorithm;

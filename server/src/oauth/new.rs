@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, error::Error, fmt::Display, sync::Arc};
+use std::{collections::BTreeSet, error::Error, sync::Arc};
 
 use atrium_api::types::string::Did;
 use atrium_identity::{
@@ -7,25 +7,22 @@ use atrium_identity::{
 };
 use atrium_oauth::{
     store::{
-        session::{MemorySessionStore, Session},
-        state::{InternalStateData, MemoryStateStore, StateStore},
+        session::Session,
+        state::{InternalStateData, StateStore},
     },
-    AtprotoClientMetadata, AtprotoLocalhostClientMetadata, DefaultHttpClient, GrantType,
+    AtprotoClientMetadata, DefaultHttpClient, GrantType,
     KnownScope, OAuthClient, OAuthClientConfig, OAuthResolverConfig, Scope,
 };
 use base64ct::Encoding as _;
 use color_eyre::eyre::Context as _;
 use elliptic_curve::{JwkEcKey, SecretKey};
-use reqwest::redirect;
 use sea_orm::{
     ActiveValue, ColumnTrait as _, DatabaseConnection, EntityTrait as _, QueryFilter as _,
 };
-use sec1::{der::DecodePem as _, pkcs8::DecodePrivateKey as _, EcPrivateKey};
-use sqlx::{error, PgPool};
 
 use crate::{
     encryption::decrypt,
-    state::{AppState, BlueskyOAuthConfig, DomainSettings, EncryptionConfig},
+    state::{BlueskyOAuthConfig, DomainSettings, EncryptionConfig},
 };
 
 use crate::orm::prelude::*;

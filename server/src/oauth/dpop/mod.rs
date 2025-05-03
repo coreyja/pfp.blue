@@ -1,9 +1,3 @@
-use color_eyre::eyre::eyre;
-use color_eyre::eyre::WrapErr;
-use std::io::Write;
-use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
-use tempfile::NamedTempFile;
 
 use crate::state::BlueskyOAuthConfig;
 

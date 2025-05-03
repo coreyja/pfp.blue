@@ -2,23 +2,21 @@ use atrium_oauth::CallbackParams;
 use axum::{
     extract::{Query, State},
     http::StatusCode,
-    response::{IntoResponse, Redirect, Response},
+    response::{Redirect, Response},
 };
-use cja::{app_state::AppState as _, jobs::Job, server::cookies::CookieJar};
-use color_eyre::eyre::eyre;
-use serde::Deserialize;
-use tracing::{debug, error, info};
+use cja::{app_state::AppState as _, server::cookies::CookieJar};
+use tracing::{error, info};
 use uuid::Uuid;
 
 use crate::{
     auth::OptionalUser,
-    errors::{ServerError, ServerResult},
+    errors::ServerResult,
     oauth::{self, OAuthTokenSet},
     state::AppState,
 };
 
 use super::utils::{
-    self, extract_dpop_nonce_from_error, handle_missing_code_error, handle_oauth_error,
+    extract_dpop_nonce_from_error,
 };
 
 /// Helper function to exchange code for token

@@ -1,6 +1,5 @@
 use std::collections::BTreeSet;
 
-use base64ct::{Base64UrlUnpadded, Encoding};
 use color_eyre::eyre::{eyre, WrapErr};
 use jose_jwk::{jose_jwa::Algorithm, Ec, EcCurves, Jwk, Key, Operations, Parameters};
 use p256::{ecdsa::VerifyingKey, pkcs8::DecodePublicKey, EncodedPoint, PublicKey};
