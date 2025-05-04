@@ -43,6 +43,7 @@ impl PrimaryKeyTrait for PrimaryKey {
 
 #[derive(Copy, Clone, Debug, EnumIter)]
 pub enum Relation {
+    Accounts,
     OauthTokens,
     Sessions,
 }
@@ -63,9 +64,16 @@ impl ColumnTrait for Column {
 impl RelationTrait for Relation {
     fn def(&self) -> RelationDef {
         match self {
+            Self::Accounts => Entity::has_many(super::accounts::Entity).into(),
             Self::OauthTokens => Entity::has_many(super::oauth_tokens::Entity).into(),
             Self::Sessions => Entity::has_many(super::sessions::Entity).into(),
         }
+    }
+}
+
+impl Related<super::accounts::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Accounts.def()
     }
 }
 

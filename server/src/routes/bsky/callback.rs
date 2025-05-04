@@ -5,18 +5,22 @@ use axum::{
     response::{Redirect, Response},
 };
 use cja::{app_state::AppState as _, server::cookies::CookieJar};
-use sea_orm::{ActiveModelTrait as _, ActiveValue};
+use sea_orm::{
+    ActiveModelTrait as _, ActiveValue, ColumnTrait as _, EntityTrait as _, QueryFilter as _,
+};
 use tracing::{error, info};
 use uuid::Uuid;
 
 use crate::{
-    auth::OptionalUser,
+    auth::{create_session_and_set_cookie, OptionalUser},
     errors::ServerResult,
     oauth::{self, OAuthTokenSet},
     state::AppState,
 };
 
 use super::utils::extract_dpop_nonce_from_error;
+
+use crate::orm::prelude::*;
 
 /// Helper function to exchange code for token
 async fn exchange_auth_code_for_token(
@@ -96,53 +100,6 @@ async fn exchange_auth_code_for_token(
     }
 }
 
-/// Helper function to create a user session if needed
-async fn ensure_user_session(
-    cookies: &CookieJar<AppState>,
-    state: &AppState,
-    user_id: uuid::Uuid,
-    token_set: &OAuthTokenSet,
-) -> Result<(), (StatusCode, String)> {
-    // Check if we already have a session
-    let have_session = if let Some(session_id) = crate::auth::get_session_id_from_cookie(cookies) {
-        matches!(
-            crate::auth::validate_session(state, session_id).await,
-            Ok(Some(_))
-        )
-    } else {
-        false
-    };
-
-    // Only create a new session if we don't already have one
-    if !have_session {
-        // Get the token id to use as primary token
-        let token_id = match sqlx::query!(
-            r#"
-            SELECT uuid_id FROM oauth_tokens WHERE did = $1
-            "#,
-            &token_set.did
-        )
-        .fetch_optional(state.db())
-        .await
-        {
-            Ok(Some(row)) => Some(row.uuid_id),
-            _ => None,
-        };
-
-        if let Err(err) =
-            crate::auth::create_session_and_set_cookie(state, cookies, user_id, token_id).await
-        {
-            error!("Failed to create session: {:?}", err);
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to create session".to_string(),
-            ));
-        }
-    }
-
-    Ok(())
-}
-
 pub async fn callback(
     State(state): State<AppState>,
     cookies: CookieJar<AppState>,
@@ -204,6 +161,33 @@ pub async fn callback(
         };
         user.insert(&state.orm).await.unwrap()
     };
+
+    let did = oauth_session.did().await.unwrap();
+
+    let existing_account = Accounts::find()
+        .filter(crate::orm::accounts::Column::Did.eq(did.to_string()))
+        .one(&state.orm)
+        .await;
+
+    let account = match existing_account {
+        Ok(Some(account)) => account,
+        _ => {
+            let account = crate::orm::accounts::ActiveModel {
+                did: ActiveValue::Set(did.to_string()),
+                user_id: ActiveValue::Set(user.id),
+                ..Default::default()
+            };
+
+            account.insert(&state.orm).await.unwrap()
+        }
+    };
+
+    let session = create_session_and_set_cookie(&state, &cookies, user.id, &account)
+        .await
+        .unwrap();
+
+    let mut session: crate::orm::sessions::ActiveModel = session.into();
+    session.primary_token_id = ActiveValue::Set(Some(account.account_id));
 
     Ok(Redirect::to("/me"))
 

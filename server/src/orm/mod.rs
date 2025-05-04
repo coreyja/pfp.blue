@@ -2,6 +2,7 @@
 
 pub mod prelude;
 
+pub mod accounts;
 pub mod atproto_sessions;
 pub mod atproto_states;
 pub mod crons;

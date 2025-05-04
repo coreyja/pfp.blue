@@ -237,7 +237,7 @@ pub async fn create_session_and_set_cookie(
     state: &AppState,
     cookies: &CookieJar<AppState>,
     user_id: Uuid,
-    primary_token_id: Option<Uuid>,
+    primary_account: &crate::orm::accounts::Model,
 ) -> cja::Result<Session> {
     let duration_days = DEFAULT_SESSION_DURATION_DAYS;
 
@@ -247,7 +247,7 @@ pub async fn create_session_and_set_cookie(
             (chrono::Utc::now() + chrono::Duration::days(duration_days)).into(),
         ),
         is_active: ActiveValue::Set(true),
-        primary_token_id: ActiveValue::Set(primary_token_id),
+        primary_token_id: ActiveValue::Set(Some(primary_account.account_id)),
         ..Default::default()
     };
 
