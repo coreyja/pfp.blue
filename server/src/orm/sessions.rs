@@ -13,29 +13,29 @@ impl EntityName for Entity {
 
 #[derive(Clone, Debug, PartialEq, DeriveModel, DeriveActiveModel, Eq)]
 pub struct Model {
-    pub id: Uuid,
+    pub session_id: Uuid,
     pub user_id: Uuid,
     pub expires_at: DateTimeWithTimeZone,
     pub is_active: bool,
-    pub created_at_utc: DateTimeWithTimeZone,
-    pub updated_at_utc: DateTimeWithTimeZone,
+    pub created_at: DateTimeWithTimeZone,
+    pub updated_at: DateTimeWithTimeZone,
     pub primary_account_id: Uuid,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
 pub enum Column {
-    Id,
+    SessionId,
     UserId,
     ExpiresAt,
     IsActive,
-    CreatedAtUtc,
-    UpdatedAtUtc,
+    CreatedAt,
+    UpdatedAt,
     PrimaryAccountId,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
 pub enum PrimaryKey {
-    Id,
+    SessionId,
 }
 
 impl PrimaryKeyTrait for PrimaryKey {
@@ -55,12 +55,12 @@ impl ColumnTrait for Column {
     type EntityName = Entity;
     fn def(&self) -> ColumnDef {
         match self {
-            Self::Id => ColumnType::Uuid.def(),
+            Self::SessionId => ColumnType::Uuid.def(),
             Self::UserId => ColumnType::Uuid.def(),
             Self::ExpiresAt => ColumnType::TimestampWithTimeZone.def(),
             Self::IsActive => ColumnType::Boolean.def(),
-            Self::CreatedAtUtc => ColumnType::TimestampWithTimeZone.def(),
-            Self::UpdatedAtUtc => ColumnType::TimestampWithTimeZone.def(),
+            Self::CreatedAt => ColumnType::TimestampWithTimeZone.def(),
+            Self::UpdatedAt => ColumnType::TimestampWithTimeZone.def(),
             Self::PrimaryAccountId => ColumnType::Uuid.def(),
         }
     }
@@ -75,7 +75,7 @@ impl RelationTrait for Relation {
                 .into(),
             Self::Users => Entity::belongs_to(super::users::Entity)
                 .from(Column::UserId)
-                .to(super::users::Column::Id)
+                .to(super::users::Column::UserId)
                 .into(),
         }
     }

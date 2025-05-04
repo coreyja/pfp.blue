@@ -114,7 +114,7 @@ impl FromRequestParts<AppState> for AdminUser {
         if !auth_user.user.is_admin {
             error!(
                 "User {} attempted to access admin area without admin privileges",
-                auth_user.user.id
+                auth_user.user.user_id
             );
             return Err(StatusCode::FORBIDDEN.into_response());
         }
@@ -257,10 +257,13 @@ pub async fn create_session_and_set_cookie(
     // let session = Sessions::create(state.db(), user_id, duration_days, primary_token_id).await?;
 
     // Set a secure cookie with the session ID
-    let cookie = create_session_cookie(session.id, duration_days);
+    let cookie = create_session_cookie(session.session_id, duration_days);
     cookies.add(cookie);
 
-    info!("Created new session {} for user {}", session.id, user_id);
+    info!(
+        "Created new session {} for user {}",
+        session.session_id, user_id
+    );
     Ok(session)
 }
 
@@ -271,7 +274,7 @@ pub async fn end_session(state: &AppState, cookies: &CookieJar<AppState>) -> cja
         if let Ok(Some(session)) = maybe_session {
             let mut session: crate::orm::sessions::ActiveModel = session.into();
             session.is_active = ActiveValue::set(false);
-            session.updated_at_utc = ActiveValue::set(Utc::now().into());
+            session.updated_at = ActiveValue::set(Utc::now().into());
             session.update(&state.orm).await?;
 
             info!("Session {} invalidated", session_id);

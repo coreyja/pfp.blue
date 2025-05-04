@@ -76,7 +76,7 @@ impl RelationTrait for Relation {
             Self::Sessions => Entity::has_many(super::sessions::Entity).into(),
             Self::Users => Entity::belongs_to(super::users::Entity)
                 .from(Column::UserId)
-                .to(super::users::Column::Id)
+                .to(super::users::Column::UserId)
                 .into(),
         }
     }

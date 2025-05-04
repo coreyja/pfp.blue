@@ -80,7 +80,7 @@ async fn root_page(optional_user: OptionalUser, State(state): State<AppState>) -
                 WHERE s.user_id = $1
                 LIMIT 1
                 "#,
-                user.id
+                user.user_id
             )
             .fetch_optional(&state.db)
             .await
@@ -582,9 +582,6 @@ async fn admin_panel(
 
             p class="text-gray-600 mb-6" {
                 "Hello, Administrator! "
-                @if let Some(username) = &user.username {
-                    "(" (username) ")"
-                }
             }
 
             (Heading::h2("Available Jobs").render())

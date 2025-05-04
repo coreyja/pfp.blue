@@ -56,7 +56,7 @@ pub async fn callback(
         _ => {
             let account = crate::orm::accounts::ActiveModel {
                 did: ActiveValue::Set(did.to_string()),
-                user_id: ActiveValue::Set(user.id),
+                user_id: ActiveValue::Set(user.user_id),
                 ..Default::default()
             };
 
@@ -64,7 +64,7 @@ pub async fn callback(
         }
     };
 
-    let session = create_session_and_set_cookie(&state, &cookies, user.id, &account)
+    let session = create_session_and_set_cookie(&state, &cookies, user.user_id, &account)
         .await
         .unwrap();
 

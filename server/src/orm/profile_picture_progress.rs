@@ -13,25 +13,25 @@ impl EntityName for Entity {
 
 #[derive(Clone, Debug, PartialEq, DeriveModel, DeriveActiveModel, Eq)]
 pub struct Model {
-    pub id: Uuid,
+    pub profile_picture_progress_id: Uuid,
     pub enabled: bool,
-    pub created_at_utc: DateTimeWithTimeZone,
-    pub updated_at_utc: DateTimeWithTimeZone,
+    pub created_at: DateTimeWithTimeZone,
+    pub updated_at: DateTimeWithTimeZone,
     pub account_id: Uuid,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
 pub enum Column {
-    Id,
+    ProfilePictureProgressId,
     Enabled,
-    CreatedAtUtc,
-    UpdatedAtUtc,
+    CreatedAt,
+    UpdatedAt,
     AccountId,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
 pub enum PrimaryKey {
-    Id,
+    ProfilePictureProgressId,
 }
 
 impl PrimaryKeyTrait for PrimaryKey {
@@ -50,10 +50,10 @@ impl ColumnTrait for Column {
     type EntityName = Entity;
     fn def(&self) -> ColumnDef {
         match self {
-            Self::Id => ColumnType::Uuid.def(),
+            Self::ProfilePictureProgressId => ColumnType::Uuid.def(),
             Self::Enabled => ColumnType::Boolean.def(),
-            Self::CreatedAtUtc => ColumnType::TimestampWithTimeZone.def(),
-            Self::UpdatedAtUtc => ColumnType::TimestampWithTimeZone.def(),
+            Self::CreatedAt => ColumnType::TimestampWithTimeZone.def(),
+            Self::UpdatedAt => ColumnType::TimestampWithTimeZone.def(),
             Self::AccountId => ColumnType::Uuid.def(),
         }
     }

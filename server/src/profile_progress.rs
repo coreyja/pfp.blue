@@ -28,7 +28,7 @@ impl ProfilePictureProgress {
             r#"
             INSERT INTO profile_picture_progress (account_id, enabled)
             VALUES ($1, $2)
-            RETURNING id, account_id, enabled, created_at_utc, updated_at_utc
+            RETURNING profile_picture_progress_id, account_id, enabled, created_at, updated_at
             "#,
             account_id,
             enabled,
@@ -43,11 +43,11 @@ impl ProfilePictureProgress {
         );
 
         Ok(Self {
-            id: row.id,
+            id: row.profile_picture_progress_id,
             account_id: row.account_id,
             enabled: row.enabled,
-            created_at_utc: row.created_at_utc,
-            updated_at_utc: row.updated_at_utc,
+            created_at_utc: row.created_at,
+            updated_at_utc: row.updated_at,
         })
     }
 
@@ -56,7 +56,7 @@ impl ProfilePictureProgress {
         let row = sqlx::query_as!(
             Self,
             r#"
-            SELECT id, account_id, enabled, created_at_utc, updated_at_utc 
+            SELECT profile_picture_progress_id as id, account_id, enabled, created_at as created_at_utc, updated_at as updated_at_utc 
             FROM profile_picture_progress
             WHERE account_id = $1
             "#,
@@ -74,9 +74,9 @@ impl ProfilePictureProgress {
         let row = sqlx::query!(
             r#"
             UPDATE profile_picture_progress
-            SET enabled = $1, updated_at_utc = NOW()
-            WHERE id = $2
-            RETURNING updated_at_utc
+            SET enabled = $1, updated_at = NOW()
+            WHERE profile_picture_progress_id = $2
+            RETURNING updated_at
             "#,
             enabled,
             self.id
@@ -86,7 +86,7 @@ impl ProfilePictureProgress {
         .wrap_err("Database error updating profile picture progress")?;
 
         self.enabled = enabled;
-        self.updated_at_utc = row.updated_at_utc;
+        self.updated_at_utc = row.updated_at;
 
         info!(
             "Updated profile picture progress enabled status to {} for ID {}",
