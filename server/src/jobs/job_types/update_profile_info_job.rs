@@ -19,7 +19,7 @@ pub struct UpdateProfileInfoJob {
 
 impl UpdateProfileInfoJob {
     /// Create a new job from an OAuthTokenSet
-    pub fn from_token(token: &OAuthTokenSet) -> Self {
+    pub fn from_token(token: &crate::orm::oauth_tokens::Model) -> Self {
         Self {
             did: token.did.clone(),
         }

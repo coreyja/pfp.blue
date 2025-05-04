@@ -9,7 +9,7 @@ use serde::Deserialize;
 use std::time::SystemTime;
 use tracing::{error, info};
 
-use crate::{oauth, state::AppState};
+use crate::{oauth, state::AppState, traits::IsExpired as _};
 
 #[derive(Deserialize)]
 pub struct GetTokenParams {
@@ -44,13 +44,13 @@ pub async fn get_token(
             }
 
             // Calculate the expires_in value
-            let expires_in = if token.expires_at
+            let expires_in = if token.expires_at as u64
                 > SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs()
             {
-                token.expires_at
+                token.expires_at as u64
                     - SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap_or_default()

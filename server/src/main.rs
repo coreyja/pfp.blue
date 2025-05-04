@@ -21,6 +21,8 @@ mod state;
 mod static_assets;
 mod user;
 
+mod traits;
+
 mod orm;
 
 use state::AppState;

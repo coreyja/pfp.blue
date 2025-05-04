@@ -652,6 +652,6 @@ pub enum TokenError {
 pub async fn get_valid_token_by_did(
     did: &str,
     state: &crate::state::AppState,
-) -> Result<OAuthTokenSet, TokenError> {
+) -> Result<crate::orm::oauth_tokens::Model, TokenError> {
     todo!()
 }

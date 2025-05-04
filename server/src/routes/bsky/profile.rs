@@ -1,6 +1,7 @@
 use axum::{extract::State, http::StatusCode, response::IntoResponse};
 use cja::jobs::Job;
 use maud::html;
+use sea_orm::ModelTrait;
 use sqlx::Row;
 use tracing::error;
 
@@ -8,6 +9,7 @@ use crate::{
     errors::{ServerError, ServerResult},
     oauth::{self, OAuthTokenSet, TokenError},
     state::AppState,
+    traits::IsExpired as _,
 };
 
 /// Profile page that requires authentication
@@ -16,7 +18,10 @@ pub async fn profile(
     crate::auth::AuthUser { user, session }: crate::auth::AuthUser,
 ) -> ServerResult<impl IntoResponse, StatusCode> {
     // Get all tokens for this user
-    let tokens = oauth::db::get_tokens_for_user(&state, user.id).await?;
+    let tokens = user
+        .find_related(crate::orm::oauth_tokens::Entity)
+        .all(&state.orm)
+        .await?;
 
     // Start background jobs to update display names for all tokens
     // This ensures we have the latest display name data when showing the profile
@@ -37,41 +42,21 @@ pub async fn profile(
     }
 
     // Use primary token from session if available, otherwise use the first token
-    let mut primary_token =
-        if let Ok(Some(token)) = session.get_primary_token(&state.db, &state).await {
-            token
-        } else if !tokens.is_empty() {
-            tokens[0].clone()
-        } else {
-            error!("No tokens available for this user");
-            return Err(ServerError(
-                color_eyre::eyre::eyre!("No Bluesky accounts linked"),
-                StatusCode::BAD_REQUEST,
-            ));
-        };
-
-    // Check if the primary token is expired and try to refresh it
-    if primary_token.is_expired() {
-        // Use our consolidated function to get a valid token
-        match oauth::get_valid_token_by_did(&primary_token.did, &state).await {
-            Ok(new_token) => {
-                primary_token = new_token;
-            }
-            Err(TokenError::NeedsReauth) => {
-                let params = super::AuthParams {
-                    did: primary_token.did,
-                    redirect_uri: None,
-                    state: None,
-                };
-                let param_string = serde_urlencoded::to_string(&params)?;
-                let redirect_url = format!("/oauth/bsky/authorize?{}", param_string);
-                return Ok(axum::response::Redirect::to(&redirect_url).into_response());
-            }
-            Err(TokenError::Error(e)) => {
-                return Err(ServerError(e, StatusCode::INTERNAL_SERVER_ERROR));
-            }
-        }
-    }
+    let mut primary_token = if let Ok(Some(token)) = session
+        .find_related(crate::orm::oauth_tokens::Entity)
+        .one(&state.orm)
+        .await
+    {
+        token
+    } else if !tokens.is_empty() {
+        tokens[0].clone()
+    } else {
+        error!("No tokens available for this user");
+        return Err(ServerError(
+            color_eyre::eyre::eyre!("No Bluesky accounts linked"),
+            StatusCode::BAD_REQUEST,
+        ));
+    };
 
     // Display profile with all tokens
     Ok(display_profile_multi(&state, primary_token, tokens)
@@ -171,8 +156,8 @@ fn empty_profile() -> impl IntoResponse {
 /// Display profile information with multiple linked accounts
 async fn display_profile_multi(
     state: &AppState,
-    primary_token: OAuthTokenSet,
-    all_tokens: Vec<OAuthTokenSet>,
+    primary_token: crate::orm::oauth_tokens::Model,
+    all_tokens: Vec<crate::orm::oauth_tokens::Model>,
 ) -> maud::Markup {
     use crate::components::{
         layout::Page,

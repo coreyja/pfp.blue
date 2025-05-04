@@ -498,134 +498,138 @@ pub async fn save_original_profile_picture(
 
 /// Get the original profile picture blob from our custom PDS collection
 pub async fn get_original_profile_picture(
-    app_state: &AppState,
-    token: &OAuthTokenSet,
+    state: &AppState,
+    token: &crate::orm::oauth_tokens::Model,
 ) -> cja::Result<Value> {
-    // Create a reqwest client
-    let client = Client::new();
+    // We don't want to be getting a token here. An account or maybe a DID
+    todo!()
+    // // Create a reqwest client
+    // let client = Client::new();
 
-    // Find PDS endpoint for this user
-    let pds_endpoint = find_pds_endpoint(token)
-        .await
-        .wrap_err_with(|| format!("Failed to find PDS endpoint for {}", token.did))?;
+    // // Find PDS endpoint for this user
+    // let pds_endpoint = find_pds_endpoint(token)
+    //     .await
+    //     .wrap_err_with(|| format!("Failed to find PDS endpoint for {}", token.did))?;
 
-    // Construct the full URL to the PDS endpoint for getRecord
-    let get_record_url = format!("{}/xrpc/com.atproto.repo.getRecord", pds_endpoint);
+    // // Construct the full URL to the PDS endpoint for getRecord
+    // let get_record_url = format!("{}/xrpc/com.atproto.repo.getRecord", pds_endpoint);
 
-    // Start with no nonce and handle any in the error response
-    let get_dpop_proof = create_dpop_proof_with_ath(
-        &app_state.bsky_oauth,
-        "GET",
-        &get_record_url,
-        None,
-        &token.access_token,
-    )?;
+    // // Start with no nonce and handle any in the error response
+    // let get_dpop_proof = create_dpop_proof_with_ath(
+    //     &app_state.bsky_oauth,
+    //     "GET",
+    //     &get_record_url,
+    //     None,
+    //     &token.access_token,
+    // )?;
 
-    // Make the API request to get the record from the user's PDS
-    let mut get_response_result = client
-        .get(&get_record_url)
-        .query(&[
-            ("repo", &token.did),
-            ("collection", &String::from("blue.pfp.unmodifiedPfp")),
-            ("rkey", &String::from("self")),
-        ])
-        .header("Authorization", format!("DPoP {}", token.access_token))
-        .header("DPoP", get_dpop_proof)
-        .send()
-        .await;
+    // // Make the API request to get the record from the user's PDS
+    // let mut get_response_result = client
+    //     .get(&get_record_url)
+    //     .query(&[
+    //         ("repo", &token.did),
+    //         ("collection", &String::from("blue.pfp.unmodifiedPfp")),
+    //         ("rkey", &String::from("self")),
+    //     ])
+    //     .header("Authorization", format!("DPoP {}", token.access_token))
+    //     .header("DPoP", get_dpop_proof)
+    //     .send()
+    //     .await;
 
-    // Handle nonce errors by trying again if needed
-    if let Ok(response) = &get_response_result {
-        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
-            // Check if there's a DPoP-Nonce in the error response
-            if let Some(new_nonce) = response
-                .headers()
-                .get("DPoP-Nonce")
-                .and_then(|h| h.to_str().ok())
-            {
-                info!("Received new DPoP-Nonce in error response: {}", new_nonce);
+    // // Handle nonce errors by trying again if needed
+    // if let Ok(response) = &get_response_result {
+    //     if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+    //         // Check if there's a DPoP-Nonce in the error response
+    //         if let Some(new_nonce) = response
+    //             .headers()
+    //             .get("DPoP-Nonce")
+    //             .and_then(|h| h.to_str().ok())
+    //         {
+    //             info!("Received new DPoP-Nonce in error response: {}", new_nonce);
 
-                // Create a new DPoP proof with the provided nonce and access token hash
-                let new_dpop_proof = create_dpop_proof_with_ath(
-                    &app_state.bsky_oauth,
-                    "GET",
-                    &get_record_url,
-                    Some(new_nonce),
-                    &token.access_token,
-                )?;
+    //             // Create a new DPoP proof with the provided nonce and access token hash
+    //             let new_dpop_proof = create_dpop_proof_with_ath(
+    //                 &app_state.bsky_oauth,
+    //                 "GET",
+    //                 &get_record_url,
+    //                 Some(new_nonce),
+    //                 &token.access_token,
+    //             )?;
 
-                // Retry the request with the new nonce
-                info!("Retrying record retrieval with new DPoP-Nonce");
-                get_response_result = client
-                    .get(&get_record_url)
-                    .query(&[
-                        ("repo", &token.did),
-                        ("collection", &String::from("blue.pfp.unmodifiedPfp")),
-                        ("rkey", &String::from("self")),
-                    ])
-                    .header("Authorization", format!("DPoP {}", token.access_token))
-                    .header("DPoP", new_dpop_proof)
-                    .send()
-                    .await;
-            }
-        }
-    }
+    //             // Retry the request with the new nonce
+    //             info!("Retrying record retrieval with new DPoP-Nonce");
+    //             get_response_result = client
+    //                 .get(&get_record_url)
+    //                 .query(&[
+    //                     ("repo", &token.did),
+    //                     ("collection", &String::from("blue.pfp.unmodifiedPfp")),
+    //                     ("rkey", &String::from("self")),
+    //                 ])
+    //                 .header("Authorization", format!("DPoP {}", token.access_token))
+    //                 .header("DPoP", new_dpop_proof)
+    //                 .send()
+    //                 .await;
+    //         }
+    //     }
+    // }
 
-    // Unwrap the final result
-    let get_response =
-        get_response_result.wrap_err("Network error when retrieving original profile picture")?;
+    // // Unwrap the final result
+    // let get_response =
+    //     get_response_result.wrap_err("Network error when retrieving original profile picture")?;
 
     // If record doesn't exist, return None (not an error)
-    if get_response.status() == reqwest::StatusCode::NOT_FOUND {
-        error!(
-            "No original profile picture record found for DID: {}",
-            token.did
-        );
-        return Err(eyre!(
-            "No original profile picture record found for DID: {}",
-            token.did
-        ));
-    }
+    // if get_response.status() == reqwest::StatusCode::NOT_FOUND {
+    //     error!(
+    //         "No original profile picture record found for DID: {}",
+    //         token.did
+    //     );
+    //     return Err(eyre!(
+    //         "No original profile picture record found for DID: {}",
+    //         token.did
+    //     ));
+    // }
 
-    if !get_response.status().is_success() {
-        let status = get_response.status();
-        let error_text = get_response
-            .text()
-            .await
-            .wrap_err("Failed to read error response")
-            .unwrap_or_else(|e| format!("Failed to read error response: {}", e));
+    // if !get_response.status().is_success() {
+    //     let status = get_response.status();
+    //     let error_text = get_response
+    //         .text()
+    //         .await
+    //         .wrap_err("Failed to read error response")
+    //         .unwrap_or_else(|e| format!("Failed to read error response: {}", e));
 
-        error!(
-            "Failed to get original profile picture: {} - {}",
-            status, error_text
-        );
-        return Err(eyre!(
-            "Failed to get original profile picture: {} - {}",
-            status,
-            error_text
-        ));
-    }
+    //     error!(
+    //         "Failed to get original profile picture: {} - {}",
+    //         status, error_text
+    //     );
+    //     return Err(eyre!(
+    //         "Failed to get original profile picture: {} - {}",
+    //         status,
+    //         error_text
+    //     ));
+    // }
 
-    // Parse the response JSON
-    let record_data = get_response.json::<Value>().await?;
+    // let client = state.atrium_oauth.
 
-    // Extract the avatar blob from the record
-    if let Some(value) = record_data.get("value") {
-        if let Some(avatar) = value.get("avatar") {
-            info!(
-                "Found original profile picture record for DID: {}",
-                token.did
-            );
-            return Ok(avatar.clone());
-        }
-    }
+    // // Parse the response JSON
+    // let record_data = get_response.json::<Value>().await?;
 
-    // No avatar found in the record
-    error!(
-        "Original profile picture record exists but has no avatar for DID: {}",
-        token.did
-    );
-    Err(eyre!("No original profile picture record found"))
+    // // Extract the avatar blob from the record
+    // if let Some(value) = record_data.get("value") {
+    //     if let Some(avatar) = value.get("avatar") {
+    //         info!(
+    //             "Found original profile picture record for DID: {}",
+    //             token.did
+    //         );
+    //         return Ok(avatar.clone());
+    //     }
+    // }
+
+    // // No avatar found in the record
+    // error!(
+    //     "Original profile picture record exists but has no avatar for DID: {}",
+    //     token.did
+    // );
+    // Err(eyre!("No original profile picture record found"))
 }
 
 /// Update profile with a new image

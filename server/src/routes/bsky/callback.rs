@@ -5,7 +5,7 @@ use axum::{
     response::{Redirect, Response},
 };
 use cja::{app_state::AppState as _, server::cookies::CookieJar};
-use sea_orm::ActiveValue;
+use sea_orm::{ActiveModelTrait as _, ActiveValue};
 use tracing::{error, info};
 use uuid::Uuid;
 
@@ -106,7 +106,7 @@ async fn ensure_user_session(
     // Check if we already have a session
     let have_session = if let Some(session_id) = crate::auth::get_session_id_from_cookie(cookies) {
         matches!(
-            crate::auth::validate_session(state.db(), session_id).await,
+            crate::auth::validate_session(state, session_id).await,
             Ok(Some(_))
         )
     } else {
@@ -195,13 +195,14 @@ pub async fn callback(
     info!("OAuth session DID: {:?}", oauth_session.did().await);
 
     // TODO: If there is not a user, create one and create a session attached to it
-    let user: crate::orm::users::ActiveModel = if let Some(user) = user {
-        user.into()
+    let user = if let Some(user) = user {
+        user
     } else {
-        crate::orm::users::ActiveModel {
+        let user = crate::orm::users::ActiveModel {
             is_admin: ActiveValue::Set(false),
             ..Default::default()
-        }
+        };
+        user.insert(&state.orm).await.unwrap()
     };
 
     Ok(Redirect::to("/me"))

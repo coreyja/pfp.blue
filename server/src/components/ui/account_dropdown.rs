@@ -1,17 +1,16 @@
-use crate::oauth::OAuthTokenSet;
 use maud::{html, Markup, Render};
 use serde::Serialize;
 
 pub struct AccountDropdown {
-    pub tokens: Vec<OAuthTokenSet>,
-    pub primary_token: OAuthTokenSet,
+    pub tokens: Vec<crate::orm::oauth_tokens::Model>,
+    pub primary_token: crate::orm::oauth_tokens::Model,
     pub current_path: String,
 }
 
 impl AccountDropdown {
     pub fn new(
-        tokens: Vec<OAuthTokenSet>,
-        primary_token: OAuthTokenSet,
+        tokens: Vec<crate::orm::oauth_tokens::Model>,
+        primary_token: crate::orm::oauth_tokens::Model,
         current_path: &str,
     ) -> Self {
         Self {

@@ -4,15 +4,20 @@ use axum::{
     http::{request::Parts, StatusCode},
     response::{IntoResponse, Redirect, Response},
 };
+use chrono::Utc;
 use cja::{app_state::AppState as _, server::cookies::Cookie, server::cookies::CookieJar};
 use color_eyre::eyre::Context;
+use sea_orm::{ActiveModelTrait as _, ActiveValue, EntityTrait as _, ModelTrait};
 use time::Duration;
 use tracing::{error, info};
 use uuid::Uuid;
 
-use crate::{state::AppState, user::Session};
+use crate::state::AppState;
 
+use crate::orm::sessions::Model as Session;
 use crate::orm::users::Model as User;
+
+use crate::orm::prelude::*;
 
 /// Cookie name for storing the session ID
 pub const SESSION_COOKIE_NAME: &str = "pfp_session";
@@ -53,7 +58,7 @@ impl FromRequestParts<AppState> for AuthUser {
         };
 
         // Validate the session
-        let session = match validate_session(&state.db, session_id).await {
+        let session = match validate_session(&state, session_id).await {
             Ok(Some(session)) => session,
             Ok(None) => {
                 info!("Session {} is invalid or expired", session_id);
@@ -66,7 +71,7 @@ impl FromRequestParts<AppState> for AuthUser {
         };
 
         // Get the user for this session
-        let user = match session.get_user(&state.db).await {
+        let user = match session.find_related(Users).one(&state.orm).await {
             Ok(Some(user)) => user,
             Ok(None) => {
                 error!("No user found for session {}", session_id);
@@ -158,7 +163,7 @@ impl FromRequestParts<AppState> for OptionalUser {
         };
 
         // Validate the session
-        let session = match validate_session(&state.db, session_id).await {
+        let session = match validate_session(&state, session_id).await {
             Ok(Some(session)) => session,
             Ok(None) => {
                 // Invalid session, return None for user and session
@@ -174,7 +179,7 @@ impl FromRequestParts<AppState> for OptionalUser {
         };
 
         // Get the user for this session
-        match session.get_user(&state.db).await {
+        match session.find_related(Users).one(&state.orm).await {
             Ok(Some(user)) => Ok(OptionalUser {
                 user: Some(user),
                 session: Some(session),
@@ -199,14 +204,11 @@ pub fn get_session_id_from_cookie(cookies: &CookieJar<AppState>) -> Option<Uuid>
 }
 
 /// Validate a session
-pub async fn validate_session(
-    pool: &sqlx::PgPool,
-    session_id: Uuid,
-) -> cja::Result<Option<Session>> {
-    let session = Session::get_by_id(pool, session_id).await?;
+pub async fn validate_session(state: &AppState, session_id: Uuid) -> cja::Result<Option<Session>> {
+    let session = Sessions::find_by_id(session_id).one(&state.orm).await?;
 
     if let Some(ref session) = session {
-        if session.is_expired() {
+        if session.expires_at < chrono::Utc::now() {
             info!("Session {} is expired", session_id);
             return Ok(None);
         }
@@ -239,8 +241,20 @@ pub async fn create_session_and_set_cookie(
 ) -> cja::Result<Session> {
     let duration_days = DEFAULT_SESSION_DURATION_DAYS;
 
+    let session = crate::orm::sessions::ActiveModel {
+        user_id: ActiveValue::Set(user_id),
+        expires_at: ActiveValue::Set(
+            (chrono::Utc::now() + chrono::Duration::days(duration_days)).into(),
+        ),
+        is_active: ActiveValue::Set(true),
+        primary_token_id: ActiveValue::Set(primary_token_id),
+        ..Default::default()
+    };
+
+    let session = session.insert(&state.orm).await?;
+
     // Create a new session
-    let session = Session::create(state.db(), user_id, duration_days, primary_token_id).await?;
+    // let session = Sessions::create(state.db(), user_id, duration_days, primary_token_id).await?;
 
     // Set a secure cookie with the session ID
     let cookie = create_session_cookie(session.id, duration_days);
@@ -253,11 +267,12 @@ pub async fn create_session_and_set_cookie(
 /// Clear the session cookie and invalidate the session in the database
 pub async fn end_session(state: &AppState, cookies: &CookieJar<AppState>) -> cja::Result<()> {
     if let Some(session_id) = get_session_id_from_cookie(cookies) {
-        if let Ok(Some(mut session)) = Session::get_by_id(state.db(), session_id).await {
-            session
-                .invalidate(state.db())
-                .await
-                .wrap_err("Failed to invalidate session")?;
+        let maybe_session = Sessions::find_by_id(session_id).one(&state.orm).await;
+        if let Ok(Some(session)) = maybe_session {
+            let mut session: crate::orm::sessions::ActiveModel = session.into();
+            session.is_active = ActiveValue::set(false);
+            session.updated_at_utc = ActiveValue::set(Utc::now().into());
+            session.update(&state.orm).await?;
 
             info!("Session {} invalidated", session_id);
         }
