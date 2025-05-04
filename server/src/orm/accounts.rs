@@ -47,6 +47,8 @@ impl PrimaryKeyTrait for PrimaryKey {
 
 #[derive(Copy, Clone, Debug, EnumIter)]
 pub enum Relation {
+    ProfilePictureProgress,
+    Sessions,
     Users,
 }
 
@@ -68,11 +70,27 @@ impl ColumnTrait for Column {
 impl RelationTrait for Relation {
     fn def(&self) -> RelationDef {
         match self {
+            Self::ProfilePictureProgress => {
+                Entity::has_many(super::profile_picture_progress::Entity).into()
+            }
+            Self::Sessions => Entity::has_many(super::sessions::Entity).into(),
             Self::Users => Entity::belongs_to(super::users::Entity)
                 .from(Column::UserId)
                 .to(super::users::Column::Id)
                 .into(),
         }
+    }
+}
+
+impl Related<super::profile_picture_progress::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::ProfilePictureProgress.def()
+    }
+}
+
+impl Related<super::sessions::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Sessions.def()
     }
 }
 

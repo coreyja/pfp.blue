@@ -1,21 +1,22 @@
 use maud::{html, Markup, Render};
 use serde::Serialize;
+use uuid::Uuid;
 
 pub struct AccountDropdown {
-    pub tokens: Vec<crate::orm::oauth_tokens::Model>,
-    pub primary_token: crate::orm::oauth_tokens::Model,
+    pub accounts: Vec<crate::orm::accounts::Model>,
+    pub primary_account: crate::orm::accounts::Model,
     pub current_path: String,
 }
 
 impl AccountDropdown {
     pub fn new(
-        tokens: Vec<crate::orm::oauth_tokens::Model>,
-        primary_token: crate::orm::oauth_tokens::Model,
+        accounts: Vec<crate::orm::accounts::Model>,
+        primary_account: crate::orm::accounts::Model,
         current_path: &str,
     ) -> Self {
         Self {
-            tokens,
-            primary_token,
+            accounts,
+            primary_account,
             current_path: current_path.to_string(),
         }
     }
@@ -23,7 +24,7 @@ impl AccountDropdown {
 
 #[derive(Serialize)]
 struct SetPrimaryParams<'a> {
-    did: &'a str,
+    account_id: &'a Uuid,
     redirect: &'a str,
 }
 
@@ -37,7 +38,7 @@ impl Render for AccountDropdown {
                     span class="flex items-center gap-1 sm:gap-2" {
                         // Display name/handle with a dropdown arrow
                         span class="text-sm sm:text-md font-medium max-w-[120px] sm:max-w-[180px] truncate" {
-                            @if let Some(display_name) = &self.primary_token.display_name {
+                            @if let Some(display_name) = &self.primary_account.display_name {
                                 "@" (display_name)
                             } @else {
                                 "Account"
@@ -58,12 +59,12 @@ impl Render for AccountDropdown {
                         // Account list section
                         div class="px-4 py-2 text-xs text-gray-500 uppercase tracking-wider" { "Your Accounts" }
 
-                        @for token in &self.tokens {
-                            @let is_current = token.did == self.primary_token.did;
+                        @for account in &self.accounts {
+                            @let is_current = account.account_id == self.primary_account.account_id;
 
                             // For each account, show a menu item
                             @let params = SetPrimaryParams {
-                                did: &token.did,
+                                account_id: &account.account_id,
                                 redirect: &self.current_path,
                             };
                             @let query_string = serde_urlencoded::to_string(&params).unwrap();
@@ -82,13 +83,13 @@ impl Render for AccountDropdown {
                                 // Account information
                                 div class="min-w-0 flex-1" {
                                     div class="font-medium truncate" {
-                                        @if let Some(display_name) = &token.display_name {
+                                        @if let Some(display_name) = &account.display_name {
                                             (display_name)
                                         } @else {
-                                            "did:" (token.did)
+                                            "did:" (account.did)
                                         }
 
-                                        @if let Some(handle) = &token.handle {
+                                        @if let Some(handle) = &account.handle {
                                             div class="text-sm text-gray-500" { "@" (handle) }
                                         }
                                     }

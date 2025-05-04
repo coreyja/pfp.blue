@@ -586,11 +586,3 @@ pub enum TokenError {
     #[error("Token needs re-authentication")]
     NeedsReauth,
 }
-
-/// This provides a single entry point for getting a valid token
-pub async fn get_valid_token_by_did(
-    did: &str,
-    state: &crate::state::AppState,
-) -> Result<crate::orm::oauth_tokens::Model, TokenError> {
-    todo!()
-}

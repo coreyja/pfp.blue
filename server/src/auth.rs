@@ -247,7 +247,7 @@ pub async fn create_session_and_set_cookie(
             (chrono::Utc::now() + chrono::Duration::days(duration_days)).into(),
         ),
         is_active: ActiveValue::Set(true),
-        primary_token_id: ActiveValue::Set(Some(primary_account.account_id)),
+        primary_account_id: ActiveValue::Set(primary_account.account_id),
         ..Default::default()
     };
 

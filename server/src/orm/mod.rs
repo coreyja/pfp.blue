@@ -7,7 +7,6 @@ pub mod atproto_sessions;
 pub mod atproto_states;
 pub mod crons;
 pub mod jobs;
-pub mod oauth_tokens;
 pub mod profile_picture_progress;
 pub mod sessions;
 pub mod users;

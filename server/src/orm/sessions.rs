@@ -19,7 +19,7 @@ pub struct Model {
     pub is_active: bool,
     pub created_at_utc: DateTimeWithTimeZone,
     pub updated_at_utc: DateTimeWithTimeZone,
-    pub primary_token_id: Option<Uuid>,
+    pub primary_account_id: Uuid,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -30,7 +30,7 @@ pub enum Column {
     IsActive,
     CreatedAtUtc,
     UpdatedAtUtc,
-    PrimaryTokenId,
+    PrimaryAccountId,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
@@ -47,7 +47,7 @@ impl PrimaryKeyTrait for PrimaryKey {
 
 #[derive(Copy, Clone, Debug, EnumIter)]
 pub enum Relation {
-    OauthTokens,
+    Accounts,
     Users,
 }
 
@@ -61,7 +61,7 @@ impl ColumnTrait for Column {
             Self::IsActive => ColumnType::Boolean.def(),
             Self::CreatedAtUtc => ColumnType::TimestampWithTimeZone.def(),
             Self::UpdatedAtUtc => ColumnType::TimestampWithTimeZone.def(),
-            Self::PrimaryTokenId => ColumnType::Uuid.def().null(),
+            Self::PrimaryAccountId => ColumnType::Uuid.def(),
         }
     }
 }
@@ -69,9 +69,9 @@ impl ColumnTrait for Column {
 impl RelationTrait for Relation {
     fn def(&self) -> RelationDef {
         match self {
-            Self::OauthTokens => Entity::belongs_to(super::oauth_tokens::Entity)
-                .from(Column::PrimaryTokenId)
-                .to(super::oauth_tokens::Column::UuidId)
+            Self::Accounts => Entity::belongs_to(super::accounts::Entity)
+                .from(Column::PrimaryAccountId)
+                .to(super::accounts::Column::AccountId)
                 .into(),
             Self::Users => Entity::belongs_to(super::users::Entity)
                 .from(Column::UserId)
@@ -81,9 +81,9 @@ impl RelationTrait for Relation {
     }
 }
 
-impl Related<super::oauth_tokens::Entity> for Entity {
+impl Related<super::accounts::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::OauthTokens.def()
+        Relation::Accounts.def()
     }
 }
 

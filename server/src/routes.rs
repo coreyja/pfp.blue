@@ -2,7 +2,6 @@ use crate::{
     auth::{AdminUser, AuthUser, OptionalUser},
     components::layout::Page,
     errors::{ServerResult, WithRedirect},
-    oauth::get_valid_token_by_did,
     profile_progress::ProfilePictureProgress,
     state::AppState,
 };
@@ -41,8 +40,6 @@ pub fn routes(app_state: AppState) -> axum::Router {
         .route("/oauth/bsky/metadata.json", get(bsky::client_metadata))
         .route("/oauth/bsky/authorize", get(bsky::authorize))
         .route("/oauth/bsky/callback", get(bsky::callback))
-        .route("/oauth/bsky/token", get(bsky::get_token))
-        .route("/oauth/bsky/revoke", get(bsky::revoke_token))
         .route("/oauth/bsky/set-primary", get(bsky::set_primary_account))
         // Admin routes
         .route("/_", get(admin_panel))
@@ -79,7 +76,7 @@ async fn root_page(optional_user: OptionalUser, State(state): State<AppState>) -
                 r#"
                 SELECT t.display_name, t.did
                 FROM sessions s
-                JOIN oauth_tokens t ON s.primary_token_id = t.uuid_id
+                JOIN accounts t ON s.primary_account_id = t.account_id
                 WHERE s.user_id = $1
                 LIMIT 1
                 "#,
@@ -380,40 +377,6 @@ async fn toggle_profile_progress(
 
     // // Redirect back to profile page
     // Ok(Redirect::to("/me").into_response())
-}
-
-// Previous set_original_profile_picture handler removed - functionality is now part of toggle_profile_progress
-
-/// Helper function to validate token ownership and return token ID
-async fn validate_did_ownership(state: &AppState, did: &str, user_id: Uuid) -> cja::Result<Uuid> {
-    let token_result = sqlx::query!(
-        r#"
-        SELECT id FROM oauth_tokens
-        WHERE did = $1 AND user_id = $2
-        "#,
-        did,
-        user_id
-    )
-    .fetch_optional(&state.db)
-    .await
-    .wrap_err_with(|| {
-        format!(
-            "Database error when checking token ownership for DID: {}",
-            did
-        )
-    })?;
-
-    match token_result {
-        Some(row) => Ok(row.id),
-        None => {
-            error!("Attempted to access token not belonging to user: {}", did);
-            Err(eyre!(
-                "Token {} not found or not owned by user {}",
-                did,
-                user_id
-            ))
-        }
-    }
 }
 
 /// Logout route - clears authentication cookies and redirects to home

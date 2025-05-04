@@ -38,7 +38,7 @@ async fn update_profile_pictures(state: AppState) -> cja::Result<()> {
     // Find all tokens with enabled profile picture progress
     let rows = sqlx::query!(
         r#"
-        SELECT p.token_id 
+        SELECT p.account_id 
         FROM profile_picture_progress p
         WHERE p.enabled = TRUE
         "#
@@ -51,7 +51,7 @@ async fn update_profile_pictures(state: AppState) -> cja::Result<()> {
 
     // Enqueue a job for each enabled token
     for row in rows {
-        let token_id = row.token_id;
+        let token_id = row.account_id;
 
         // Create and enqueue the job
         let job = UpdateProfilePictureProgressJob::new(token_id);

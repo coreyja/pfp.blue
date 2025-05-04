@@ -4,13 +4,7 @@ use color_eyre::eyre::Context as _;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info};
 
-use crate::{
-    jobs::helpers::{
-        extract_progress_from_display_name, generate_progress_image, get_original_profile_picture,
-        update_profile_with_image, upload_image_to_bluesky,
-    },
-    state::AppState,
-};
+use crate::state::AppState;
 
 /// Job to update a user's profile picture with progress visualization
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

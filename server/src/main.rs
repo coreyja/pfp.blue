@@ -15,6 +15,7 @@ mod encryption;
 mod errors;
 mod jobs;
 mod oauth;
+mod prelude;
 mod profile_progress;
 mod routes;
 mod state;

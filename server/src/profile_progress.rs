@@ -12,7 +12,7 @@ pub struct ProfilePictureProgress {
     /// Unique ID for this progress setting
     pub id: Uuid,
     /// ID of the OAuth token this setting belongs to
-    pub token_id: Uuid,
+    pub account_id: Uuid,
     /// Whether the feature is enabled
     pub enabled: bool,
     /// When this record was created
@@ -23,14 +23,14 @@ pub struct ProfilePictureProgress {
 
 impl ProfilePictureProgress {
     /// Create a new profile picture progress setting
-    pub async fn create(pool: &PgPool, token_id: Uuid, enabled: bool) -> cja::Result<Self> {
+    pub async fn create(pool: &PgPool, account_id: Uuid, enabled: bool) -> cja::Result<Self> {
         let row = sqlx::query!(
             r#"
-            INSERT INTO profile_picture_progress (token_id, enabled)
+            INSERT INTO profile_picture_progress (account_id, enabled)
             VALUES ($1, $2)
-            RETURNING id, token_id, enabled, created_at_utc, updated_at_utc
+            RETURNING id, account_id, enabled, created_at_utc, updated_at_utc
             "#,
-            token_id,
+            account_id,
             enabled,
         )
         .fetch_one(pool)
@@ -39,12 +39,12 @@ impl ProfilePictureProgress {
 
         info!(
             "Created profile picture progress setting for token {}",
-            token_id
+            account_id
         );
 
         Ok(Self {
             id: row.id,
-            token_id: row.token_id,
+            account_id: row.account_id,
             enabled: row.enabled,
             created_at_utc: row.created_at_utc,
             updated_at_utc: row.updated_at_utc,
@@ -52,15 +52,15 @@ impl ProfilePictureProgress {
     }
 
     /// Get a profile picture progress setting by token ID
-    pub async fn get_by_token_id(pool: &PgPool, token_id: Uuid) -> cja::Result<Option<Self>> {
+    pub async fn get_by_account_id(pool: &PgPool, account_id: Uuid) -> cja::Result<Option<Self>> {
         let row = sqlx::query_as!(
             Self,
             r#"
-            SELECT id, token_id, enabled, created_at_utc, updated_at_utc 
+            SELECT id, account_id, enabled, created_at_utc, updated_at_utc 
             FROM profile_picture_progress
-            WHERE token_id = $1
+            WHERE account_id = $1
             "#,
-            token_id
+            account_id
         )
         .fetch_optional(pool)
         .await
@@ -103,7 +103,7 @@ impl ProfilePictureProgress {
         default_enabled: bool,
     ) -> cja::Result<Self> {
         // Try to get existing settings
-        if let Some(settings) = Self::get_by_token_id(pool, token_id).await? {
+        if let Some(settings) = Self::get_by_account_id(pool, token_id).await? {
             info!(
                 "Found existing profile picture progress settings for token {}",
                 token_id

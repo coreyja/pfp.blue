@@ -69,7 +69,7 @@ pub async fn callback(
         .unwrap();
 
     let mut session: crate::orm::sessions::ActiveModel = session.into();
-    session.primary_token_id = ActiveValue::Set(Some(account.account_id));
+    session.primary_account_id = ActiveValue::Set(account.account_id);
 
     Ok(Redirect::to("/me"))
 

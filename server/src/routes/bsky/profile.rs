@@ -12,21 +12,20 @@ use crate::{
     traits::IsExpired as _,
 };
 
+use crate::prelude::*;
+
 /// Profile page that requires authentication
 pub async fn profile(
     State(state): State<AppState>,
     crate::auth::AuthUser { user, session }: crate::auth::AuthUser,
 ) -> ServerResult<impl IntoResponse, StatusCode> {
-    // Get all tokens for this user
-    let tokens = user
-        .find_related(crate::orm::oauth_tokens::Entity)
-        .all(&state.orm)
-        .await?;
+    // Get all accounts for this user
+    let accounts = user.find_related(Accounts).all(&state.orm).await?;
 
     // Start background jobs to update display names for all tokens
     // This ensures we have the latest display name data when showing the profile
-    for token in &tokens {
-        if let Err(err) = crate::jobs::UpdateProfileInfoJob::from_token(token)
+    for token in &accounts {
+        if let Err(err) = crate::jobs::UpdateProfileInfoJob::new(token.did.clone())
             .enqueue(state.clone(), "profile_route".to_string())
             .await
         {
@@ -37,29 +36,26 @@ pub async fn profile(
         }
     }
 
-    if tokens.is_empty() {
+    if accounts.is_empty() {
         return Ok(empty_profile().into_response());
     }
 
     // Use primary token from session if available, otherwise use the first token
-    let mut primary_token = if let Ok(Some(token)) = session
-        .find_related(crate::orm::oauth_tokens::Entity)
-        .one(&state.orm)
-        .await
-    {
-        token
-    } else if !tokens.is_empty() {
-        tokens[0].clone()
-    } else {
-        error!("No tokens available for this user");
-        return Err(ServerError(
-            color_eyre::eyre::eyre!("No Bluesky accounts linked"),
-            StatusCode::BAD_REQUEST,
-        ));
-    };
+    let mut primary_account =
+        if let Ok(Some(account)) = session.find_related(Accounts).one(&state.orm).await {
+            account
+        } else if !accounts.is_empty() {
+            accounts[0].clone()
+        } else {
+            error!("No tokens available for this user");
+            return Err(ServerError(
+                color_eyre::eyre::eyre!("No Bluesky accounts linked"),
+                StatusCode::BAD_REQUEST,
+            ));
+        };
 
     // Display profile with all tokens
-    Ok(display_profile_multi(&state, primary_token, tokens)
+    Ok(display_profile_multi(&state, primary_account, accounts)
         .await
         .into_response())
 }
@@ -156,8 +152,8 @@ fn empty_profile() -> impl IntoResponse {
 /// Display profile information with multiple linked accounts
 async fn display_profile_multi(
     state: &AppState,
-    primary_token: crate::orm::oauth_tokens::Model,
-    all_tokens: Vec<crate::orm::oauth_tokens::Model>,
+    primary_account: crate::orm::accounts::Model,
+    all_accounts: Vec<crate::orm::accounts::Model>,
 ) -> maud::Markup {
     use crate::components::{
         layout::Page,
@@ -170,7 +166,7 @@ async fn display_profile_multi(
     use maud::Render;
 
     // Queue a job to update the handle in the background
-    if let Err(err) = crate::jobs::UpdateProfileInfoJob::from_token(&primary_token)
+    if let Err(err) = crate::jobs::UpdateProfileInfoJob::new(primary_account.did.clone())
         .enqueue(state.clone(), "display_profile_multi".to_string())
         .await
     {
@@ -181,7 +177,8 @@ async fn display_profile_multi(
     }
 
     // Fetch profile data with avatar using our API helpers
-    let profile_info = match crate::api::get_profile_with_avatar(&primary_token.did, state).await {
+    let profile_info = match crate::api::get_profile_with_avatar(&primary_account.did, state).await
+    {
         Ok(info) => info,
         Err(e) => {
             error!("Failed to fetch profile info: {:?}", e);
@@ -197,7 +194,7 @@ async fn display_profile_multi(
     // Extract information for display
     let display_name = profile_info
         .display_name
-        .unwrap_or_else(|| primary_token.did.clone());
+        .unwrap_or_else(|| primary_account.did.clone());
     // We don't need handle anymore since we use display_name
 
     // Extract avatar information and encode as base64 if available
@@ -257,8 +254,8 @@ async fn display_profile_multi(
 
                     // Profile info - adapt font sizes for mobile
                     div class="text-center md:text-left max-w-full overflow-hidden" {
-                        h1 class="text-2xl sm:text-3xl md:text-4xl font-bold mb-2 md:mb-3 text-gray-800 truncate" title=(primary_token.did) { (display_name) }
-                        @if let Some(handle) = &primary_token.handle {
+                        h1 class="text-2xl sm:text-3xl md:text-4xl font-bold mb-2 md:mb-3 text-gray-800 truncate" title=(primary_account.did) { (display_name) }
+                        @if let Some(handle) = &primary_account.handle {
                             p class="text-md text-gray-500" { "@" (handle) }
                         }
                         // We just display the display name now, no need to show handle separately
@@ -295,7 +292,7 @@ async fn display_profile_multi(
                             JOIN oauth_tokens t ON p.token_id = t.id
                             WHERE t.did = $1
                             "#
-                        ).bind(&primary_token.did)
+                        ).bind(&primary_account.did)
                           .fetch_optional(&state.db)
                           .await {
                             Ok(Some(row)) => {
@@ -332,7 +329,7 @@ async fn display_profile_multi(
 
                             // Form with single button
                             form action="/profile_progress/toggle" method="post" class="mt-2" {
-                                input type="hidden" name="did" value=(primary_token.did) {}
+                                input type="hidden" name="did" value=(primary_account.did) {}
 
                                 @if progress_enabled {
                                     // When enabled, show a button to disable
@@ -365,10 +362,10 @@ async fn display_profile_multi(
                                     }
 
                                     // If we have an original profile picture saved, display it too
-                                    @if let Ok(original_blob) = crate::jobs::helpers::get_original_profile_picture(state, &primary_token).await {
+                                    @if let Ok(original_blob) = crate::jobs::helpers::get_original_profile_picture(state, &primary_account).await {
                                         @if let Some(blob_ref) = original_blob.get("ref") {
                                             @if let Some(cid) = blob_ref.get("$link").and_then(|l| l.as_str()) {
-                                                @if let Ok(data) = crate::routes::bsky::fetch_blob_by_cid(&primary_token.did, cid, state).await {
+                                                @if let Ok(data) = crate::routes::bsky::fetch_blob_by_cid(&primary_account.did, cid, state).await {
                                                     @let mime_type = original_blob.get("mimeType").and_then(|m| m.as_str()).unwrap_or("image/jpeg");
                                                     @let base64_data = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &data);
                                                     @let img_src = format!("data:{};base64,{}", mime_type, base64_data);
@@ -414,7 +411,7 @@ async fn display_profile_multi(
                         .icon("fa-solid fa-home", IconPosition::Left))
 
                     // Account dropdown in the footer
-                    (AccountDropdown::new(all_tokens.clone(), primary_token, "/me"))
+                    (AccountDropdown::new(all_accounts.clone(), primary_account, "/me"))
                 }
             }
         }
