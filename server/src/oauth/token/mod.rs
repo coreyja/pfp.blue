@@ -579,67 +579,6 @@ pub async fn refresh_token(
     Err(last_error.unwrap_or_else(|| eyre!("Token refresh failed after retries")))
 }
 
-/// Resolve the token endpoint for a DID
-pub async fn resolve_token_endpoint_for_did(
-    did: &str,
-    state: &crate::state::AppState,
-) -> cja::Result<String> {
-    use tracing::info;
-
-    // First try to get the endpoint from the database
-    match crate::routes::bsky::get_token_endpoint_for_did(&state.db, did).await? {
-        Some(endpoint) => Ok(endpoint),
-        None => {
-            // Resolve the PDS endpoint for the token
-            let xrpc_client = std::sync::Arc::new(atrium_xrpc_client::reqwest::ReqwestClient::new(
-                "https://bsky.social",
-            ));
-
-            match atrium_api::types::string::Did::new(did.to_string()) {
-                Ok(did_obj) => {
-                    match crate::did::resolve_did_to_document(&did_obj, xrpc_client).await {
-                        Ok(did_document) => {
-                            if let Some(services) = did_document.service.as_ref() {
-                                if let Some(pds_service) =
-                                    services.iter().find(|s| s.id == "#atproto_pds")
-                                {
-                                    let pds_endpoint = &pds_service.service_endpoint;
-                                    let refresh_endpoint = format!(
-                                        "{}/xrpc/com.atproto.server.refreshSession",
-                                        pds_endpoint
-                                    );
-                                    info!(
-                                        "Resolved PDS endpoint for refresh: {}",
-                                        refresh_endpoint
-                                    );
-                                    Ok(refresh_endpoint)
-                                } else {
-                                    // Fallback to bsky.social if no PDS service found
-                                    Ok("https://bsky.social/xrpc/com.atproto.server.refreshSession"
-                                        .to_string())
-                                }
-                            } else {
-                                // Fallback to bsky.social if no services found
-                                Ok("https://bsky.social/xrpc/com.atproto.server.refreshSession"
-                                    .to_string())
-                            }
-                        }
-                        Err(_) => {
-                            // Fallback to bsky.social on resolution error
-                            Ok("https://bsky.social/xrpc/com.atproto.server.refreshSession"
-                                .to_string())
-                        }
-                    }
-                }
-                Err(_) => {
-                    // Fallback to bsky.social on DID parse error
-                    Ok("https://bsky.social/xrpc/com.atproto.server.refreshSession".to_string())
-                }
-            }
-        }
-    }
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum TokenError {
     #[error("Token error: {0}")]

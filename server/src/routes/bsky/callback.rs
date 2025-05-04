@@ -18,87 +18,7 @@ use crate::{
     state::AppState,
 };
 
-use super::utils::extract_dpop_nonce_from_error;
-
 use crate::orm::prelude::*;
-
-/// Helper function to exchange code for token
-async fn exchange_auth_code_for_token(
-    oauth_config: &crate::state::BlueskyOAuthConfig,
-    session_id: Uuid,
-    session: &oauth::OAuthSession,
-    code: &str,
-    client_id: &str,
-    redirect_uri: &str,
-    app_state: &AppState,
-) -> Result<oauth::TokenResponse, (StatusCode, String)> {
-    let code_verifier = session.code_verifier.as_deref();
-    let mut attempts = 0;
-    let mut last_error = None;
-    let mut token_response = None;
-
-    // Try up to 2 times - once with the stored nonce and once with a new nonce if needed
-    while attempts < 2 && token_response.is_none() {
-        match oauth::exchange_code_for_token(
-            oauth_config,
-            &session.token_endpoint,
-            client_id,
-            code,
-            redirect_uri,
-            code_verifier,
-            session.dpop_nonce.as_deref(), // Use the stored nonce if available
-        )
-        .await
-        {
-            Ok(response) => {
-                token_response = Some(response);
-            }
-            Err(err) => {
-                last_error = Some(err.to_string());
-
-                // Check if the error contains a DPoP nonce error
-                if let Some(error_msg) = last_error.as_ref() {
-                    if error_msg.contains("use_dpop_nonce") || error_msg.contains("nonce mismatch")
-                    {
-                        // Try to extract the nonce from the error message
-                        if let Some(nonce) = extract_dpop_nonce_from_error(error_msg) {
-                            // Save the new nonce in the database for this session
-                            if let Err(e) =
-                                oauth::db::update_session_nonce(app_state, session_id, &nonce).await
-                            {
-                                error!("Failed to update session nonce: {:?}", e);
-                            } else {
-                                // Continue to retry with the new nonce
-                                attempts += 1;
-                                continue;
-                            }
-                        }
-                    }
-                }
-
-                // If we couldn't extract a nonce or it's not a nonce error, break
-                break;
-            }
-        }
-
-        attempts += 1;
-    }
-
-    match token_response {
-        Some(token) => Ok(token),
-        None => {
-            let error_msg = last_error.unwrap_or_else(|| "Unknown error".to_string());
-            error!("Token exchange failed: {:?}", error_msg);
-            Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!(
-                    "Failed to exchange authorization code for token: {:?}",
-                    error_msg
-                ),
-            ))
-        }
-    }
-}
 
 pub async fn callback(
     State(state): State<AppState>,
@@ -106,44 +26,6 @@ pub async fn callback(
     Query(params): Query<CallbackParams>,
     OptionalUser { user, session }: OptionalUser,
 ) -> ServerResult<Redirect, Response> {
-    // // Use the consistent helpers
-    // let client_id = state.client_id();
-    // let redirect_uri = state.redirect_uri();
-
-    // // Log all parameters for debugging
-    // info!(
-    //     "Callback received: code: {:?}, state: {:?}, error: {:?}, error_description: {:?}",
-    //     params.code, params.state, params.error, params.error_description
-    // );
-
-    // // Also log cookie info
-    // if let Some(session_cookie) = cookies.get("bsky_session_id") {
-    //     info!("Found session cookie: {}", session_cookie.value());
-    // } else {
-    //     info!("No session cookie found");
-    // }
-
-    // // If we have an error, display it
-    // if let Some(error) = params.error {
-    //     return Err(ServerError(
-    //         eyre!("Oauth Error"),
-    //         handle_oauth_error(&error, params.error_description, &client_id, &redirect_uri)
-    //             .into_response(),
-    //     ));
-    // }
-
-    // // Make sure we have a code
-    // let code = match params.code {
-    //     Some(code) => code,
-    //     None => {
-    //         return Err(ServerError(
-    //             eyre!("No code parameter in callback"),
-    //             handle_missing_code_error(params.state.as_deref(), &client_id, &redirect_uri)
-    //                 .into_response(),
-    //         ));
-    //     }
-    // };
-
     info!("Received code: {}, state: {:?}", params.code, params.state);
 
     let (oauth_session, _) = state.atrium_oauth.callback(params).await.unwrap();
