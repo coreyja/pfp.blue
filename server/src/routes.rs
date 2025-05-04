@@ -2,7 +2,6 @@ use crate::{
     auth::{AdminUser, AuthUser, OptionalUser},
     components::layout::Page,
     errors::{ServerResult, WithRedirect},
-    profile_progress::ProfilePictureProgress,
     state::AppState,
 };
 use axum::{
