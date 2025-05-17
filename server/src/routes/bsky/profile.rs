@@ -7,7 +7,7 @@ use tracing::error;
 
 use crate::{
     errors::{ServerError, ServerResult},
-    oauth::{self, OAuthTokenSet, TokenError},
+    oauth::{self, OAuthTokenSet},
     state::AppState,
     traits::IsExpired as _,
 };

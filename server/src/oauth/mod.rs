@@ -3,13 +3,11 @@
 
 // Re-export submodules
 pub mod db;
-pub mod dpop;
 pub mod jwk;
 pub mod session;
 pub mod token;
 
 // Re-export main types and functions
-pub use dpop::*;
 pub use jwk::*;
 pub use session::*;
 pub use token::*;

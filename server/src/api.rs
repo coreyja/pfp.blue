@@ -7,7 +7,7 @@ use tracing::{error, info};
 
 use crate::{
     did::{extract_pds_from_document, resolve_did_to_document},
-    oauth::{create_dpop_proof_with_ath, OAuthTokenSet},
+    oauth::OAuthTokenSet,
     state::AppState,
 };
 
@@ -113,125 +113,6 @@ pub async fn get_profile_with_avatar(
     Ok(profile_info)
 }
 
-/// Makes an authenticated API request to a Bluesky endpoint with DPoP
-pub async fn make_authenticated_request(
-    method: &str,
-    endpoint_url: &str,
-    token: &OAuthTokenSet,
-    app_state: &AppState,
-    query_params: Option<Vec<(&str, &str)>>,
-    json_body: Option<&serde_json::Value>,
-) -> cja::Result<reqwest::Response> {
-    let client = reqwest::Client::new();
-
-    // Create a DPoP proof with access token hash
-    let dpop_proof = create_dpop_proof_with_ath(
-        &app_state.bsky_oauth,
-        method,
-        endpoint_url,
-        None, // No initial nonce
-        &token.access_token,
-    )?;
-
-    // Build the request based on method
-    let mut req_builder = match method {
-        "GET" => {
-            let mut builder = client.get(endpoint_url);
-            if let Some(params) = &query_params {
-                builder = builder.query(params);
-            }
-            builder
-        }
-        "POST" => {
-            let builder = client.post(endpoint_url);
-            if let Some(body) = json_body {
-                builder.json(body)
-            } else {
-                builder
-            }
-        }
-        // Add other methods as needed
-        _ => return Err(eyre!("Unsupported HTTP method: {}", method)),
-    };
-
-    // Add auth headers
-    req_builder = req_builder
-        .header("Authorization", format!("DPoP {}", token.access_token))
-        .header("DPoP", &dpop_proof);
-
-    // Send the request
-    let mut response_result = req_builder.send().await;
-
-    // Handle 401 with DPoP nonce
-    if let Ok(response) = &response_result {
-        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
-            // Check if there's a DPoP-Nonce in the error response
-            if let Some(new_nonce) = response
-                .headers()
-                .get("DPoP-Nonce")
-                .and_then(|h| h.to_str().ok())
-            {
-                info!("Received new DPoP-Nonce in error response: {}", new_nonce);
-
-                // Create a new DPoP proof with the provided nonce and access token hash
-                let new_dpop_proof = create_dpop_proof_with_ath(
-                    &app_state.bsky_oauth,
-                    method,
-                    endpoint_url,
-                    Some(new_nonce),
-                    &token.access_token,
-                )?;
-
-                // Retry the request with the new nonce
-                info!("Retrying request with new DPoP-Nonce");
-
-                // Rebuild the request
-                let mut retry_builder = match method {
-                    "GET" => {
-                        let mut builder = client.get(endpoint_url);
-                        if let Some(params) = &query_params {
-                            builder = builder.query(params);
-                        }
-                        builder
-                    }
-                    "POST" => {
-                        let builder = client.post(endpoint_url);
-                        if let Some(body) = json_body {
-                            builder.json(body)
-                        } else {
-                            builder
-                        }
-                    }
-                    _ => return Err(eyre!("Unsupported HTTP method: {}", method)),
-                };
-
-                retry_builder = retry_builder
-                    .header("Authorization", format!("DPoP {}", token.access_token))
-                    .header("DPoP", new_dpop_proof);
-
-                response_result = retry_builder.send().await;
-            }
-        }
-    }
-
-    // Unwrap the final result
-    let response = response_result?;
-
-    // Check if request succeeded
-    if !response.status().is_success() {
-        let status = response.status();
-        let error_text = response
-            .text()
-            .await
-            .unwrap_or_else(|_| "Failed to read error response".to_string());
-
-        error!("API request failed: {} - {}", status, error_text);
-        return Err(eyre!("API request failed: {} - {}", status, error_text));
-    }
-
-    Ok(response)
-}
-
 /// Finds the Personal Data Server (PDS) endpoint for a user's DID
 pub async fn find_pds_endpoint(did: &str, client: Arc<ReqwestClient>) -> cja::Result<String> {
     // Convert string DID to DID object
@@ -254,62 +135,5 @@ pub async fn get_user_profile(
     token: Option<&OAuthTokenSet>,
     app_state: &AppState,
 ) -> cja::Result<serde_json::Value> {
-    let pds_endpoint = find_pds_endpoint(did, app_state.bsky_client.clone()).await?;
-
-    // Construct the full URL to the PDS endpoint
-    let get_record_url = format!("{}/xrpc/com.atproto.repo.getRecord", pds_endpoint);
-
-    if let Some(token) = token {
-        // Authenticated request - uses the token
-        let response = make_authenticated_request(
-            "GET",
-            &get_record_url,
-            token,
-            app_state,
-            Some(vec![
-                ("repo", did),
-                ("collection", "app.bsky.actor.profile"),
-                ("rkey", "self"),
-            ]),
-            None,
-        )
-        .await?;
-
-        let profile_data = response.json::<serde_json::Value>().await?;
-        Ok(profile_data)
-    } else {
-        // Unauthenticated request - no token needed
-        let client = reqwest::Client::new();
-
-        let response = client
-            .get(&get_record_url)
-            .query(&[
-                ("repo", did),
-                ("collection", "app.bsky.actor.profile"),
-                ("rkey", "self"),
-            ])
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Failed to read error response".to_string());
-
-            return Err(eyre!(
-                "Failed to fetch user profile: {} - {}",
-                status,
-                error_text
-            ));
-        }
-
-        // Parse the response JSON
-        let profile_data = response.json::<serde_json::Value>().await?;
-        Ok(profile_data)
-    }
+    todo!()
 }
-
-// Functions below were removed as they are not used anywhere in the codebase
-// We can add them back when needed with proper implementations that match our error handling patterns
