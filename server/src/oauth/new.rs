@@ -10,8 +10,8 @@ use atrium_oauth::{
         session::Session,
         state::{InternalStateData, StateStore},
     },
-    AtprotoClientMetadata, DefaultHttpClient, GrantType,
-    KnownScope, OAuthClient, OAuthClientConfig, OAuthResolverConfig, Scope,
+    AtprotoClientMetadata, DefaultHttpClient, GrantType, KnownScope, OAuthClient,
+    OAuthClientConfig, OAuthResolverConfig, Scope,
 };
 use base64ct::Encoding as _;
 use color_eyre::eyre::Context as _;
@@ -104,9 +104,16 @@ fn convert_jwk(from: JwkEcKey) -> cja::Result<jose_jwk::Jwk> {
     Ok(jwk)
 }
 
+#[derive(Clone)]
 pub struct DbSessionStore {
     orm: DatabaseConnection,
     encryption: EncryptionConfig,
+}
+
+impl DbSessionStore {
+    pub fn new(orm: DatabaseConnection, encryption: EncryptionConfig) -> Self {
+        Self { orm, encryption }
+    }
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -199,6 +206,8 @@ pub fn get_atrium_oauth_client(
     domain: &DomainSettings,
     encryption: &EncryptionConfig,
     orm: &DatabaseConnection,
+    session_store: &DbSessionStore,
+    state_store: &DbStateStore,
 ) -> cja::Result<AtriumOAuthClient> {
     let http_client = Arc::new(DefaultHttpClient::default());
     let private_jwk = get_private_jwk(bsky_oauth)?;
@@ -234,14 +243,8 @@ pub fn get_atrium_oauth_client(
             authorization_server_metadata: Default::default(),
             protected_resource_metadata: Default::default(),
         },
-        state_store: DbStateStore {
-            orm: orm.clone(),
-            encryption: encryption.clone(),
-        },
-        session_store: DbSessionStore {
-            orm: orm.clone(),
-            encryption: encryption.clone(),
-        },
+        state_store: state_store.clone(),
+        session_store: session_store.clone(),
     };
 
     let client = OAuthClient::new(config).wrap_err("failed to create oauth client")?;
@@ -249,9 +252,16 @@ pub fn get_atrium_oauth_client(
     Ok(client)
 }
 
+#[derive(Clone)]
 pub struct DbStateStore {
     orm: DatabaseConnection,
     encryption: EncryptionConfig,
+}
+
+impl DbStateStore {
+    pub fn new(orm: DatabaseConnection, encryption: EncryptionConfig) -> Self {
+        Self { orm, encryption }
+    }
 }
 
 impl atrium_common::store::Store<String, InternalStateData> for DbStateStore {

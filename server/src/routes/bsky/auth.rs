@@ -39,7 +39,7 @@ pub async fn authorize(
     cookies: CookieJar<AppState>,
     Query(params): Query<AuthParams>,
 ) -> ServerResult<impl IntoResponse, StatusCode> {
-    let client = state.atrium_oauth.clone();
+    let client = state.atrium.oauth.clone();
     let url = client
         .authorize(
             params.did,

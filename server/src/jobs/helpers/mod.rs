@@ -1,3 +1,4 @@
+use atrium_common::store::Store as _;
 use color_eyre::eyre::{eyre, Result, WrapErr};
 use reqwest::Client;
 use serde_json::Value;
@@ -10,6 +11,11 @@ pub async fn get_original_profile_picture(
     app_state: &AppState,
     account: &Account,
 ) -> Result<Value> {
+    let sessions = app_state.atrium.sessions.clone();
+    let did = atrium_api::types::string::Did::new(account.did.clone())
+        .map_err(|e| eyre!("Invalid DID format for {}: {}", account.did, e))?;
+    let session = sessions.get(&did).await?;
+
     todo!()
 }
 

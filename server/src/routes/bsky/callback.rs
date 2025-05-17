@@ -28,7 +28,7 @@ pub async fn callback(
 ) -> ServerResult<Redirect, Response> {
     info!("Received code: {}, state: {:?}", params.code, params.state);
 
-    let (oauth_session, _) = state.atrium_oauth.callback(params).await.unwrap();
+    let (oauth_session, _) = state.atrium.oauth.callback(params).await.unwrap();
 
     use atrium_api::agent::SessionManager;
     info!("OAuth session DID: {:?}", oauth_session.did().await);

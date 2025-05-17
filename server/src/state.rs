@@ -7,7 +7,7 @@ use color_eyre::eyre::{eyre, WrapErr};
 use sea_orm::DatabaseConnection;
 use sqlx::{postgres::PgPoolOptions, PgPool};
 
-use crate::oauth::new::AtriumOAuthClient;
+use crate::oauth::new::{AtriumOAuthClient, DbSessionStore, DbStateStore};
 
 #[derive(Clone)]
 pub struct BlueskyOAuthConfig {
@@ -164,6 +164,13 @@ impl DomainSettings {
 }
 
 #[derive(Clone)]
+pub struct AtriumState {
+    pub oauth: Arc<AtriumOAuthClient>,
+    pub sessions: DbSessionStore,
+    pub states: DbStateStore,
+}
+
+#[derive(Clone)]
 pub struct AppState {
     pub db: sqlx::Pool<sqlx::Postgres>,
     pub cookie_key: cja::server::cookies::CookieKey,
@@ -171,7 +178,7 @@ pub struct AppState {
     pub bsky_client: Arc<ReqwestClient>,
     pub bsky_oauth: BlueskyOAuthConfig,
     pub encryption: EncryptionConfig,
-    pub atrium_oauth: Arc<AtriumOAuthClient>,
+    pub atrium: AtriumState,
     pub orm: DatabaseConnection,
 }
 
@@ -205,13 +212,27 @@ impl AppState {
             protocol: std::env::var("PROTO").unwrap_or_else(|_| "https".to_string()),
         };
 
+        let session_store =
+            crate::oauth::new::DbSessionStore::new(orm_pool.clone(), encryption.clone());
+
+        let state_store =
+            crate::oauth::new::DbStateStore::new(orm_pool.clone(), encryption.clone());
+
         let atrium_oauth_client = crate::oauth::new::get_atrium_oauth_client(
             &bsky_oauth,
             &domain,
             &encryption,
             &orm_pool,
+            &session_store,
+            &state_store,
         )?;
         let atrium_oauth_client = Arc::new(atrium_oauth_client);
+
+        let atrium_state = AtriumState {
+            oauth: atrium_oauth_client,
+            sessions: session_store,
+            states: state_store,
+        };
 
         Ok(Self {
             db: pool,
@@ -220,7 +241,7 @@ impl AppState {
             bsky_client: Arc::new(client),
             bsky_oauth,
             encryption,
-            atrium_oauth: atrium_oauth_client,
+            atrium: atrium_state,
             orm: orm_pool,
         })
     }
