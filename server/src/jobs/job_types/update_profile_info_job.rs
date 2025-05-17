@@ -1,8 +1,6 @@
 use atrium_api::did_doc::DidDocument;
 use cja::jobs::Job;
-use color_eyre::eyre::eyre;
 use serde::{Deserialize, Serialize};
-use tracing::info;
 
 use crate::state::AppState;
 

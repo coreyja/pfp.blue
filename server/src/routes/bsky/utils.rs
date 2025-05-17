@@ -1,22 +1,13 @@
-use axum::response::IntoResponse;
-use cja::server::cookies::CookieJar;
-use color_eyre::eyre::eyre;
 use maud::html;
-use uuid::Uuid;
 
-use crate::{
-    components::{
+use crate::components::{
         layout::Page,
         ui::{
             badge::{Badge, BadgeColor},
             button::{Button, ButtonVariant, IconPosition},
             heading::Heading,
         },
-    },
-    errors::{ServerError, ServerResult},
-    oauth::OAuthSession,
-    state::AppState,
-};
+    };
 
 /// Helper function to handle OAuth error responses
 pub fn handle_oauth_error(

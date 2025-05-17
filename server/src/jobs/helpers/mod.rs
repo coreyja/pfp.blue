@@ -3,7 +3,7 @@ use color_eyre::eyre::{eyre, Result, WrapErr};
 use reqwest::Client;
 use serde_json::Value;
 use std::sync::Arc;
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 
 use crate::prelude::*;
 

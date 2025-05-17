@@ -7,9 +7,7 @@ use tracing::error;
 
 use crate::{
     errors::{ServerError, ServerResult},
-    oauth::{self, OAuthTokenSet},
     state::AppState,
-    traits::IsExpired as _,
 };
 
 use crate::prelude::*;
@@ -41,7 +39,7 @@ pub async fn profile(
     }
 
     // Use primary token from session if available, otherwise use the first token
-    let mut primary_account =
+    let primary_account =
         if let Ok(Some(account)) = session.find_related(Accounts).one(&state.orm).await {
             account
         } else if !accounts.is_empty() {

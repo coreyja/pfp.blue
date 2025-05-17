@@ -1,20 +1,17 @@
 use atrium_oauth::CallbackParams;
 use axum::{
     extract::{Query, State},
-    http::StatusCode,
     response::{Redirect, Response},
 };
-use cja::{app_state::AppState as _, server::cookies::CookieJar};
+use cja::server::cookies::CookieJar;
 use sea_orm::{
     ActiveModelTrait as _, ActiveValue, ColumnTrait as _, EntityTrait as _, QueryFilter as _,
 };
-use tracing::{error, info};
-use uuid::Uuid;
+use tracing::info;
 
 use crate::{
     auth::{create_session_and_set_cookie, OptionalUser},
     errors::ServerResult,
-    oauth::{self, OAuthTokenSet},
     state::AppState,
 };
 

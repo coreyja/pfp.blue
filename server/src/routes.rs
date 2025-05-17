@@ -1,7 +1,7 @@
 use crate::{
     auth::{AdminUser, AuthUser, OptionalUser},
     components::layout::Page,
-    errors::{ServerResult, WithRedirect},
+    errors::ServerResult,
     state::AppState,
 };
 use axum::{
@@ -14,11 +14,10 @@ use axum::{
     routing::{get, post},
 };
 use cja::{jobs::Job as _, server::cookies::CookieJar};
-use color_eyre::eyre::{eyre, WrapErr};
+use color_eyre::eyre::WrapErr;
 use serde::Deserialize;
 use std::collections::HashMap;
 use tracing::{error, info};
-use uuid::Uuid;
 
 pub mod bsky;
 
@@ -291,7 +290,7 @@ struct ToggleProfileProgressParams {
 /// Handler for toggling profile picture progress
 async fn toggle_profile_progress(
     State(state): State<AppState>,
-    AuthUser { user, .. }: AuthUser,
+    AuthUser {  .. }: AuthUser,
     Form(params): Form<ToggleProfileProgressParams>,
 ) -> ServerResult<Response, Redirect> {
     todo!()
@@ -520,7 +519,7 @@ async fn privacy_policy_page(_optional_user: OptionalUser, State(_state): State<
 
 /// Admin panel page - shows available jobs and provides a UI to run them
 async fn admin_panel(
-    AdminUser { user, .. }: AdminUser,
+    AdminUser {  .. }: AdminUser,
     State(_state): State<AppState>,
 ) -> impl IntoResponse {
     use crate::components::{layout::Page, ui::heading::Heading};

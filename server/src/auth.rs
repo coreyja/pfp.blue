@@ -5,8 +5,7 @@ use axum::{
     response::{IntoResponse, Redirect, Response},
 };
 use chrono::Utc;
-use cja::{app_state::AppState as _, server::cookies::Cookie, server::cookies::CookieJar};
-use color_eyre::eyre::Context;
+use cja::{server::cookies::Cookie, server::cookies::CookieJar};
 use sea_orm::{ActiveModelTrait as _, ActiveValue, EntityTrait as _, ModelTrait};
 use time::Duration;
 use tracing::{error, info};
@@ -58,7 +57,7 @@ impl FromRequestParts<AppState> for AuthUser {
         };
 
         // Validate the session
-        let session = match validate_session(&state, session_id).await {
+        let session = match validate_session(state, session_id).await {
             Ok(Some(session)) => session,
             Ok(None) => {
                 info!("Session {} is invalid or expired", session_id);
@@ -163,7 +162,7 @@ impl FromRequestParts<AppState> for OptionalUser {
         };
 
         // Validate the session
-        let session = match validate_session(&state, session_id).await {
+        let session = match validate_session(state, session_id).await {
             Ok(Some(session)) => session,
             Ok(None) => {
                 // Invalid session, return None for user and session

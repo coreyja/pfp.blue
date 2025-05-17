@@ -4,7 +4,7 @@ use cja::{
 };
 use tracing::{error, info};
 
-use crate::{jobs::UpdateProfilePictureProgressJob, oauth, state::AppState};
+use crate::{jobs::UpdateProfilePictureProgressJob, state::AppState};
 
 fn cron_registry() -> CronRegistry<AppState> {
     let mut registry = CronRegistry::new();

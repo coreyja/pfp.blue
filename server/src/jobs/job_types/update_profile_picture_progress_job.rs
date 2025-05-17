@@ -1,8 +1,5 @@
 use cja::jobs::Job;
-use color_eyre::eyre::eyre;
-use color_eyre::eyre::Context as _;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error, info};
 
 use crate::state::AppState;
 
