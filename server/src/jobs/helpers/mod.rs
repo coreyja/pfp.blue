@@ -1,4 +1,6 @@
-use atrium_common::store::Store as _;
+use atrium_api::agent::Agent;
+use atrium_api::com::atproto::sync;
+use atrium_api::types::string::{Nsid, RecordKey};
 use color_eyre::eyre::{eyre, Result, WrapErr};
 use reqwest::Client;
 use serde_json::Value;
@@ -11,12 +13,23 @@ pub async fn get_original_profile_picture(
     app_state: &AppState,
     account: &Account,
 ) -> Result<Value> {
-    let sessions = app_state.atrium.sessions.clone();
     let did = atrium_api::types::string::Did::new(account.did.clone())
         .map_err(|e| eyre!("Invalid DID format for {}: {}", account.did, e))?;
-    let session = sessions.get(&did).await?;
+    let session = app_state.atrium.oauth.restore(&did).await?;
+    let agent = Agent::new(session);
 
-    todo!()
+    let collection = Nsid::new("blue.pfp.unmodifiedPfp".to_string())
+        .map_err(|e| eyre!("Invalid collection: {}", e))?;
+    let rkey = RecordKey::new("self".to_string()).map_err(|e| eyre!("Invalid rkey: {}", e))?;
+    let params = sync::get_record::ParametersData {
+        collection,
+        did,
+        rkey,
+    };
+    let resp = agent.api.com.atproto.sync.get_record(params.into()).await?;
+    let value = serde_json::from_slice(&resp)?;
+
+    Ok(value)
 }
 
 /// Helper function to resolve DID to PDS endpoint with improved error handling
