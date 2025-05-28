@@ -174,19 +174,25 @@ async fn display_profile_multi(
         );
     }
 
-    // Fetch profile data with avatar using our API helpers
-    let profile_info = match crate::api::get_profile_with_avatar(&primary_account.did, state).await
-    {
-        Ok(info) => info,
-        Err(e) => {
-            error!("Failed to fetch profile info: {:?}", e);
-            // Create default profile info with just the DID
-            crate::api::ProfileDataParams {
-                display_name: None,
-                avatar: None,
-                description: None,
-            }
-        }
+    // // Fetch profile data with avatar using our API helpers
+    // let profile_info = match crate::api::get_profile_with_avatar(&primary_account.did, state).await
+    // {
+    //     Ok(info) => info,
+    //     Err(e) => {
+    //         error!("Failed to fetch profile info: {:?}", e);
+    //         // Create default profile info with just the DID
+    //         crate::api::ProfileDataParams {
+    //             display_name: None,
+    //             avatar: None,
+    //             description: None,
+    //         }
+    //     }
+    // };
+    // TODO: Implement this for real, just ripping out API call stuff now
+    let profile_info = crate::api::ProfileDataParams {
+        display_name: None,
+        avatar: None,
+        description: None,
     };
 
     // Extract information for display

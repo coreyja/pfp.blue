@@ -80,39 +80,6 @@ pub fn extract_profile_info(profile_data: &serde_json::Value) -> ProfileDataPara
     params
 }
 
-/// Fetch profile information with avatar data loaded
-pub async fn get_profile_with_avatar(
-    did: &str,
-    app_state: &AppState,
-) -> cja::Result<ProfileDataParams> {
-    // Fetch the profile data
-    let profile_data = get_user_profile(did, None, app_state).await?;
-
-    // Extract profile information
-    let mut profile_info = extract_profile_info(&profile_data);
-
-    // If we have an avatar, try to load its data
-    if let Some(avatar) = &profile_info.avatar {
-        // Fetch the avatar blob
-        match crate::routes::bsky::fetch_blob_by_cid(did, &avatar.cid, app_state).await {
-            Ok(blob_data) => {
-                // Update the avatar with the loaded data
-                profile_info.avatar = Some(ProfileAvatar {
-                    cid: avatar.cid.clone(),
-                    mime_type: avatar.mime_type.clone(),
-                    data: Some(blob_data),
-                });
-            }
-            Err(e) => {
-                error!("Failed to fetch avatar blob: {}", e);
-                // Keep the avatar without data
-            }
-        }
-    }
-
-    Ok(profile_info)
-}
-
 /// Finds the Personal Data Server (PDS) endpoint for a user's DID
 pub async fn find_pds_endpoint(did: &str, client: Arc<ReqwestClient>) -> cja::Result<String> {
     // Convert string DID to DID object
@@ -127,13 +94,4 @@ pub async fn find_pds_endpoint(did: &str, client: Arc<ReqwestClient>) -> cja::Re
 
     info!("Found PDS endpoint for DID {}: {}", did, pds_endpoint);
     Ok(pds_endpoint.clone())
-}
-
-/// Gets a user's profile from their PDS
-pub async fn get_user_profile(
-    did: &str,
-    token: Option<&OAuthTokenSet>,
-    app_state: &AppState,
-) -> cja::Result<serde_json::Value> {
-    todo!()
 }
