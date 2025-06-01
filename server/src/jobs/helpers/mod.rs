@@ -1,5 +1,6 @@
 use atrium_api::agent::Agent;
 use atrium_api::types::string::{Nsid, RecordKey};
+use atrium_api::types::TryFromUnknown;
 use color_eyre::eyre::{eyre, Result, WrapErr};
 use reqwest::Client;
 use serde_json::Value;
@@ -11,7 +12,7 @@ use crate::prelude::*;
 pub async fn get_original_profile_picture(
     app_state: &AppState,
     account: &Account,
-) -> Result<atrium_api::types::Unknown> {
+) -> Result<Value> {
     let did = atrium_api::types::string::Did::new(account.did.clone())
         .map_err(|e| eyre!("Invalid DID format for {}: {}", account.did, e))?;
     let session = app_state.atrium.oauth.restore(&did).await?;
@@ -28,7 +29,9 @@ pub async fn get_original_profile_picture(
     };
     let resp = agent.api.com.atproto.repo.get_record(params.into()).await?;
 
-    Ok(resp.data.value)
+    let value: Value = Value::try_from_unknown(resp.data.value)?;
+
+    Ok(value)
 }
 
 /// Helper function to resolve DID to PDS endpoint with improved error handling
