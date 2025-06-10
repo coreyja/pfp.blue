@@ -6,7 +6,7 @@ mod auth;
 mod blobs;
 mod callback;
 mod client_metadata;
-mod profile;
+pub mod profile;
 mod tokens;
 mod utils;
 

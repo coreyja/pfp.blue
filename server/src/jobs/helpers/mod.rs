@@ -2,7 +2,6 @@ use atrium_api::agent::Agent;
 use atrium_api::types::string::{Nsid, RecordKey};
 use atrium_api::types::TryFromUnknown;
 use color_eyre::eyre::{eyre, Result, WrapErr};
-use reqwest::Client;
 use serde_json::Value;
 use std::sync::Arc;
 use tracing::{debug, info};
@@ -68,12 +67,7 @@ async fn resolve_did_to_pds(did_str: &str) -> Result<String> {
     Ok(pds_service.service_endpoint.clone())
 }
 
-use crate::{oauth::OAuthTokenSet, state::AppState};
-
-/// Helper function to find PDS endpoint for a user
-pub async fn find_pds_endpoint(token: &OAuthTokenSet) -> cja::Result<String> {
-    resolve_did_to_pds(&token.did).await
-}
+use crate::state::AppState;
 
 /// Extract progress from display name
 /// Supports formats like "X/Y" or "X%" or "X.Y%"
@@ -277,14 +271,12 @@ pub async fn generate_progress_image(
 /// Upload an image to Bluesky and return the blob object
 pub async fn upload_image_to_bluesky(
     app_state: &AppState,
-    token: &OAuthTokenSet,
+    account: &Account,
     image_data: &[u8],
 ) -> cja::Result<Value> {
-    // Create a reqwest client
-    let client = Client::new();
-
+    
     // Detect image format from magic bytes
-    let image_mime_type = match infer::get(image_data) {
+    let _image_mime_type = match infer::get(image_data) {
         Some(kind) => {
             // Check if it's a supported image type
             let mime = kind.mime_type();
@@ -304,27 +296,137 @@ pub async fn upload_image_to_bluesky(
         }
     };
 
-    todo!()
+    // Get the atrium session for this account
+    let did = atrium_api::types::string::Did::new(account.did.clone())
+        .map_err(|e| eyre!("Invalid DID format: {}", e))?;
+    
+    let session = app_state.atrium.oauth.restore(&did).await
+        .wrap_err("Failed to restore atrium session")?;
+    let agent = atrium_api::agent::Agent::new(session);
+
+    // Upload the blob
+    let upload_result = agent.api.com.atproto.repo
+        .upload_blob(image_data.to_vec())
+        .await
+        .wrap_err("Failed to upload blob")?;
+
+    // Convert the blob ref to a JSON value
+    let blob_json = serde_json::to_value(&upload_result.data.blob)
+        .wrap_err("Failed to convert blob to JSON")?;
+    
+    Ok(blob_json)
 }
 
 /// Save the original profile picture blob to a dedicated PDS collection
 /// This allows us to reference the original image without storing its blob ID in our database
 pub async fn save_original_profile_picture(
     app_state: &AppState,
-    token: &OAuthTokenSet,
+    account: &Account,
     original_blob_object: Value,
 ) -> cja::Result<()> {
-    // Create a reqwest client
-    let client = Client::new();
+    use atrium_api::types::string::{Did, Nsid, RecordKey};
+    use atrium_api::types::Unknown;
+    
+    // Get the atrium session for this account
+    let did = Did::new(account.did.clone())
+        .map_err(|e| eyre!("Invalid DID format: {}", e))?;
+    
+    let session = app_state.atrium.oauth.restore(&did).await
+        .wrap_err("Failed to restore atrium session")?;
+    let agent = atrium_api::agent::Agent::new(session);
 
-    todo!()
+    // Create the record to store the original profile picture
+    let collection = Nsid::new("blue.pfp.unmodifiedPfp".to_string())
+        .map_err(|e| eyre!("Invalid collection: {}", e))?;
+    let rkey = RecordKey::new("self".to_string())
+        .map_err(|e| eyre!("Invalid rkey: {}", e))?;
+    
+    // The record should contain the blob reference
+    let record = serde_json::json!({
+        "$type": "blue.pfp.unmodifiedPfp",
+        "blob": original_blob_object,
+        "createdAt": chrono::Utc::now().to_rfc3339()
+    });
+
+    // Convert JSON to Unknown
+    let record_unknown = serde_json::from_value::<Unknown>(record)
+        .wrap_err("Failed to convert record to Unknown")?;
+    
+    // Put the record
+    agent.api.com.atproto.repo
+        .put_record(atrium_api::com::atproto::repo::put_record::InputData {
+            collection,
+            record: record_unknown,
+            repo: did.into(),
+            rkey,
+            swap_commit: None,
+            swap_record: None,
+            validate: None,
+        }.into())
+        .await
+        .wrap_err("Failed to save original profile picture record")?;
+
+    Ok(())
 }
 
 /// Update profile with a new image
 pub async fn update_profile_with_image(
     app_state: &AppState,
-    token: &OAuthTokenSet,
+    account: &Account,
     blob_object: Value,
 ) -> cja::Result<()> {
-    todo!()
+    use atrium_api::types::string::{Did, Nsid, RecordKey};
+    use atrium_api::types::{Unknown, TryFromUnknown};
+    
+    // Get the atrium session for this account
+    let did = Did::new(account.did.clone())
+        .map_err(|e| eyre!("Invalid DID format: {}", e))?;
+    
+    let session = app_state.atrium.oauth.restore(&did).await
+        .wrap_err("Failed to restore atrium session")?;
+    let agent = atrium_api::agent::Agent::new(session);
+
+    // First, get the current profile to preserve other fields
+    let collection = Nsid::new("app.bsky.actor.profile".to_string())
+        .map_err(|e| eyre!("Invalid collection: {}", e))?;
+    let rkey = RecordKey::new("self".to_string())
+        .map_err(|e| eyre!("Invalid rkey: {}", e))?;
+    
+    let current_profile = agent.api.com.atproto.repo
+        .get_record(atrium_api::com::atproto::repo::get_record::ParametersData {
+            collection: collection.clone(),
+            rkey: rkey.clone(),
+            repo: did.clone().into(),
+            cid: None,
+        }.into())
+        .await
+        .wrap_err("Failed to get current profile")?;
+
+    // Extract the current profile data
+    let mut profile_data: Value = Value::try_from_unknown(current_profile.data.value)?;
+    
+    // Update the avatar field
+    if let Some(obj) = profile_data.as_object_mut() {
+        obj.insert("avatar".to_string(), blob_object);
+    }
+
+    // Convert profile data to Unknown
+    let profile_unknown = serde_json::from_value::<Unknown>(profile_data)
+        .wrap_err("Failed to convert profile data to Unknown")?;
+
+    // Put the updated record back
+    agent.api.com.atproto.repo
+        .put_record(atrium_api::com::atproto::repo::put_record::InputData {
+            collection,
+            record: profile_unknown,
+            repo: did.into(),
+            rkey,
+            swap_commit: None,
+            swap_record: None,
+            validate: None,
+        }.into())
+        .await
+        .wrap_err("Failed to update profile with new image")?;
+
+    Ok(())
 }

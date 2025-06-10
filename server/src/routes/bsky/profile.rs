@@ -12,6 +12,67 @@ use crate::{
 
 use crate::prelude::*;
 
+/// Fetch profile information with avatar using atrium
+pub async fn fetch_profile_with_avatar(
+    did: &str,
+    state: &AppState,
+) -> cja::Result<crate::api::ProfileDataParams> {
+    use atrium_api::types::string::Did;
+    use color_eyre::eyre::WrapErr;
+
+    // Parse the DID
+    let did_obj = Did::new(did.to_string())
+        .map_err(|e| color_eyre::eyre::eyre!("Invalid DID format: {}", e))?;
+    
+    // Get the atrium session for this DID
+    let session = state.atrium.oauth.restore(&did_obj).await
+        .wrap_err("Failed to restore atrium session")?;
+    let agent = atrium_api::agent::Agent::new(session);
+
+    // Get the profile
+    let profile = agent.api.app.bsky.actor
+        .get_profile(atrium_api::app::bsky::actor::get_profile::ParametersData {
+            actor: did_obj.clone().into(),
+        }.into())
+        .await
+        .wrap_err("Failed to fetch profile")?;
+
+    let mut params = crate::api::ProfileDataParams {
+        display_name: profile.data.display_name.clone(),
+        avatar: None,
+        description: profile.data.description.clone(),
+    };
+
+    // Extract avatar information if available
+    if let Some(avatar_url) = &profile.data.avatar {
+        // Avatar URL is just a URL, we need to extract the CID from it
+        // Format is usually: https://cdn.bsky.app/img/avatar/plain/{did}/{cid}@jpeg
+        if let Some(cid) = extract_cid_from_avatar_url(avatar_url) {
+            params.avatar = Some(crate::api::ProfileAvatar {
+                cid: cid.to_string(),
+                mime_type: "image/jpeg".to_string(), // Default mime type
+                data: None, // We'll fetch the data separately if needed
+            });
+        }
+    }
+
+    Ok(params)
+}
+
+/// Extract CID from avatar URL
+fn extract_cid_from_avatar_url(url: &str) -> Option<&str> {
+    // URL format: https://cdn.bsky.app/img/avatar/plain/{did}/{cid}@{format}
+    let parts: Vec<&str> = url.split('/').collect();
+    if parts.len() > 1 {
+        let last_part = parts.last()?;
+        // Remove the @format suffix
+        let cid_with_format = last_part.split('@').next()?;
+        Some(cid_with_format)
+    } else {
+        None
+    }
+}
+
 /// Profile page that requires authentication
 pub async fn profile(
     State(state): State<AppState>,
@@ -174,25 +235,18 @@ async fn display_profile_multi(
         );
     }
 
-    // // Fetch profile data with avatar using our API helpers
-    // let profile_info = match crate::api::get_profile_with_avatar(&primary_account.did, state).await
-    // {
-    //     Ok(info) => info,
-    //     Err(e) => {
-    //         error!("Failed to fetch profile info: {:?}", e);
-    //         // Create default profile info with just the DID
-    //         crate::api::ProfileDataParams {
-    //             display_name: None,
-    //             avatar: None,
-    //             description: None,
-    //         }
-    //     }
-    // };
-    // TODO: Implement this for real, just ripping out API call stuff now
-    let profile_info = crate::api::ProfileDataParams {
-        display_name: None,
-        avatar: None,
-        description: None,
+    // Fetch profile data with avatar using atrium
+    let profile_info = match fetch_profile_with_avatar(&primary_account.did, state).await {
+        Ok(info) => info,
+        Err(e) => {
+            error!("Failed to fetch profile info: {:?}", e);
+            // Create default profile info with just the DID
+            crate::api::ProfileDataParams {
+                display_name: None,
+                avatar: None,
+                description: None,
+            }
+        }
     };
 
     // Extract information for display
@@ -204,15 +258,21 @@ async fn display_profile_multi(
     // Extract avatar information and encode as base64 if available
     let _avatar_blob_cid = profile_info.avatar.as_ref().map(|a| a.cid.clone());
 
-    // Encode avatar as base64 if available
+    // Fetch avatar blob data if we have a CID
     let avatar_base64 = if let Some(avatar) = &profile_info.avatar {
-        avatar.data.as_ref().map(|data| {
-            format!(
-                "data:{};base64,{}",
-                avatar.mime_type,
-                base64::Engine::encode(&base64::engine::general_purpose::STANDARD, data)
-            )
-        })
+        match crate::routes::bsky::fetch_blob_by_cid(&primary_account.did, &avatar.cid, state).await {
+            Ok(data) => {
+                Some(format!(
+                    "data:{};base64,{}",
+                    avatar.mime_type,
+                    base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &data)
+                ))
+            }
+            Err(e) => {
+                error!("Failed to fetch avatar blob: {:?}", e);
+                None
+            }
+        }
     } else {
         None
     };

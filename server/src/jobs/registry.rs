@@ -81,13 +81,13 @@ pub fn create_job_from_name_and_args(
         }
 
         UpdateProfilePictureProgressJob::NAME => {
-            let token_id_str = args
-                .get("token_id")
-                .ok_or("Missing required arg: token_id")?;
-            let token_id = uuid::Uuid::from_str(token_id_str)
-                .map_err(|e| format!("Invalid UUID for token_id: {}", e))?;
+            let account_id_str = args
+                .get("account_id")
+                .ok_or("Missing required arg: account_id")?;
+            let account_id = uuid::Uuid::from_str(account_id_str)
+                .map_err(|e| format!("Invalid UUID for account_id: {}", e))?;
             Ok(JobType::UpdateProfilePicture(
-                UpdateProfilePictureProgressJob { token_id },
+                UpdateProfilePictureProgressJob { account_id },
             ))
         }
 
@@ -107,8 +107,8 @@ pub fn get_job_params(job_name: &str) -> Vec<(String, String, bool)> {
         )],
 
         UpdateProfilePictureProgressJob::NAME => vec![(
-            "token_id".to_string(),
-            "UUID of the OAuth token".to_string(),
+            "account_id".to_string(),
+            "UUID of the account".to_string(),
             true,
         )],
 

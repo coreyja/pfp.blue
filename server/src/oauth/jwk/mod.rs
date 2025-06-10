@@ -86,24 +86,13 @@ pub fn generate_jwk(public_key_base64: &str) -> cja::Result<Jwk> {
 /// Calculate the JWK thumbprint for the given public key
 ///
 /// This follows RFC 7638 for JWK Thumbprint calculation
-pub fn calculate_jwk_thumbprint(public_key_base64: &str) -> cja::Result<String> {
-    // // First generate the JWK for the public key
-    // let jwk = generate_jwk(public_key_base64)?;
-
-    // // Create the canonical JWK representation with only the required fields in lexicographic order
-    // let canonical_jwk = todo!();
-
-    // // Convert to a compact JSON string without whitespace
-    // let canonical_json =
-    //     serde_json::to_string(&canonical_jwk).wrap_err("Failed to serialize canonical JWK")?;
-
-    // // Calculate SHA-256 hash
-    // use ring::digest::{digest, SHA256};
-    // let digest = digest(&SHA256, canonical_json.as_bytes());
-
-    // // Base64-URL encode the result
-    // Ok(Base64UrlUnpadded::encode_string(digest.as_ref()))
-    todo!()
+/// NOTE: This function is not currently implemented as atrium handles this internally
+pub fn calculate_jwk_thumbprint(_public_key_base64: &str) -> cja::Result<String> {
+    // This functionality is now handled by the atrium library internally
+    // during OAuth operations, so we don't need to implement it manually
+    Err(color_eyre::eyre::eyre!(
+        "JWK thumbprint calculation is handled by atrium library"
+    ))
 }
 
 /// Client metadata for OAuth client registration

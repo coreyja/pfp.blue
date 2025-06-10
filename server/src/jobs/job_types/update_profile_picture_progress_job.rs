@@ -6,14 +6,14 @@ use crate::state::AppState;
 /// Job to update a user's profile picture with progress visualization
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct UpdateProfilePictureProgressJob {
-    /// The token ID to process
-    pub token_id: uuid::Uuid,
+    /// The account ID to process
+    pub account_id: uuid::Uuid,
 }
 
 impl UpdateProfilePictureProgressJob {
-    /// Create a new job from a token ID
-    pub fn new(token_id: uuid::Uuid) -> Self {
-        Self { token_id }
+    /// Create a new job from an account ID
+    pub fn new(account_id: uuid::Uuid) -> Self {
+        Self { account_id }
     }
 }
 
@@ -22,157 +22,152 @@ impl Job<AppState> for UpdateProfilePictureProgressJob {
     const NAME: &'static str = "UpdateProfilePictureProgressJob";
 
     async fn run(&self, app_state: AppState) -> cja::Result<()> {
-        todo!()
-        // Get the token ID's DID first
-        // let token_info = sqlx::query!(
-        //     r#"
-        //     SELECT did FROM oauth_tokens WHERE id = $1
-        //     "#,
-        //     self.token_id
-        // )
-        // .fetch_optional(&app_state.db)
-        // .await?
-        // .ok_or_else(|| eyre!("No token found for ID {} in job", self.token_id))?;
+        use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, ModelTrait};
+        use color_eyre::eyre::{eyre, WrapErr};
+        use tracing::{debug, error, info};
+        use crate::prelude::*;
 
-        // crate::jobs::job_types::UpdateProfileInfoJob {
-        //     did: token_info.did.clone(),
-        // }
-        // .run(app_state.clone())
-        // .await?;
+        // Get the account
+        let account = Accounts::find()
+            .filter(crate::orm::accounts::Column::AccountId.eq(self.account_id))
+            .one(&app_state.orm)
+            .await
+            .wrap_err_with(|| format!("Error retrieving account for ID {}", self.account_id))?
+            .ok_or_else(|| eyre!("No account found for ID {}", self.account_id))?;
 
-        // // Use our consolidated function to get a valid token
-        // let token = crate::oauth::get_valid_token_by_did(&token_info.did, &app_state)
-        //     .await
-        //     .wrap_err_with(|| format!("Failed to get valid token for DID {}", token_info.did))?;
+        // Update the profile info first to get the latest display name
+        crate::jobs::job_types::UpdateProfileInfoJob::new(account.did.clone())
+            .run(app_state.clone())
+            .await?;
 
-        // // Get the progress settings for this token
-        // let progress = crate::profile_progress::ProfilePictureProgress::get_by_token_id(
-        //     &app_state.db,
-        //     self.token_id,
-        // )
-        // .await?
-        // .ok_or_else(|| {
-        //     eyre!(
-        //         "No progress settings found for token ID {} in job",
-        //         self.token_id
-        //     )
-        // })?;
+        // Get the progress settings for this account
+        let progress = crate::orm::profile_picture_progress::Entity::find()
+            .filter(crate::orm::profile_picture_progress::Column::AccountId.eq(self.account_id))
+            .one(&app_state.orm)
+            .await?
+            .ok_or_else(|| eyre!("No progress settings found for account ID {}", self.account_id))?;
 
-        // // Check if the feature is enabled
-        // if !progress.enabled {
-        //     debug!(
-        //         "Profile picture progress feature is disabled for token ID {}",
-        //         self.token_id
-        //     );
-        //     return Ok(());
-        // }
+        // Check if the feature is enabled
+        if !progress.enabled {
+            debug!(
+                "Profile picture progress feature is disabled for account ID {}",
+                self.account_id
+            );
+            return Ok(());
+        }
 
-        // // Get the original profile picture blob from our custom collection
-        // let original_blob = get_original_profile_picture(&app_state, &token)
-        //     .await
-        //     .wrap_err_with(|| {
-        //         format!(
-        //             "Failed to check for original profile picture for token ID {}",
-        //             self.token_id
-        //         )
-        //     })?;
+        // Get the original profile picture blob from our custom collection
+        let original_blob = crate::jobs::helpers::get_original_profile_picture(&app_state, &account)
+            .await
+            .wrap_err_with(|| {
+                format!(
+                    "Failed to check for original profile picture for account ID {}",
+                    self.account_id
+                )
+            })?;
 
-        // // Extract the CID (link) from the blob object retrieved from PDS
-        // let pds_original_blob_cid = if let Some(blob_ref) = original_blob.get("ref") {
-        //     blob_ref
-        //         .get("$link")
-        //         .and_then(|l| l.as_str())
-        //         .map(|s| s.to_string())
-        //         .ok_or_else(|| eyre!("Original blob object has no valid $link field"))?
-        // } else {
-        //     Err(eyre!("Original blob object has no ref field"))?
-        // };
+        // Extract progress fraction or percentage from display_name
+        let account = Accounts::find()
+            .filter(crate::orm::accounts::Column::AccountId.eq(self.account_id))
+            .one(&app_state.orm)
+            .await?
+            .ok_or_else(|| eyre!("Account not found after update"))?;
 
-        // debug!(
-        //     "Using original blob CID from PDS: {}",
-        //     pds_original_blob_cid
-        // );
+        let (numerator, denominator) = match &account.display_name {
+            Some(display_name) => {
+                crate::jobs::helpers::extract_progress_from_display_name(display_name).unwrap_or((0.0, 1.0))
+            }
+            None => {
+                debug!(
+                    "No display name found for account ID {}, defaulting to 0%",
+                    self.account_id
+                );
+                (0.0, 1.0)
+            }
+        };
 
-        // // Extract progress fraction or percentage from display_name
-        // let (numerator, denominator) = match &token.display_name {
-        //     Some(display_name) => {
-        //         extract_progress_from_display_name(display_name).unwrap_or((0.0, 1.0))
-        //     }
-        //     None => {
-        //         debug!(
-        //             "No display name found for token ID {}, defaulting to 0%",
-        //             self.token_id
-        //         );
-        //         (0.0, 1.0)
-        //     }
-        // };
+        // Calculate the progress percentage
+        let progress_percentage = numerator / denominator;
+        debug!(
+            "Progress for account {}: {}/{} = {:.2}%",
+            self.account_id,
+            numerator,
+            denominator,
+            progress_percentage * 100.0
+        );
 
-        // // Calculate the progress percentage
-        // let progress_percentage = numerator / denominator;
-        // debug!(
-        //     "Progress for token {}: {}/{} = {:.2}%",
-        //     self.token_id,
-        //     numerator,
-        //     denominator,
-        //     progress_percentage * 100.0
-        // );
+        // Extract the CID (link) from the blob object retrieved from PDS
+        let pds_original_blob_cid = if let Some(blob_ref) = original_blob.get("blob").and_then(|b| b.get("ref")) {
+            blob_ref
+                .get("$link")
+                .and_then(|l| l.as_str())
+                .map(|s| s.to_string())
+                .ok_or_else(|| eyre!("Original blob object has no valid $link field"))?
+        } else {
+            Err(eyre!("Original blob object has no ref field"))?
+        };
 
-        // // Fetch the original profile picture using the CID from PDS
-        // let original_image_data = match crate::routes::bsky::fetch_blob_by_cid(
-        //     &token.did,
-        //     &pds_original_blob_cid,
-        //     &app_state,
-        // )
-        // .await
-        // {
-        //     Ok(data) => data,
-        //     Err(err) => {
-        //         error!("Failed to fetch original profile picture: {:?}", err);
-        //         return Err(eyre!("Failed to fetch original profile picture: {}", err));
-        //     }
-        // };
+        debug!(
+            "Using original blob CID from PDS: {}",
+            pds_original_blob_cid
+        );
 
-        // // Generate the progress image
-        // let progress_image_data =
-        //     match generate_progress_image(&original_image_data, progress_percentage).await {
-        //         Ok(data) => {
-        //             info!(
-        //                 "Successfully generated progress image for token ID {}",
-        //                 self.token_id
-        //             );
-        //             data
-        //         }
-        //         Err(err) => {
-        //             error!("Failed to generate progress image: {:?}", err);
-        //             return Err(err);
-        //         }
-        //     };
+        // Fetch the original profile picture using the CID from PDS
+        let original_image_data = match crate::routes::bsky::fetch_blob_by_cid(
+            &account.did,
+            &pds_original_blob_cid,
+            &app_state,
+        )
+        .await
+        {
+            Ok(data) => data,
+            Err(err) => {
+                error!("Failed to fetch original profile picture: {:?}", err);
+                return Err(eyre!("Failed to fetch original profile picture: {}", err));
+            }
+        };
 
-        // // Upload the new image to Bluesky
-        // match upload_image_to_bluesky(&app_state, &token, &progress_image_data).await {
-        //     Ok(blob_object) => {
-        //         info!("Successfully uploaded progress image to Bluesky");
+        // Generate the progress image
+        let progress_image_data =
+            match crate::jobs::helpers::generate_progress_image(&original_image_data, progress_percentage).await {
+                Ok(data) => {
+                    info!(
+                        "Successfully generated progress image for account ID {}",
+                        self.account_id
+                    );
+                    data
+                }
+                Err(err) => {
+                    error!("Failed to generate progress image: {:?}", err);
+                    return Err(err);
+                }
+            };
 
-        //         // Update profile with the new image blob
-        //         match update_profile_with_image(&app_state, &token, blob_object).await {
-        //             Ok(_) => {
-        //                 info!(
-        //                     "Successfully updated profile with progress image for token ID {}",
-        //                     self.token_id
-        //                 );
-        //             }
-        //             Err(err) => {
-        //                 error!("Failed to update profile with progress image: {:?}", err);
-        //                 return Err(err);
-        //             }
-        //         }
-        //     }
-        //     Err(err) => {
-        //         error!("Failed to upload progress image to Bluesky: {:?}", err);
-        //         return Err(err);
-        //     }
-        // }
+        // Upload the new image to Bluesky
+        match crate::jobs::helpers::upload_image_to_bluesky(&app_state, &account, &progress_image_data).await {
+            Ok(blob_object) => {
+                info!("Successfully uploaded progress image to Bluesky");
 
-        // Ok(())
+                // Update profile with the new image blob
+                match crate::jobs::helpers::update_profile_with_image(&app_state, &account, blob_object).await {
+                    Ok(_) => {
+                        info!(
+                            "Successfully updated profile with progress image for account ID {}",
+                            self.account_id
+                        );
+                    }
+                    Err(err) => {
+                        error!("Failed to update profile with progress image: {:?}", err);
+                        return Err(err);
+                    }
+                }
+            }
+            Err(err) => {
+                error!("Failed to upload progress image to Bluesky: {:?}", err);
+                return Err(err);
+            }
+        }
+
+        Ok(())
     }
 }
