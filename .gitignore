@@ -12,3 +12,6 @@ node_modules/
 /server/test-output/
 .aider*
 .plandex-v2/
+
+# Claude Code local settings
+.claude/settings.local.json
