@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                SELECT t.display_name, t.did\n                FROM sessions s\n                JOIN oauth_tokens t ON s.primary_token_id = t.uuid_id\n                WHERE s.user_id = $1\n                LIMIT 1\n                ",
+  "query": "\n                SELECT t.display_name, t.did\n                FROM sessions s\n                JOIN accounts t ON s.primary_account_id = t.account_id\n                WHERE s.user_id = $1\n                LIMIT 1\n                ",
   "describe": {
     "columns": [
       {
@@ -24,5 +24,5 @@
       false
     ]
   },
-  "hash": "a7531f625be370c372cc65a09a48ebbd01d814dae96bfd083e48eb2e32778eb9"
+  "hash": "243dc8ea11effb1048aa43054bdd224b56540065d6a13208e18c462148cd982e"
 }
