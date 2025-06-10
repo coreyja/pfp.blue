@@ -90,9 +90,9 @@ impl FromRequestParts<AppState> for AuthUser {
 /// Requires both authentication and admin privileges
 #[derive(Debug, Clone)]
 pub struct AdminUser {
-    pub user: User,
+    // Allow dead code as this field is part of the admin authentication interface
     #[allow(dead_code)]
-    pub session: Session,
+    pub user: User,
 }
 
 #[async_trait]
@@ -120,7 +120,6 @@ impl FromRequestParts<AppState> for AdminUser {
 
         Ok(AdminUser {
             user: auth_user.user,
-            session: auth_user.session,
         })
     }
 }

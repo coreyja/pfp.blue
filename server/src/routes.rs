@@ -14,7 +14,7 @@ use axum::{
     response::{IntoResponse, Redirect},
     routing::{get, post},
 };
-use cja::{jobs::Job as _, server::cookies::CookieJar};
+use cja::server::cookies::CookieJar;
 use color_eyre::eyre::WrapErr;
 use serde::Deserialize;
 use std::collections::HashMap;

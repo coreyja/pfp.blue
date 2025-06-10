@@ -22,7 +22,7 @@ impl Job<AppState> for UpdateProfilePictureProgressJob {
     const NAME: &'static str = "UpdateProfilePictureProgressJob";
 
     async fn run(&self, app_state: AppState) -> cja::Result<()> {
-        use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, ModelTrait};
+        use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
         use color_eyre::eyre::{eyre, WrapErr};
         use tracing::{debug, error, info};
         use crate::prelude::*;

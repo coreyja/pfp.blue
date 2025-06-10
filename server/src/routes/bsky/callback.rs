@@ -69,7 +69,7 @@ pub async fn callback(
 
     let mut session_active: crate::orm::sessions::ActiveModel = session.into();
     session_active.primary_account_id = ActiveValue::Set(account.account_id);
-    let session = session_active.update(&state.orm).await.unwrap();
+    session_active.update(&state.orm).await.unwrap();
 
     // Schedule a background job to update the display name and handle
     if let Err(err) = crate::jobs::UpdateProfileInfoJob::new(did.to_string())

@@ -166,7 +166,10 @@ impl DomainSettings {
 #[derive(Clone)]
 pub struct AtriumState {
     pub oauth: Arc<AtriumOAuthClient>,
+    // Allow dead code as these fields are part of the OAuth infrastructure but not directly accessed
+    #[allow(dead_code)]
     pub sessions: DbSessionStore,
+    #[allow(dead_code)]
     pub states: DbStateStore,
 }
 
@@ -177,6 +180,8 @@ pub struct AppState {
     pub domain: DomainSettings,
     pub bsky_client: Arc<ReqwestClient>,
     pub bsky_oauth: BlueskyOAuthConfig,
+    // Allow dead code as this field is part of the encryption infrastructure but not directly accessed
+    #[allow(dead_code)]
     pub encryption: EncryptionConfig,
     pub atrium: AtriumState,
     pub orm: DatabaseConnection,
@@ -221,8 +226,6 @@ impl AppState {
         let atrium_oauth_client = crate::oauth::new::get_atrium_oauth_client(
             &bsky_oauth,
             &domain,
-            &encryption,
-            &orm_pool,
             &session_store,
             &state_store,
         )?;

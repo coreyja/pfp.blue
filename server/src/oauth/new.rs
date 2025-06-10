@@ -204,8 +204,6 @@ impl atrium_oauth::store::session::SessionStore for DbSessionStore {}
 pub fn get_atrium_oauth_client(
     bsky_oauth: &BlueskyOAuthConfig,
     domain: &DomainSettings,
-    encryption: &EncryptionConfig,
-    orm: &DatabaseConnection,
     session_store: &DbSessionStore,
     state_store: &DbStateStore,
 ) -> cja::Result<AtriumOAuthClient> {

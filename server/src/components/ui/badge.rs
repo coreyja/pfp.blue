@@ -21,19 +21,6 @@ pub struct Badge {
 }
 
 impl Badge {
-    pub fn new(text: &str, color: BadgeColor) -> Self {
-        Self {
-            text: text.to_string(),
-            color,
-            rounded: false,
-            extra_classes: None,
-        }
-    }
-
-    pub fn rounded(mut self, rounded: bool) -> Self {
-        self.rounded = rounded;
-        self
-    }
 
     fn get_color_classes(&self) -> &'static str {
         match self.color {

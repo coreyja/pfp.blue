@@ -3,7 +3,6 @@ use atrium_api::types::string::{Nsid, RecordKey};
 use atrium_api::types::TryFromUnknown;
 use color_eyre::eyre::{eyre, Result, WrapErr};
 use serde_json::Value;
-use std::sync::Arc;
 use tracing::{debug, info};
 
 use crate::prelude::*;
@@ -33,39 +32,6 @@ pub async fn get_original_profile_picture(
     Ok(value)
 }
 
-/// Helper function to resolve DID to PDS endpoint with improved error handling
-async fn resolve_did_to_pds(did_str: &str) -> Result<String> {
-    let xrpc_client = Arc::new(atrium_xrpc_client::reqwest::ReqwestClient::new(
-        "https://bsky.social",
-    ));
-
-    // Convert string DID to DID object
-    let did = atrium_api::types::string::Did::new(did_str.to_string())
-        .map_err(|e| eyre!("Invalid DID format for {}: {}", did_str, e))?;
-
-    // Resolve DID to document
-    let did_document = crate::did::resolve_did_to_document(&did, xrpc_client)
-        .await
-        .wrap_err_with(|| format!("Failed to resolve DID document for {}", did_str))?;
-
-    // Find the PDS service endpoint
-    let services = did_document
-        .service
-        .as_ref()
-        .ok_or_else(|| eyre!("No service endpoints found in DID document for {}", did_str))?;
-
-    let pds_service = services
-        .iter()
-        .find(|s| s.id == "#atproto_pds")
-        .ok_or_else(|| {
-            eyre!(
-                "No ATProto PDS service endpoint found in DID document for {}",
-                did_str
-            )
-        })?;
-
-    Ok(pds_service.service_endpoint.clone())
-}
 
 use crate::state::AppState;
 

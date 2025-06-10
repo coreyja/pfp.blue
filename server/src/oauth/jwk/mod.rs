@@ -83,17 +83,6 @@ pub fn generate_jwk(public_key_base64: &str) -> cja::Result<Jwk> {
     })
 }
 
-/// Calculate the JWK thumbprint for the given public key
-///
-/// This follows RFC 7638 for JWK Thumbprint calculation
-/// NOTE: This function is not currently implemented as atrium handles this internally
-pub fn calculate_jwk_thumbprint(_public_key_base64: &str) -> cja::Result<String> {
-    // This functionality is now handled by the atrium library internally
-    // during OAuth operations, so we don't need to implement it manually
-    Err(color_eyre::eyre::eyre!(
-        "JWK thumbprint calculation is handled by atrium library"
-    ))
-}
 
 /// Client metadata for OAuth client registration
 #[derive(Debug, Serialize, Deserialize)]

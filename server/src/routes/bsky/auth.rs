@@ -4,7 +4,6 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Redirect},
 };
-use cja::server::cookies::CookieJar;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -22,21 +21,10 @@ pub struct AuthParams {
     pub state: Option<String>,
 }
 
-#[derive(Serialize)]
-struct AuthUrlParams<'a> {
-    client_id: &'a str,
-    response_type: &'static str,
-    scope: &'static str,
-    redirect_uri: &'a str,
-    state: &'a str,
-    code_challenge: &'a str,
-    code_challenge_method: &'static str,
-}
 
 /// Start the Bluesky OAuth flow
 pub async fn authorize(
     State(state): State<AppState>,
-    cookies: CookieJar<AppState>,
     Query(params): Query<AuthParams>,
 ) -> ServerResult<impl IntoResponse, StatusCode> {
     let client = state.atrium.oauth.clone();
@@ -64,7 +52,6 @@ pub struct SetPrimaryAccountParams {
 /// Set a specific Bluesky account as the primary one
 pub async fn set_primary_account(
     State(state): State<AppState>,
-    cookies: CookieJar<AppState>,
     crate::auth::AuthUser { user, session }: crate::auth::AuthUser,
     Query(params): Query<SetPrimaryAccountParams>,
 ) -> impl IntoResponse {

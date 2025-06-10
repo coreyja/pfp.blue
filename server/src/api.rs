@@ -11,6 +11,8 @@ use crate::did::{extract_pds_from_document, resolve_did_to_document};
 pub struct ProfileAvatar {
     pub cid: String,
     pub mime_type: String,
+    // Allow dead code as this field is part of the API data structure but not currently used
+    #[allow(dead_code)]
     pub data: Option<Vec<u8>>,
 }
 
@@ -18,63 +20,12 @@ pub struct ProfileAvatar {
 pub struct ProfileDataParams {
     pub display_name: Option<String>,
     pub avatar: Option<ProfileAvatar>,
+    // Allow dead code as this field is part of the API data structure but not currently used
+    #[allow(dead_code)]
     pub description: Option<String>,
 }
 
-/// Extract profile information from Bluesky profile data
-pub fn extract_profile_info(profile_data: &serde_json::Value) -> ProfileDataParams {
-    let mut params = ProfileDataParams {
-        display_name: None,
-        avatar: None,
-        description: None,
-    };
 
-    // Extract profile information from the data
-    if let Some(value) = profile_data.get("value") {
-        // Extract display name
-        if let Some(name) = value.get("displayName").and_then(|n| n.as_str()) {
-            params.display_name = Some(name.to_string());
-        }
-
-        // We no longer need to extract handle separately
-
-        // Extract description
-        if let Some(desc) = value.get("description").and_then(|d| d.as_str()) {
-            params.description = Some(desc.to_string());
-        }
-
-        // Extract avatar information
-        if let Some(avatar) = value.get("avatar") {
-            // Get blob CID
-            let cid = if let Some(ref_obj) = avatar.get("ref") {
-                ref_obj
-                    .get("$link")
-                    .and_then(|l| l.as_str())
-                    .map(|link| link.to_string())
-            } else {
-                None
-            };
-
-            // Get mime type
-            let mime_type = avatar
-                .get("mimeType")
-                .and_then(|m| m.as_str())
-                .unwrap_or("image/jpeg")
-                .to_string();
-
-            // If we found both, create avatar object
-            if let Some(cid) = cid {
-                params.avatar = Some(ProfileAvatar {
-                    cid,
-                    mime_type,
-                    data: None,
-                });
-            }
-        }
-    }
-
-    params
-}
 
 /// Finds the Personal Data Server (PDS) endpoint for a user's DID
 pub async fn find_pds_endpoint(did: &str, client: Arc<ReqwestClient>) -> cja::Result<String> {
