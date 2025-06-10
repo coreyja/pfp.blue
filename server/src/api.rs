@@ -3,13 +3,9 @@ use std::sync::Arc;
 use atrium_api::types::string::Did;
 use atrium_xrpc_client::reqwest::ReqwestClient;
 use color_eyre::eyre::eyre;
-use tracing::{error, info};
+use tracing::info;
 
-use crate::{
-    did::{extract_pds_from_document, resolve_did_to_document},
-    oauth::OAuthTokenSet,
-    state::AppState,
-};
+use crate::did::{extract_pds_from_document, resolve_did_to_document};
 
 /// Profile avatar information extracted from profile data
 pub struct ProfileAvatar {

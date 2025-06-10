@@ -9,7 +9,6 @@ pub mod token;
 
 // Re-export main types and functions
 pub use jwk::*;
-pub use token::*;
 
 // Currently we only define database operations in their own file
 // The rest of the functionality is re-exported from mod.rs
