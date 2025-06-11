@@ -347,7 +347,7 @@ async fn authorize(
     >,
 ) -> impl IntoResponse {
     // Handle PAR flow where request_uri is provided instead of direct parameters
-    let (redirect_uri, scope, auth_code) = if let Some(request_uri) = &params.request_uri {
+    let (redirect_uri, _scope, auth_code) = if let Some(request_uri) = &params.request_uri {
         println!(
             "PDS: Handling PAR authorization with request_uri: {}",
             request_uri
