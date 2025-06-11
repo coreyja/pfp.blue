@@ -10,7 +10,6 @@ use uuid::Uuid;
 use crate::{errors::ServerResult, state::AppState};
 
 use crate::prelude::*;
-
 #[derive(Deserialize, Serialize)]
 pub struct AuthParams {
     /// The user's Bluesky DID or Handle (will be resolved to DID if needed)
@@ -20,6 +19,7 @@ pub struct AuthParams {
     /// Optional state parameter to maintain state between requests
     pub state: Option<String>,
 }
+
 
 /// Start the Bluesky OAuth flow
 pub async fn authorize(

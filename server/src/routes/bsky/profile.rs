@@ -94,14 +94,14 @@ pub async fn profile(
 
     // Start background jobs to update display names for all tokens
     // This ensures we have the latest display name data when showing the profile
-    for token in &accounts {
-        if let Err(err) = crate::jobs::UpdateProfileInfoJob::new(token.did.clone())
+    for account in &accounts {
+        if let Err(err) = crate::jobs::UpdateProfileInfoJob::new(account.did.clone())
             .enqueue(state.clone(), "profile_route".to_string())
             .await
         {
             error!(
                 "Failed to enqueue display name update job for DID {}: {:?}",
-                token.did, err
+                account.did, err
             );
         }
     }
@@ -117,14 +117,14 @@ pub async fn profile(
         } else if !accounts.is_empty() {
             accounts[0].clone()
         } else {
-            error!("No tokens available for this user");
+            error!("No accounts available for this user");
             return Err(ServerError(
                 color_eyre::eyre::eyre!("No Bluesky accounts linked"),
                 StatusCode::BAD_REQUEST,
             ));
         };
 
-    // Display profile with all tokens
+    // Display profile with all accounts
     Ok(display_profile_multi(&state, primary_account, accounts)
         .await
         .into_response())
