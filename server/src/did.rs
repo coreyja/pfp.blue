@@ -95,5 +95,3 @@ pub fn extract_pds_from_document(document: &DidDocument) -> cja::Result<&Service
         .find(|s| s.id == "#atproto_pds")
         .ok_or_else(|| eyre!("No ATProto PDS service endpoint found"))
 }
-
-

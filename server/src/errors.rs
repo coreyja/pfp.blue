@@ -3,7 +3,6 @@ use std::fmt::Debug;
 use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Redirect, Response};
 
-
 #[derive(Debug)]
 pub struct ServerError<R: IntoResponse>(pub(crate) cja::color_eyre::Report, pub(crate) R);
 
@@ -64,7 +63,6 @@ impl<R: IntoResponse> IntoResponse for ServerError<R> {
     }
 }
 
-
 impl<E> From<E> for ServerError<StatusCode>
 where
     E: Into<cja::color_eyre::Report>,
@@ -99,4 +97,3 @@ impl<T> WithRedirect<T> for Result<T, cja::color_eyre::Report> {
         }
     }
 }
-

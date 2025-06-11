@@ -348,28 +348,42 @@ async fn authorize(
 ) -> impl IntoResponse {
     // Handle PAR flow where request_uri is provided instead of direct parameters
     let (redirect_uri, scope, auth_code) = if let Some(request_uri) = &params.request_uri {
-        println!("PDS: Handling PAR authorization with request_uri: {}", request_uri);
-        
+        println!(
+            "PDS: Handling PAR authorization with request_uri: {}",
+            request_uri
+        );
+
         // For PAR, we stored the redirect_uri and other info in the request_uri
         // In a real implementation, this would be looked up from storage
         let redirect_uri = "http://localhost:3000/oauth/bsky/callback".to_string();
-        
+
         // Determine user based on request_uri
         let (scope, auth_code) = if request_uri.contains("user2") {
             println!("PDS: PAR flow - Authorizing as fixture-user2.test");
-            ("profile.handle:fixture-user2.test".to_string(), "fixture_auth_code_user2")
+            (
+                "profile.handle:fixture-user2.test".to_string(),
+                "fixture_auth_code_user2",
+            )
         } else {
             println!("PDS: PAR flow - Authorizing as fixture-user.test");
-            ("profile.handle:fixture-user.test".to_string(), "fixture_auth_code_12345")
+            (
+                "profile.handle:fixture-user.test".to_string(),
+                "fixture_auth_code_12345",
+            )
         };
-        
+
         (redirect_uri, scope, auth_code)
     } else {
         // Traditional OAuth flow
-        let redirect_uri = params.redirect_uri.clone()
+        let redirect_uri = params
+            .redirect_uri
+            .clone()
             .unwrap_or_else(|| "http://localhost:3000/oauth/bsky/callback".to_string());
-        
-        println!("PDS: Handling traditional OAuth authorization with redirect_uri: {}", redirect_uri);
+
+        println!(
+            "PDS: Handling traditional OAuth authorization with redirect_uri: {}",
+            redirect_uri
+        );
 
         // The handle is passed as a scope in the form "profile.handle:fixture-user.test"
         let scope = all_params
@@ -386,7 +400,7 @@ async fn authorize(
             println!("PDS: Authorizing as fixture-user.test");
             "fixture_auth_code_12345"
         };
-        
+
         (redirect_uri, scope, auth_code)
     };
 
@@ -430,7 +444,7 @@ async fn push_authorization(
         Json(json!({
             "request_uri": request_uri,
             "expires_in": 60
-        }))
+        })),
     )
 }
 
@@ -483,7 +497,7 @@ async fn get_token(
 // JWKS endpoint for JWT verification
 async fn jwks() -> impl IntoResponse {
     println!("PDS: Returning JWKS for token verification");
-    
+
     // Return a test JWKS with a dummy ES256 key for fixture testing
     // In production, this would contain the actual public keys used to verify JWTs
     Json(json!({

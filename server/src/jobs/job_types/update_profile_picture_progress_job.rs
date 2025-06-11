@@ -22,10 +22,10 @@ impl Job<AppState> for UpdateProfilePictureProgressJob {
     const NAME: &'static str = "UpdateProfilePictureProgressJob";
 
     async fn run(&self, app_state: AppState) -> cja::Result<()> {
-        use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
-        use color_eyre::eyre::{eyre, WrapErr};
-        use tracing::{debug, error, info};
         use crate::prelude::*;
+        use color_eyre::eyre::{eyre, WrapErr};
+        use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+        use tracing::{debug, error, info};
 
         // Get the account
         let account = Accounts::find()
@@ -45,7 +45,12 @@ impl Job<AppState> for UpdateProfilePictureProgressJob {
             .filter(crate::orm::profile_picture_progress::Column::AccountId.eq(self.account_id))
             .one(&app_state.orm)
             .await?
-            .ok_or_else(|| eyre!("No progress settings found for account ID {}", self.account_id))?;
+            .ok_or_else(|| {
+                eyre!(
+                    "No progress settings found for account ID {}",
+                    self.account_id
+                )
+            })?;
 
         // Check if the feature is enabled
         if !progress.enabled {
@@ -57,14 +62,15 @@ impl Job<AppState> for UpdateProfilePictureProgressJob {
         }
 
         // Get the original profile picture blob from our custom collection
-        let original_blob = crate::jobs::helpers::get_original_profile_picture(&app_state, &account)
-            .await
-            .wrap_err_with(|| {
-                format!(
-                    "Failed to check for original profile picture for account ID {}",
-                    self.account_id
-                )
-            })?;
+        let original_blob =
+            crate::jobs::helpers::get_original_profile_picture(&app_state, &account)
+                .await
+                .wrap_err_with(|| {
+                    format!(
+                        "Failed to check for original profile picture for account ID {}",
+                        self.account_id
+                    )
+                })?;
 
         // Extract progress fraction or percentage from display_name
         let account = Accounts::find()
@@ -75,7 +81,8 @@ impl Job<AppState> for UpdateProfilePictureProgressJob {
 
         let (numerator, denominator) = match &account.display_name {
             Some(display_name) => {
-                crate::jobs::helpers::extract_progress_from_display_name(display_name).unwrap_or((0.0, 1.0))
+                crate::jobs::helpers::extract_progress_from_display_name(display_name)
+                    .unwrap_or((0.0, 1.0))
             }
             None => {
                 debug!(
@@ -97,15 +104,16 @@ impl Job<AppState> for UpdateProfilePictureProgressJob {
         );
 
         // Extract the CID (link) from the blob object retrieved from PDS
-        let pds_original_blob_cid = if let Some(blob_ref) = original_blob.get("blob").and_then(|b| b.get("ref")) {
-            blob_ref
-                .get("$link")
-                .and_then(|l| l.as_str())
-                .map(|s| s.to_string())
-                .ok_or_else(|| eyre!("Original blob object has no valid $link field"))?
-        } else {
-            Err(eyre!("Original blob object has no ref field"))?
-        };
+        let pds_original_blob_cid =
+            if let Some(blob_ref) = original_blob.get("blob").and_then(|b| b.get("ref")) {
+                blob_ref
+                    .get("$link")
+                    .and_then(|l| l.as_str())
+                    .map(|s| s.to_string())
+                    .ok_or_else(|| eyre!("Original blob object has no valid $link field"))?
+            } else {
+                Err(eyre!("Original blob object has no ref field"))?
+            };
 
         debug!(
             "Using original blob CID from PDS: {}",
@@ -128,28 +136,44 @@ impl Job<AppState> for UpdateProfilePictureProgressJob {
         };
 
         // Generate the progress image
-        let progress_image_data =
-            match crate::jobs::helpers::generate_progress_image(&original_image_data, progress_percentage).await {
-                Ok(data) => {
-                    info!(
-                        "Successfully generated progress image for account ID {}",
-                        self.account_id
-                    );
-                    data
-                }
-                Err(err) => {
-                    error!("Failed to generate progress image: {:?}", err);
-                    return Err(err);
-                }
-            };
+        let progress_image_data = match crate::jobs::helpers::generate_progress_image(
+            &original_image_data,
+            progress_percentage,
+        )
+        .await
+        {
+            Ok(data) => {
+                info!(
+                    "Successfully generated progress image for account ID {}",
+                    self.account_id
+                );
+                data
+            }
+            Err(err) => {
+                error!("Failed to generate progress image: {:?}", err);
+                return Err(err);
+            }
+        };
 
         // Upload the new image to Bluesky
-        match crate::jobs::helpers::upload_image_to_bluesky(&app_state, &account, &progress_image_data).await {
+        match crate::jobs::helpers::upload_image_to_bluesky(
+            &app_state,
+            &account,
+            &progress_image_data,
+        )
+        .await
+        {
             Ok(blob_object) => {
                 info!("Successfully uploaded progress image to Bluesky");
 
                 // Update profile with the new image blob
-                match crate::jobs::helpers::update_profile_with_image(&app_state, &account, blob_object).await {
+                match crate::jobs::helpers::update_profile_with_image(
+                    &app_state,
+                    &account,
+                    blob_object,
+                )
+                .await
+                {
                     Ok(_) => {
                         info!(
                             "Successfully updated profile with progress image for account ID {}",

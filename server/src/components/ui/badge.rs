@@ -21,7 +21,6 @@ pub struct Badge {
 }
 
 impl Badge {
-
     fn get_color_classes(&self) -> &'static str {
         match self.color {
             BadgeColor::Blue => "bg-blue-100 text-blue-800",

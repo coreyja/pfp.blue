@@ -27,7 +27,6 @@ use crate::{
 
 use crate::orm::prelude::*;
 
-
 pub type AtriumOAuthClient = atrium_oauth::OAuthClient<
     DbStateStore,
     DbSessionStore,
@@ -217,7 +216,8 @@ pub fn get_atrium_oauth_client(
                 http_client: Arc::clone(&http_client),
             }),
             handle_resolver: AppViewHandleResolver::new(AppViewHandleResolverConfig {
-                service_url: std::env::var("APPVIEW_URL").unwrap_or_else(|_| "https://bsky.social".to_string()),
+                service_url: std::env::var("APPVIEW_URL")
+                    .unwrap_or_else(|_| "https://bsky.social".to_string()),
                 http_client: Arc::clone(&http_client),
             }),
             authorization_server_metadata: Default::default(),

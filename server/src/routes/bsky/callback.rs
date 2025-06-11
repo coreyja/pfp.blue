@@ -56,20 +56,20 @@ pub async fn callback(
             .wrap_err("Failed to create user")
             .map_err(|e| {
                 tracing::error!("User creation failed: {:?}", e);
-                ServerError(e, (Redirect::to("/login?error=user_creation_failed")).into_response())
+                ServerError(
+                    e,
+                    (Redirect::to("/login?error=user_creation_failed")).into_response(),
+                )
             })?
     };
 
-    let did = oauth_session
-        .did()
-        .await
-        .ok_or_else(|| {
-            tracing::error!("OAuth session missing DID");
-            ServerError(
-                color_eyre::eyre::eyre!("OAuth session missing DID"),
-                (Redirect::to("/login?error=did_extraction_failed")).into_response()
-            )
-        })?;
+    let did = oauth_session.did().await.ok_or_else(|| {
+        tracing::error!("OAuth session missing DID");
+        ServerError(
+            color_eyre::eyre::eyre!("OAuth session missing DID"),
+            (Redirect::to("/login?error=did_extraction_failed")).into_response(),
+        )
+    })?;
 
     let existing_account = Accounts::find()
         .filter(crate::orm::accounts::Column::Did.eq(did.to_string()))
@@ -78,7 +78,10 @@ pub async fn callback(
         .wrap_err("Failed to query existing account")
         .map_err(|e| {
             tracing::error!("Account query failed: {:?}", e);
-            ServerError(e, (Redirect::to("/login?error=account_query_failed")).into_response())
+            ServerError(
+                e,
+                (Redirect::to("/login?error=account_query_failed")).into_response(),
+            )
         })?;
 
     let account = match existing_account {
@@ -96,7 +99,10 @@ pub async fn callback(
                 .wrap_err("Failed to create account")
                 .map_err(|e| {
                     tracing::error!("Account creation failed: {:?}", e);
-                    ServerError(e, (Redirect::to("/login?error=account_creation_failed")).into_response())
+                    ServerError(
+                        e,
+                        (Redirect::to("/login?error=account_creation_failed")).into_response(),
+                    )
                 })?
         }
     };
@@ -108,7 +114,10 @@ pub async fn callback(
         .wrap_err("Failed to create session")
         .map_err(|e| {
             tracing::error!("Session creation failed: {:?}", e);
-            ServerError(e, (Redirect::to("/login?error=session_creation_failed")).into_response())
+            ServerError(
+                e,
+                (Redirect::to("/login?error=session_creation_failed")).into_response(),
+            )
         })?;
 
     let mut session_active: crate::orm::sessions::ActiveModel = session.into();
@@ -119,7 +128,10 @@ pub async fn callback(
         .wrap_err("Failed to update session with primary account")
         .map_err(|e| {
             tracing::error!("Session update failed: {:?}", e);
-            ServerError(e, (Redirect::to("/login?error=session_update_failed")).into_response())
+            ServerError(
+                e,
+                (Redirect::to("/login?error=session_update_failed")).into_response(),
+            )
         })?;
 
     // Schedule a background job to update the display name and handle
@@ -130,7 +142,10 @@ pub async fn callback(
         // Log the error but continue - not fatal
         tracing::error!("Failed to enqueue display name update job: {:?}", err);
     } else {
-        info!("Queued display name update job for DID: {}", did.to_string());
+        info!(
+            "Queued display name update job for DID: {}",
+            did.to_string()
+        );
     }
 
     info!("Authentication successful for DID: {}", did.to_string());

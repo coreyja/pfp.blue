@@ -83,7 +83,6 @@ pub fn generate_jwk(public_key_base64: &str) -> cja::Result<Jwk> {
     })
 }
 
-
 /// Client metadata for OAuth client registration
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ClientMetadata {

@@ -23,17 +23,28 @@ pub async fn fetch_profile_with_avatar(
     // Parse the DID
     let did_obj = Did::new(did.to_string())
         .map_err(|e| color_eyre::eyre::eyre!("Invalid DID format: {}", e))?;
-    
+
     // Get the atrium session for this DID
-    let session = state.atrium.oauth.restore(&did_obj).await
+    let session = state
+        .atrium
+        .oauth
+        .restore(&did_obj)
+        .await
         .wrap_err("Failed to restore atrium session")?;
     let agent = atrium_api::agent::Agent::new(session);
 
     // Get the profile
-    let profile = agent.api.app.bsky.actor
-        .get_profile(atrium_api::app::bsky::actor::get_profile::ParametersData {
-            actor: did_obj.clone().into(),
-        }.into())
+    let profile = agent
+        .api
+        .app
+        .bsky
+        .actor
+        .get_profile(
+            atrium_api::app::bsky::actor::get_profile::ParametersData {
+                actor: did_obj.clone().into(),
+            }
+            .into(),
+        )
         .await
         .wrap_err("Failed to fetch profile")?;
 
@@ -51,7 +62,7 @@ pub async fn fetch_profile_with_avatar(
             params.avatar = Some(crate::api::ProfileAvatar {
                 cid: cid.to_string(),
                 mime_type: "image/jpeg".to_string(), // Default mime type
-                data: None, // We'll fetch the data separately if needed
+                data: None,                          // We'll fetch the data separately if needed
             });
         }
     }
@@ -260,14 +271,13 @@ async fn display_profile_multi(
 
     // Fetch avatar blob data if we have a CID
     let avatar_base64 = if let Some(avatar) = &profile_info.avatar {
-        match crate::routes::bsky::fetch_blob_by_cid(&primary_account.did, &avatar.cid, state).await {
-            Ok(data) => {
-                Some(format!(
-                    "data:{};base64,{}",
-                    avatar.mime_type,
-                    base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &data)
-                ))
-            }
+        match crate::routes::bsky::fetch_blob_by_cid(&primary_account.did, &avatar.cid, state).await
+        {
+            Ok(data) => Some(format!(
+                "data:{};base64,{}",
+                avatar.mime_type,
+                base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &data)
+            )),
             Err(e) => {
                 error!("Failed to fetch avatar blob: {:?}", e);
                 None

@@ -2,8 +2,8 @@ use crate::{
     auth::{AdminUser, AuthUser, OptionalUser},
     components::layout::Page,
     errors::ServerResult,
-    state::AppState,
     orm::prelude::*,
+    state::AppState,
 };
 use axum::{
     extract::{Form, State},
@@ -294,11 +294,11 @@ async fn toggle_profile_progress(
     AuthUser { user, .. }: AuthUser,
     Form(params): Form<ToggleProfileProgressParams>,
 ) -> ServerResult<Response, Redirect> {
-    use sea_orm::{ActiveModelTrait, ActiveValue, ColumnTrait, EntityTrait, QueryFilter};
+    use crate::errors::WithRedirect;
     use cja::jobs::Job;
     use color_eyre::eyre::{eyre, WrapErr};
-    use crate::errors::WithRedirect;
-    
+    use sea_orm::{ActiveModelTrait, ActiveValue, ColumnTrait, EntityTrait, QueryFilter};
+
     // Find the account for this DID that belongs to this user
     let account = Accounts::find()
         .filter(crate::orm::accounts::Column::Did.eq(params.did.clone()))
@@ -326,7 +326,9 @@ async fn toggle_profile_progress(
         let mut active_model: crate::orm::profile_picture_progress::ActiveModel = existing.into();
         active_model.enabled = ActiveValue::Set(is_enabling);
         active_model.updated_at = ActiveValue::Set(chrono::Utc::now().into());
-        active_model.update(&state.orm).await
+        active_model
+            .update(&state.orm)
+            .await
             .wrap_err("Failed to update profile progress settings")
             .with_redirect(Redirect::to("/me"))?
     } else if is_enabling {
@@ -338,7 +340,9 @@ async fn toggle_profile_progress(
             updated_at: ActiveValue::Set(chrono::Utc::now().into()),
             ..Default::default()
         };
-        new_settings.insert(&state.orm).await
+        new_settings
+            .insert(&state.orm)
+            .await
             .wrap_err("Failed to create profile progress settings")
             .with_redirect(Redirect::to("/me"))?
     } else {
@@ -354,23 +358,26 @@ async fn toggle_profile_progress(
     // If we're enabling the feature, automatically save the current profile picture as the base
     if is_enabling {
         // Fetch profile info to get the current avatar blob CID
-        let profile_info = crate::routes::bsky::profile::fetch_profile_with_avatar(&account.did, &state)
-            .await
-            .wrap_err("Failed to fetch profile info")
-            .with_redirect(Redirect::to("/me"))?;
+        let profile_info =
+            crate::routes::bsky::profile::fetch_profile_with_avatar(&account.did, &state)
+                .await
+                .wrap_err("Failed to fetch profile info")
+                .with_redirect(Redirect::to("/me"))?;
 
         if let Some(avatar) = profile_info.avatar {
             // Get the blob data
-            let blob_data = crate::routes::bsky::fetch_blob_by_cid(&account.did, &avatar.cid, &state)
-                .await
-                .wrap_err("Failed to fetch avatar blob data")
-                .with_redirect(Redirect::to("/me"))?;
+            let blob_data =
+                crate::routes::bsky::fetch_blob_by_cid(&account.did, &avatar.cid, &state)
+                    .await
+                    .wrap_err("Failed to fetch avatar blob data")
+                    .with_redirect(Redirect::to("/me"))?;
 
             // Upload to get a proper blob object
-            let blob_object = crate::jobs::helpers::upload_image_to_bluesky(&state, &account, &blob_data)
-                .await
-                .wrap_err("Failed to upload image to Bluesky")
-                .with_redirect(Redirect::to("/me"))?;
+            let blob_object =
+                crate::jobs::helpers::upload_image_to_bluesky(&state, &account, &blob_data)
+                    .await
+                    .wrap_err("Failed to upload image to Bluesky")
+                    .with_redirect(Redirect::to("/me"))?;
 
             // Save the blob object to our custom PDS collection
             crate::jobs::helpers::save_original_profile_picture(&state, &account, blob_object)
@@ -390,7 +397,10 @@ async fn toggle_profile_progress(
                 .wrap_err("Failed to enqueue profile picture update job")
                 .with_redirect(Redirect::to("/me"))?;
 
-            info!("Enqueued profile picture update job for account {}", account.account_id);
+            info!(
+                "Enqueued profile picture update job for account {}",
+                account.account_id
+            );
         }
     }
 
@@ -540,7 +550,7 @@ async fn privacy_policy_page(_optional_user: OptionalUser, State(_state): State<
 
 /// Admin panel page - shows available jobs and provides a UI to run them
 async fn admin_panel(
-    AdminUser {  .. }: AdminUser,
+    AdminUser { .. }: AdminUser,
     State(_state): State<AppState>,
 ) -> impl IntoResponse {
     use crate::components::{layout::Page, ui::heading::Heading};

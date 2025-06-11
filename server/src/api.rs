@@ -25,8 +25,6 @@ pub struct ProfileDataParams {
     pub description: Option<String>,
 }
 
-
-
 /// Finds the Personal Data Server (PDS) endpoint for a user's DID
 pub async fn find_pds_endpoint(did: &str, client: Arc<ReqwestClient>) -> cja::Result<String> {
     // Convert string DID to DID object

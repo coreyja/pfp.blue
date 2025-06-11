@@ -40,25 +40,32 @@ impl Job<AppState> for UpdateProfileInfoJob {
             .await
             .wrap_err_with(|| format!("Error retrieving account for DID {}", self.did))?;
 
-        let account = account.ok_or_else(|| {
-            cja::color_eyre::eyre::eyre!("No account found for DID {}", self.did)
-        })?;
+        let account = account
+            .ok_or_else(|| cja::color_eyre::eyre::eyre!("No account found for DID {}", self.did))?;
 
         // Get the atrium session for this DID
         let did = atrium_api::types::string::Did::new(self.did.clone())
             .map_err(|e| cja::color_eyre::eyre::eyre!("Invalid DID format: {}", e))?;
-        
+
         let session = app_state.atrium.oauth.restore(&did).await?;
         let agent = atrium_api::agent::Agent::new(session);
 
         // Get the DID document to extract the handle
-        let did_doc = crate::did::resolve_did_to_document(&did, app_state.bsky_client.clone()).await?;
+        let did_doc =
+            crate::did::resolve_did_to_document(&did, app_state.bsky_client.clone()).await?;
 
         // Get the profile
-        let profile = agent.api.app.bsky.actor
-            .get_profile(atrium_api::app::bsky::actor::get_profile::ParametersData {
-                actor: did.clone().into(),
-            }.into())
+        let profile = agent
+            .api
+            .app
+            .bsky
+            .actor
+            .get_profile(
+                atrium_api::app::bsky::actor::get_profile::ParametersData {
+                    actor: did.clone().into(),
+                }
+                .into(),
+            )
             .await?;
 
         // Extract handle from DID document (if available)
@@ -70,11 +77,11 @@ impl Job<AppState> for UpdateProfileInfoJob {
         // Update the account with the latest information
         use sea_orm::ActiveModelTrait as _;
         let mut account_model: crate::orm::accounts::ActiveModel = account.into();
-        
+
         if let Some(h) = handle {
             account_model.handle = sea_orm::ActiveValue::Set(Some(h));
         }
-        
+
         if let Some(dn) = display_name {
             account_model.display_name = sea_orm::ActiveValue::Set(Some(dn));
         }

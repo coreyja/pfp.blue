@@ -1,17 +1,12 @@
 //! OAuth module for handling BlueskyOAuth operations
-//! This includes working with JWKs, DPoP proofs, tokens, and OAuth sessions
+//! This includes working with JWKs, DPoP proofs, and OAuth sessions
 
 // Re-export submodules
 pub mod db;
 pub mod jwk;
-pub mod session;
-pub mod token;
 
 // Re-export main types and functions
 pub use jwk::*;
 
-// Currently we only define database operations in their own file
-// The rest of the functionality is re-exported from mod.rs
-// This will be refactored into proper modules
-
+// OAuth implementation using atrium crate
 pub mod new;
