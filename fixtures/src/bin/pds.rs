@@ -347,7 +347,7 @@ async fn authorize(
     >,
 ) -> impl IntoResponse {
     // Handle PAR flow where request_uri is provided instead of direct parameters
-    let (redirect_uri, _scope, auth_code) = if let Some(request_uri) = &params.request_uri {
+    let (redirect_uri, auth_code) = if let Some(request_uri) = &params.request_uri {
         println!(
             "PDS: Handling PAR authorization with request_uri: {}",
             request_uri
@@ -358,21 +358,15 @@ async fn authorize(
         let redirect_uri = "http://localhost:3000/oauth/bsky/callback".to_string();
 
         // Determine user based on request_uri
-        let (scope, auth_code) = if request_uri.contains("user2") {
+        let auth_code = if request_uri.contains("user2") {
             println!("PDS: PAR flow - Authorizing as fixture-user2.test");
-            (
-                "profile.handle:fixture-user2.test".to_string(),
-                "fixture_auth_code_user2",
-            )
+            "fixture_auth_code_user2"
         } else {
             println!("PDS: PAR flow - Authorizing as fixture-user.test");
-            (
-                "profile.handle:fixture-user.test".to_string(),
-                "fixture_auth_code_12345",
-            )
+            "fixture_auth_code_12345"
         };
 
-        (redirect_uri, scope, auth_code)
+        (redirect_uri, auth_code)
     } else {
         // Traditional OAuth flow
         let redirect_uri = params
@@ -401,7 +395,7 @@ async fn authorize(
             "fixture_auth_code_12345"
         };
 
-        (redirect_uri, scope, auth_code)
+        (redirect_uri, auth_code)
     };
 
     // For fixtures, we'll auto-authorize and redirect back with a code
