@@ -50,6 +50,7 @@ async fn main() -> anyhow::Result<()> {
             "/.well-known/oauth-authorization-server",
             get(oauth_authorization_server),
         )
+        .route("/.well-known/jwks.json", get(jwks))
         // OAuth protocol endpoints
         .route("/xrpc/com.atproto.server.authorize", get(authorize))
         .route(
@@ -81,7 +82,10 @@ async fn oauth_protected_resource(State(state): State<AppState>) -> impl IntoRes
     );
     Json(json!({
         // This matches what the real API returns - has to contain an array
-        "authorization_servers": [base_url]
+        "authorization_servers": [base_url],
+        "resource": base_url,
+        "scopes_supported": ["read", "write", "profile", "email"],
+        "response_types_supported": ["code"]
     }))
 }
 
@@ -304,7 +308,16 @@ async fn oauth_authorization_server(State(state): State<AppState>) -> impl IntoR
         "pushed_authorization_request_endpoint": format!("{}/xrpc/com.atproto.server.pushAuthorization", base_url),
         "authorization_endpoint": format!("{}/xrpc/com.atproto.server.authorize", base_url),
         "token_endpoint": format!("{}/xrpc/com.atproto.server.getToken", base_url),
-        "scopes_supported": ["read", "write", "profile", "email"]
+        "jwks_uri": format!("{}/.well-known/jwks.json", base_url),
+        "scopes_supported": ["read", "write", "profile", "email", "atproto", "transition:generic"],
+        "response_types_supported": ["code"],
+        "token_endpoint_auth_methods_supported": ["private_key_jwt", "client_secret_basic"],
+        "token_endpoint_auth_signing_alg_values_supported": ["ES256", "RS256"],
+        "code_challenge_methods_supported": ["S256"],
+        "grant_types_supported": ["authorization_code", "refresh_token"],
+        "dpop_signing_alg_values_supported": ["ES256"],
+        "require_pushed_authorization_requests": false,
+        "client_id_schemes_supported": ["did"]
     }))
 }
 
@@ -317,15 +330,13 @@ use axum::extract::Query;
 #[derive(Debug, serde::Deserialize)]
 #[allow(dead_code)]
 struct AuthorizeQuery {
-    client_id: String,
-    redirect_uri: String,
+    client_id: Option<String>,
+    redirect_uri: Option<String>,
     state: Option<String>,
-
     code_challenge: Option<String>,
-
     code_challenge_method: Option<String>,
-
     response_type: Option<String>,
+    request_uri: Option<String>,
 }
 
 // The authorization endpoint is what the browser gets redirected to
@@ -335,25 +346,48 @@ async fn authorize(
         std::collections::HashMap<String, String>,
     >,
 ) -> impl IntoResponse {
-    println!(
-        "PDS: Handling OAuth authorization request with redirect_uri: {}",
-        params.redirect_uri
-    );
-
-    // The handle is passed as a scope in the form "profile.handle:fixture-user.test"
-    let scope = all_params
-        .get("scope")
-        .unwrap_or(&"".to_string())
-        .to_string();
-    println!("PDS: OAuth scope: {}", scope);
-
-    // Determine which user is being authorized based on the handle in the scope
-    let auth_code = if scope.contains("fixture-user2.test") {
-        println!("PDS: Authorizing as fixture-user2.test");
-        "fixture_auth_code_user2"
+    // Handle PAR flow where request_uri is provided instead of direct parameters
+    let (redirect_uri, scope, auth_code) = if let Some(request_uri) = &params.request_uri {
+        println!("PDS: Handling PAR authorization with request_uri: {}", request_uri);
+        
+        // For PAR, we stored the redirect_uri and other info in the request_uri
+        // In a real implementation, this would be looked up from storage
+        let redirect_uri = "http://localhost:3000/oauth/bsky/callback".to_string();
+        
+        // Determine user based on request_uri
+        let (scope, auth_code) = if request_uri.contains("user2") {
+            println!("PDS: PAR flow - Authorizing as fixture-user2.test");
+            ("profile.handle:fixture-user2.test".to_string(), "fixture_auth_code_user2")
+        } else {
+            println!("PDS: PAR flow - Authorizing as fixture-user.test");
+            ("profile.handle:fixture-user.test".to_string(), "fixture_auth_code_12345")
+        };
+        
+        (redirect_uri, scope, auth_code)
     } else {
-        println!("PDS: Authorizing as fixture-user.test");
-        "fixture_auth_code_12345"
+        // Traditional OAuth flow
+        let redirect_uri = params.redirect_uri.clone()
+            .unwrap_or_else(|| "http://localhost:3000/oauth/bsky/callback".to_string());
+        
+        println!("PDS: Handling traditional OAuth authorization with redirect_uri: {}", redirect_uri);
+
+        // The handle is passed as a scope in the form "profile.handle:fixture-user.test"
+        let scope = all_params
+            .get("scope")
+            .unwrap_or(&"".to_string())
+            .to_string();
+        println!("PDS: OAuth scope: {}", scope);
+
+        // Determine which user is being authorized based on the handle in the scope
+        let auth_code = if scope.contains("fixture-user2.test") {
+            println!("PDS: Authorizing as fixture-user2.test");
+            "fixture_auth_code_user2"
+        } else {
+            println!("PDS: Authorizing as fixture-user.test");
+            "fixture_auth_code_12345"
+        };
+        
+        (redirect_uri, scope, auth_code)
     };
 
     // For fixtures, we'll auto-authorize and redirect back with a code
@@ -362,7 +396,7 @@ async fn authorize(
         state: params.state.as_deref(),
     };
     let query_string = serde_urlencoded::to_string(&redirect_params).unwrap(); // SAFETY: We are in fixtures so a panic is fine
-    let redirect_url = format!("{}?{}", params.redirect_uri, query_string);
+    let redirect_url = format!("{}?{}", redirect_uri, query_string);
 
     println!("PDS: Redirecting to: {}", redirect_url);
 
@@ -390,10 +424,14 @@ async fn push_authorization(
     };
 
     // Return a request URI that the client will redirect to
-    Json(json!({
-        "request_uri": request_uri,
-        "expires_in": 60
-    }))
+    // PAR typically returns 201 Created
+    (
+        axum::http::StatusCode::CREATED,
+        Json(json!({
+            "request_uri": request_uri,
+            "expires_in": 60
+        }))
+    )
 }
 
 // The token endpoint
@@ -418,22 +456,47 @@ async fn get_token(
     if is_user2 {
         println!("PDS: Issuing tokens for fixture-user2.test");
         // Return tokens for the second user
+        // Return a properly structured token response for testing
+        // Note: In a real implementation, these would be properly signed JWTs
         Json(json!({
-            "access_token": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJkaWQ6cGxjOmJiYmJiIiwiZXhwIjoxNzA5MTIzNDU2fQ.fixture-user2",
-            "refresh_token": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJkaWQ6cGxjOmJiYmJiIiwiZXhwIjoxNzA5MTIzNDU2fQ.refresh-fixture-user2",
+            "access_token": "fixture_access_token_user2",
+            "refresh_token": "fixture-refresh-token-user2",
             "token_type": "bearer",
             "expires_in": 3600,
-            "scope": "read write profile email"
+            "scope": "atproto transition:generic"
         }))
     } else {
         println!("PDS: Issuing tokens for fixture-user.test");
         // Default to first user's tokens
+        // Return a properly structured token response for testing
+        // Note: In a real implementation, these would be properly signed JWTs
         Json(json!({
-            "access_token": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJkaWQ6cGxjOmFiY2RlZmciLCJleHAiOjE3MDkxMjM0NTZ9.fixture",
-            "refresh_token": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJkaWQ6cGxjOmFiY2RlZmciLCJleHAiOjE3MDkxMjM0NTZ9.refresh-fixture",
+            "access_token": "fixture_access_token_user1",
+            "refresh_token": "fixture-refresh-token",
             "token_type": "bearer",
             "expires_in": 3600,
-            "scope": "read write profile email"
+            "scope": "atproto transition:generic"
         }))
     }
+}
+
+// JWKS endpoint for JWT verification
+async fn jwks() -> impl IntoResponse {
+    println!("PDS: Returning JWKS for token verification");
+    
+    // Return a test JWKS with a dummy ES256 key for fixture testing
+    // In production, this would contain the actual public keys used to verify JWTs
+    Json(json!({
+        "keys": [
+            {
+                "kty": "EC",
+                "use": "sig",
+                "crv": "P-256",
+                "kid": "fixture-key-1",
+                "x": "f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU",
+                "y": "x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0",
+                "alg": "ES256"
+            }
+        ]
+    }))
 }

@@ -1,9 +1,9 @@
-use std::{collections::BTreeSet, error::Error, sync::Arc};
+use std::{collections::BTreeSet, sync::Arc};
 
 use atrium_api::types::string::Did;
 use atrium_identity::{
-    did::{CommonDidResolver, CommonDidResolverConfig, DEFAULT_PLC_DIRECTORY_URL},
-    handle::{AtprotoHandleResolver, AtprotoHandleResolverConfig, DnsTxtResolver},
+    did::{CommonDidResolver, CommonDidResolverConfig},
+    handle::{AppViewHandleResolver, AppViewHandleResolverConfig},
 };
 use atrium_oauth::{
     store::{
@@ -27,30 +27,12 @@ use crate::{
 
 use crate::orm::prelude::*;
 
-pub struct SomeDnsTxtResolver;
-
-impl DnsTxtResolver for SomeDnsTxtResolver {
-    async fn resolve(
-        &self,
-        domain: &str,
-    ) -> Result<Vec<String>, Box<dyn Error + Send + Sync + 'static>> {
-        let resolver = trust_dns_resolver::TokioAsyncResolver::tokio(
-            trust_dns_resolver::config::ResolverConfig::default(),
-            trust_dns_resolver::config::ResolverOpts::default(),
-        );
-        let response = resolver.txt_lookup(domain).await?;
-        Ok(response.iter().map(|r| r.to_string()).collect())
-    }
-}
 
 pub type AtriumOAuthClient = atrium_oauth::OAuthClient<
     DbStateStore,
     DbSessionStore,
     atrium_identity::did::CommonDidResolver<atrium_oauth::DefaultHttpClient>,
-    atrium_identity::handle::AtprotoHandleResolver<
-        SomeDnsTxtResolver,
-        atrium_oauth::DefaultHttpClient,
-    >,
+    atrium_identity::handle::AppViewHandleResolver<atrium_oauth::DefaultHttpClient>,
 >;
 
 pub fn get_private_jwk(bsky_oauth: &BlueskyOAuthConfig) -> cja::Result<elliptic_curve::JwkEcKey> {
@@ -231,11 +213,11 @@ pub fn get_atrium_oauth_client(
         keys: Some(vec![jose]),
         resolver: OAuthResolverConfig {
             did_resolver: CommonDidResolver::new(CommonDidResolverConfig {
-                plc_directory_url: DEFAULT_PLC_DIRECTORY_URL.to_string(),
+                plc_directory_url: crate::did::get_plc_directory_url(),
                 http_client: Arc::clone(&http_client),
             }),
-            handle_resolver: AtprotoHandleResolver::new(AtprotoHandleResolverConfig {
-                dns_txt_resolver: SomeDnsTxtResolver,
+            handle_resolver: AppViewHandleResolver::new(AppViewHandleResolverConfig {
+                service_url: std::env::var("APPVIEW_URL").unwrap_or_else(|_| "https://bsky.social".to_string()),
                 http_client: Arc::clone(&http_client),
             }),
             authorization_server_metadata: Default::default(),

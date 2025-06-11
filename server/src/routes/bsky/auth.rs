@@ -32,6 +32,7 @@ pub async fn authorize(
         .authorize(
             params.did,
             AuthorizeOptions {
+                redirect_uri: Some(state.redirect_uri()),
                 scopes: vec![
                     Scope::Known(KnownScope::Atproto),
                     Scope::Known(KnownScope::TransitionGeneric),
