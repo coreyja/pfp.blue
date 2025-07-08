@@ -20,7 +20,6 @@ pub struct AuthParams {
     pub state: Option<String>,
 }
 
-
 /// Start the Bluesky OAuth flow
 pub async fn authorize(
     State(state): State<AppState>,
