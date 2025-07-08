@@ -10,8 +10,8 @@ use atrium_oauth::{
         session::Session,
         state::{InternalStateData, StateStore},
     },
-    AtprotoClientMetadata, DefaultHttpClient, GrantType, KnownScope, OAuthClient,
-    OAuthClientConfig, OAuthResolverConfig, Scope,
+    AtprotoClientMetadata, GrantType, KnownScope, OAuthClient, OAuthClientConfig,
+    OAuthResolverConfig, Scope,
 };
 use base64ct::Encoding as _;
 use color_eyre::eyre::Context as _;
@@ -22,6 +22,7 @@ use sea_orm::{
 
 use crate::{
     encryption::decrypt,
+    http::MyHttpClient,
     state::{BlueskyOAuthConfig, DomainSettings, EncryptionConfig},
 };
 
@@ -30,8 +31,9 @@ use crate::orm::prelude::*;
 pub type AtriumOAuthClient = atrium_oauth::OAuthClient<
     DbStateStore,
     DbSessionStore,
-    atrium_identity::did::CommonDidResolver<atrium_oauth::DefaultHttpClient>,
-    atrium_identity::handle::AppViewHandleResolver<atrium_oauth::DefaultHttpClient>,
+    atrium_identity::did::CommonDidResolver<MyHttpClient>,
+    atrium_identity::handle::AppViewHandleResolver<MyHttpClient>,
+    MyHttpClient,
 >;
 
 pub fn get_private_jwk(bsky_oauth: &BlueskyOAuthConfig) -> cja::Result<elliptic_curve::JwkEcKey> {
@@ -188,7 +190,8 @@ pub fn get_atrium_oauth_client(
     session_store: &DbSessionStore,
     state_store: &DbStateStore,
 ) -> cja::Result<AtriumOAuthClient> {
-    let http_client = Arc::new(DefaultHttpClient::default());
+    let http_client = MyHttpClient::default();
+    let arced_http_client = Arc::new(http_client.clone());
     let private_jwk = get_private_jwk(bsky_oauth)?;
     dbg!(&private_jwk);
     let jose = convert_jwk(private_jwk)
@@ -213,18 +216,19 @@ pub fn get_atrium_oauth_client(
         resolver: OAuthResolverConfig {
             did_resolver: CommonDidResolver::new(CommonDidResolverConfig {
                 plc_directory_url: crate::did::get_plc_directory_url(),
-                http_client: Arc::clone(&http_client),
+                http_client: arced_http_client.clone(),
             }),
             handle_resolver: AppViewHandleResolver::new(AppViewHandleResolverConfig {
                 service_url: std::env::var("APPVIEW_URL")
                     .unwrap_or_else(|_| "https://bsky.social".to_string()),
-                http_client: Arc::clone(&http_client),
+                http_client: arced_http_client.clone(),
             }),
             authorization_server_metadata: Default::default(),
             protected_resource_metadata: Default::default(),
         },
         state_store: state_store.clone(),
         session_store: session_store.clone(),
+        http_client,
     };
 
     let client = OAuthClient::new(config).wrap_err("failed to create oauth client")?;

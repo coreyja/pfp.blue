@@ -13,6 +13,7 @@ mod cron;
 mod did;
 mod encryption;
 mod errors;
+mod http;
 mod jobs;
 mod oauth;
 mod prelude;
