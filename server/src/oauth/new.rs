@@ -43,7 +43,7 @@ pub fn get_private_jwk(bsky_oauth: &BlueskyOAuthConfig) -> cja::Result<elliptic_
     )
     .wrap_err("Failed to decode base64-encoded private key")?;
     let decoded_private_key = String::from_utf8(decoded_private_key)?;
-    println!("decoded_private_key: {}", decoded_private_key);
+    println!("decoded_private_key: {decoded_private_key}");
     let secret_key = SecretKey::<p256::NistP256>::from_sec1_pem(&decoded_private_key)?;
     let jwk = secret_key.to_jwk();
 

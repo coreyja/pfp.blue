@@ -34,7 +34,7 @@ pub fn generate_jwk(public_key_base64: &str) -> cja::Result<Jwk> {
     let key_preview = if decoded_key.len() > 30 {
         format!("{:?}...", &decoded_key[..30])
     } else {
-        format!("{:?}", decoded_key)
+        format!("{decoded_key:?}")
     };
     tracing::debug!("Public key starts with: {}", key_preview);
     dbg!(&decoded_key);
@@ -45,7 +45,7 @@ pub fn generate_jwk(public_key_base64: &str) -> cja::Result<Jwk> {
 
     // Parse the public key from PEM format
     let verifying_key = VerifyingKey::from_public_key_pem(key_str)
-        .wrap_err_with(|| format!("Failed to parse public key. Key preview: {}", key_preview))?;
+        .wrap_err_with(|| format!("Failed to parse public key. Key preview: {key_preview}"))?;
 
     // Get the public key as an EncodedPoint
     let public_key = PublicKey::from(verifying_key);

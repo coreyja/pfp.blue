@@ -94,7 +94,7 @@ async fn root_page(optional_user: OptionalUser, State(state): State<AppState>) -
             };
 
             // Personalized greeting with display name
-            let greeting_text = format!("Welcome back, @{}!", display_name);
+            let greeting_text = format!("Welcome back, @{display_name}!");
 
             // Action buttons for logged in users
             let action_buttons = maud::html! {

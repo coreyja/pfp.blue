@@ -85,13 +85,13 @@ pub fn create_job_from_name_and_args(
                 .get("account_id")
                 .ok_or("Missing required arg: account_id")?;
             let account_id = uuid::Uuid::from_str(account_id_str)
-                .map_err(|e| format!("Invalid UUID for account_id: {}", e))?;
+                .map_err(|e| format!("Invalid UUID for account_id: {e}"))?;
             Ok(JobType::UpdateProfilePicture(
                 UpdateProfilePictureProgressJob { account_id },
             ))
         }
 
-        _ => Err(format!("Unknown job type: {}", job_name)),
+        _ => Err(format!("Unknown job type: {job_name}")),
     }
 }
 

@@ -16,14 +16,14 @@ pub async fn fetch_blob_by_cid(
     // Resolve the DID using our helper function
     let did_obj = crate::did::resolve_did_or_handle(did_or_handle, app_state.bsky_client.clone())
         .await
-        .wrap_err_with(|| format!("Failed to resolve DID or handle: {}", did_or_handle))?;
+        .wrap_err_with(|| format!("Failed to resolve DID or handle: {did_or_handle}"))?;
     let did_str = did_obj.to_string();
 
     // Try to fetch the blob using our api module
     let client = reqwest::Client::new();
     let pds_endpoint = crate::api::find_pds_endpoint(&did_str, app_state.bsky_client.clone())
         .await
-        .wrap_err_with(|| format!("Failed to find PDS endpoint for DID: {}", did_str))?;
+        .wrap_err_with(|| format!("Failed to find PDS endpoint for DID: {did_str}"))?;
 
     // Construct the getBlob URL using the PDS endpoint with the resolved DID
     #[derive(Serialize)]
@@ -35,8 +35,7 @@ pub async fn fetch_blob_by_cid(
     let blob_params = BlobUrlParams { did: &did_str, cid };
     let query_string = serde_urlencoded::to_string(&blob_params)?;
     let blob_url = format!(
-        "{}/xrpc/com.atproto.sync.getBlob?{}",
-        pds_endpoint, query_string
+        "{pds_endpoint}/xrpc/com.atproto.sync.getBlob?{query_string}"
     );
     info!("Requesting blob from PDS: {}", blob_url);
 
@@ -45,7 +44,7 @@ pub async fn fetch_blob_by_cid(
         .get(&blob_url)
         .send()
         .await
-        .wrap_err_with(|| format!("Failed to send request to PDS for blob: {}", blob_url))?;
+        .wrap_err_with(|| format!("Failed to send request to PDS for blob: {blob_url}"))?;
 
     if !response.status().is_success() {
         let status = response.status();

@@ -46,12 +46,11 @@ impl<R: IntoResponse> IntoResponse for ServerError<R> {
     <div class="error-container">
         <div class="error-title">Development Mode - Internal Server Error</div>
         <div class="error-details">
-            <pre>{}</pre>
+            <pre>{error_text}</pre>
         </div>
     </div>
 </body>
-</html>"#,
-                    error_text
+</html>"#
                 );
 
                 return (StatusCode::INTERNAL_SERVER_ERROR, Html(error_html)).into_response();

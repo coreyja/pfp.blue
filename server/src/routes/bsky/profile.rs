@@ -442,7 +442,7 @@ async fn display_profile_multi(
                                                 @if let Ok(data) = crate::routes::bsky::fetch_blob_by_cid(&primary_account.did, cid, state).await {
                                                     @let mime_type = original_blob.get("mimeType").and_then(|m| m.as_str()).unwrap_or("image/jpeg");
                                                     @let base64_data = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &data);
-                                                    @let img_src = format!("data:{};base64,{}", mime_type, base64_data);
+                                                    @let img_src = format!("data:{mime_type};base64,{base64_data}");
 
                                                     div class="flex flex-col items-center" {
                                                         div class="w-14 h-14 sm:w-16 sm:h-16 rounded-full overflow-hidden border-2 border-green-200 bg-white" {
@@ -493,7 +493,7 @@ async fn display_profile_multi(
 
     // Use the Page struct to wrap the content without additional header
     Page::new(
-        format!("{} - Bluesky Profile - pfp.blue", display_name),
+        format!("{display_name} - Bluesky Profile - pfp.blue"),
         Box::new(content),
     )
     .render()

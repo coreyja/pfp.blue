@@ -98,7 +98,7 @@ async fn spawn_application_tasks(
 
 /// Check if a feature is enabled based on environment variables
 fn is_feature_enabled(feature: &str) -> bool {
-    let env_var_name = format!("{}_DISABLED", feature);
+    let env_var_name = format!("{feature}_DISABLED");
     let value = std::env::var(&env_var_name).unwrap_or_else(|_| "false".to_string());
 
     value != "true"
@@ -115,7 +115,7 @@ mod tests {
         let test_feature = "UNIQUE_TEST_FEATURE_FOR_NOT_SET_TEST";
 
         // Ensure the environment variable is not set
-        env::remove_var(format!("{}_DISABLED", test_feature));
+        env::remove_var(format!("{test_feature}_DISABLED"));
 
         // Feature should be enabled when env var is not set
         assert!(is_feature_enabled(test_feature));
@@ -129,13 +129,13 @@ mod tests {
         let test_feature = "UNIQUE_TEST_FEATURE_FOR_FALSE_TEST";
 
         // Set the environment variable to "false"
-        env::set_var(format!("{}_DISABLED", test_feature), "false");
+        env::set_var(format!("{test_feature}_DISABLED"), "false");
 
         // Feature should be enabled when env var is "false"
         assert!(is_feature_enabled(test_feature));
 
         // Clean up
-        env::remove_var(format!("{}_DISABLED", test_feature));
+        env::remove_var(format!("{test_feature}_DISABLED"));
 
         Ok(())
     }
@@ -146,13 +146,13 @@ mod tests {
         let test_feature = "UNIQUE_TEST_FEATURE_FOR_DISABLED_TEST";
 
         // Set the environment variable to "true"
-        env::set_var(format!("{}_DISABLED", test_feature), "true");
+        env::set_var(format!("{test_feature}_DISABLED"), "true");
 
         // Feature should be disabled when env var is "true"
         assert!(!is_feature_enabled(test_feature));
 
         // Clean up
-        env::remove_var(format!("{}_DISABLED", test_feature));
+        env::remove_var(format!("{test_feature}_DISABLED"));
 
         Ok(())
     }
@@ -163,13 +163,13 @@ mod tests {
         let test_feature = "UNIQUE_TEST_FEATURE_FOR_OTHER_VALUES_TEST";
 
         // Set the environment variable to something other than "true"
-        env::set_var(format!("{}_DISABLED", test_feature), "yes");
+        env::set_var(format!("{test_feature}_DISABLED"), "yes");
 
         // Feature should be enabled when env var is not exactly "true"
         assert!(is_feature_enabled(test_feature));
 
         // Clean up
-        env::remove_var(format!("{}_DISABLED", test_feature));
+        env::remove_var(format!("{test_feature}_DISABLED"));
 
         Ok(())
     }
@@ -243,13 +243,12 @@ mod tests {
                 .wrap_err("Failed to generate progress image")?;
 
             // Save the generated image
-            let filename = format!("progress_{:.2}.png", progress);
+            let filename = format!("progress_{progress:.2}.png");
             fs::write(test_dir.join(filename), &progress_image_data)
                 .wrap_err("Failed to save image")?;
 
             println!(
-                "Generated progress image with progress value: {:.2}",
-                progress
+                "Generated progress image with progress value: {progress:.2}"
             );
         }
 

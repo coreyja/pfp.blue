@@ -53,7 +53,7 @@ async fn resolve_did(
     State(state): State<AppState>,
     axum::extract::Path(did): axum::extract::Path<String>,
 ) -> impl IntoResponse {
-    println!("PLC DIRECTORY: Resolving DID: {}", did);
+    println!("PLC DIRECTORY: Resolving DID: {did}");
 
     // Return different DID documents based on the requested DID
     match did.as_str() {

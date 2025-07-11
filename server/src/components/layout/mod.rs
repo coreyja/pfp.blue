@@ -162,7 +162,7 @@ impl Render for ContentSection {
         let mut classes = self.padding.clone();
 
         if let Some(margin) = &self.negative_margin_top {
-            classes = format!("{} {} relative z-10", classes, margin);
+            classes = format!("{classes} {margin} relative z-10");
         }
 
         html! {

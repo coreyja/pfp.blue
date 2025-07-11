@@ -46,7 +46,7 @@ impl BlueskyOAuthConfig {
         let key_preview = if decoded_private_key.len() > 30 {
             format!("{:?}...", &decoded_private_key[..30])
         } else {
-            format!("{:?}", decoded_private_key)
+            format!("{decoded_private_key:?}")
         };
 
         let mut private_temp_file =
@@ -80,7 +80,7 @@ impl BlueskyOAuthConfig {
         let pub_key_preview = if decoded_public_key.len() > 30 {
             format!("{:?}...", &decoded_public_key[..30])
         } else {
-            format!("{:?}", decoded_public_key)
+            format!("{decoded_public_key:?}")
         };
 
         let mut public_temp_file =
@@ -196,7 +196,7 @@ impl AppState {
 
         let appview_url =
             env::var("APPVIEW_URL").unwrap_or_else(|_| "https://bsky.social".to_string());
-        println!("APPVIEW_URL: {}", appview_url);
+        println!("APPVIEW_URL: {appview_url}");
         println!("PLC_DIRECTORY_URL: {}", crate::did::get_plc_directory_url());
 
         let client = ReqwestClientBuilder::new(&appview_url)

@@ -77,8 +77,7 @@ async fn main() -> anyhow::Result<()> {
 async fn oauth_protected_resource(State(state): State<AppState>) -> impl IntoResponse {
     let base_url = format!("http://localhost:{}", state.port);
     println!(
-        "PDS: Returning oauth-protected-resource with auth server: {}",
-        base_url
+        "PDS: Returning oauth-protected-resource with auth server: {base_url}"
     );
     Json(json!({
         // This matches what the real API returns - has to contain an array
@@ -349,8 +348,7 @@ async fn authorize(
     // Handle PAR flow where request_uri is provided instead of direct parameters
     let (redirect_uri, auth_code) = if let Some(request_uri) = &params.request_uri {
         println!(
-            "PDS: Handling PAR authorization with request_uri: {}",
-            request_uri
+            "PDS: Handling PAR authorization with request_uri: {request_uri}"
         );
 
         // For PAR, we stored the redirect_uri and other info in the request_uri
@@ -375,8 +373,7 @@ async fn authorize(
             .unwrap_or_else(|| "http://localhost:3000/oauth/bsky/callback".to_string());
 
         println!(
-            "PDS: Handling traditional OAuth authorization with redirect_uri: {}",
-            redirect_uri
+            "PDS: Handling traditional OAuth authorization with redirect_uri: {redirect_uri}"
         );
 
         // The handle is passed as a scope in the form "profile.handle:fixture-user.test"
@@ -384,7 +381,7 @@ async fn authorize(
             .get("scope")
             .unwrap_or(&"".to_string())
             .to_string();
-        println!("PDS: OAuth scope: {}", scope);
+        println!("PDS: OAuth scope: {scope}");
 
         // Determine which user is being authorized based on the handle in the scope
         let auth_code = if scope.contains("fixture-user2.test") {
@@ -404,9 +401,9 @@ async fn authorize(
         state: params.state.as_deref(),
     };
     let query_string = serde_urlencoded::to_string(&redirect_params).unwrap(); // SAFETY: We are in fixtures so a panic is fine
-    let redirect_url = format!("{}?{}", redirect_uri, query_string);
+    let redirect_url = format!("{redirect_uri}?{query_string}");
 
-    println!("PDS: Redirecting to: {}", redirect_url);
+    println!("PDS: Redirecting to: {redirect_url}");
 
     // Redirect to callback URL with auth code
     axum::response::Redirect::to(&redirect_url)
@@ -420,7 +417,7 @@ async fn push_authorization(
 
     // The handle is passed as a scope in the form "profile.handle:fixture-user.test"
     let scope = params.get("scope").unwrap_or(&"".to_string()).to_string();
-    println!("PDS: Push authorization scope: {}", scope);
+    println!("PDS: Push authorization scope: {scope}");
 
     // Determine which user is being authorized based on the handle in the scope
     let request_uri = if scope.contains("fixture-user2.test") {
