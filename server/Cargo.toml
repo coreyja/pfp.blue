@@ -86,7 +86,8 @@ urlencoding = "2.1"
 bsky-sdk = { version = "0.1.18", default-features = false, features = [
   "rich-text",
 ] }
-atrium-oauth = { version = "0.1.1", default-features = false, features = [] }
+atrium-oauth = { version = "0.1.1", default-features = false, features = [
+], path = "../../atrium/atrium-oauth" }
 image = "0.24"
 # Dependencies for profile picture progress feature
 imageproc = "0.23"
@@ -97,12 +98,12 @@ include_dir = "0.7.3"
 mime_guess = "2.0.4"
 mime = "0.3.17"
 serde_urlencoded = "0.7.1"
-atrium-identity = "0.1.3"
-atrium-api = "0.25.2"
-atrium-common = "0.1.1"
-atrium-xrpc-client = { version = "0.5.13", default-features = false, features = [
+atrium-identity = { version = "0.1.5", path = "../../atrium/atrium-identity" }
+atrium-api = { version = "0.25.4", path = "../../atrium/atrium-api" }
+atrium-common = { version = "0.1.2", path = "../../atrium/atrium-common" }
+atrium-xrpc-client = { version = "0.5.14", default-features = false, features = [
   "reqwest",
-] }
+], path = "../../atrium/atrium-xrpc-client" }
 sec1 = { version = "0.7.3", features = ["pem", "std"] }
 elliptic-curve = { version = "0.13.8", features = ["pem", "jwk", "std"] }
 jose-jwk = "0.1.2"
@@ -123,7 +124,7 @@ sea-query-binder = { version = "0.7.0", default-features = false, features = [
 sea-query = { version = "0.32.4", default-features = false, features = [
   "backend-postgres",
 ] }
-atrium-xrpc = "0.12.3"
+atrium-xrpc = { version = "0.12.3", path = "../../atrium/atrium-xrpc" }
 
 [build-dependencies]
 vergen = { version = "8.3.1", features = [

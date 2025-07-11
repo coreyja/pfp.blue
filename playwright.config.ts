@@ -80,8 +80,8 @@ export default defineConfig({
     command: `hivemind ${path.resolve(__dirname, 'Procfile.e2e')}`,
     url: 'http://localhost:3000',
     reuseExistingServer: !process.env.CI,
-    // stdout: 'pipe',
-    // stderr: 'pipe',
+    stdout: 'pipe',
+    stderr: 'pipe',
     timeout: 120000, // Increase timeout to 2 minutes
   },
 });

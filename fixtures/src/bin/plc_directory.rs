@@ -23,7 +23,7 @@ async fn main() -> anyhow::Result<()> {
     let args = Cli::parse();
 
     // Get URL of the PDS fixture
-    let pds_url = require_env_var("PDS_URL", args.common.force)?;
+    let pds_url = require_env_var("PDS_URL")?;
 
     let state = AppState { pds_url };
 

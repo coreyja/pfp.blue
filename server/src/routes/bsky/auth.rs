@@ -35,6 +35,7 @@ pub async fn authorize(
                     Scope::Known(KnownScope::Atproto),
                     Scope::Known(KnownScope::TransitionGeneric),
                 ],
+                state: params.state,
                 ..Default::default()
             },
         )

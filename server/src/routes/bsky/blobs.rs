@@ -34,9 +34,7 @@ pub async fn fetch_blob_by_cid(
 
     let blob_params = BlobUrlParams { did: &did_str, cid };
     let query_string = serde_urlencoded::to_string(&blob_params)?;
-    let blob_url = format!(
-        "{pds_endpoint}/xrpc/com.atproto.sync.getBlob?{query_string}"
-    );
+    let blob_url = format!("{pds_endpoint}/xrpc/com.atproto.sync.getBlob?{query_string}");
     info!("Requesting blob from PDS: {}", blob_url);
 
     // Create a request for the blob

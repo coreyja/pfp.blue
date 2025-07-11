@@ -247,9 +247,7 @@ mod tests {
             fs::write(test_dir.join(filename), &progress_image_data)
                 .wrap_err("Failed to save image")?;
 
-            println!(
-                "Generated progress image with progress value: {progress:.2}"
-            );
+            println!("Generated progress image with progress value: {progress:.2}");
         }
 
         println!(

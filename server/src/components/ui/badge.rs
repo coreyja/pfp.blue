@@ -45,9 +45,8 @@ impl Render for Badge {
         };
         let extra_classes = self.extra_classes.as_deref().unwrap_or("");
 
-        let classes = format!(
-            "{color_classes} text-xs font-medium px-2 py-1 {rounded} {extra_classes}"
-        );
+        let classes =
+            format!("{color_classes} text-xs font-medium px-2 py-1 {rounded} {extra_classes}");
 
         html! {
             span class=(classes) { (self.text) }

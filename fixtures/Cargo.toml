@@ -18,6 +18,21 @@ anyhow = "1.0"
 # Bluesky API types
 atrium-api = "0.25.0"
 
+# Database
+sqlx = { version = "0.8.5", default-features = false, features = [
+  "runtime-tokio-rustls",
+  "sqlite",
+  "chrono",
+  "uuid",
+] }
+uuid = { version = "1.6.1", features = ["v4"] }
+chrono = { version = "0.4.23", default-features = false, features = ["serde"] }
+base64 = "0.22"
+
+[dev-dependencies]
+reqwest = { version = "0.12", features = ["json"] }
+url = "2.5"
+
 [[bin]]
 name = "pds"
 path = "src/bin/pds.rs"
