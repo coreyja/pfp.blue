@@ -217,11 +217,9 @@ impl AppState {
             protocol: std::env::var("PROTO").unwrap_or_else(|_| "https".to_string()),
         };
 
-        let session_store =
-            crate::oauth::DbSessionStore::new(orm_pool.clone(), encryption.clone());
+        let session_store = crate::oauth::DbSessionStore::new(orm_pool.clone(), encryption.clone());
 
-        let state_store =
-            crate::oauth::DbStateStore::new(orm_pool.clone(), encryption.clone());
+        let state_store = crate::oauth::DbStateStore::new(orm_pool.clone(), encryption.clone());
 
         let atrium_oauth_client = crate::oauth::get_atrium_oauth_client(
             &bsky_oauth,

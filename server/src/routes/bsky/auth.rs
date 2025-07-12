@@ -4,6 +4,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Redirect},
 };
+use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -78,6 +79,11 @@ pub async fn set_primary_account(
 
     // Redirect back to provided path or profile page
     // FIX ME: Open redirect vulnerability here
-    let redirect_path = params.redirect.unwrap_or_else(|| "/me".to_string());
+    let profile_path = "/me".to_string();
+    let redirect_path = params.redirect.unwrap_or_else(|| profile_path.clone());
+    let parsed_redirect_path = Url::parse(&redirect_path);
+    let redirect_path = parsed_redirect_path
+        .map(|url| url.path().to_string())
+        .unwrap_or(profile_path);
     Redirect::to(&redirect_path).into_response()
 }

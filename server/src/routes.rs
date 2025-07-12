@@ -46,7 +46,7 @@ pub fn routes(app_state: AppState) -> axum::Router {
         .route("/_/job/run", post(admin_run_job))
         // Static files route
         .route(
-            "/static/*path",
+            "/static/{*path}",
             get(crate::static_assets::serve_static_file),
         )
         // Add trace layer for debugging

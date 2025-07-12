@@ -29,9 +29,9 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         // PLC Directory endpoints - support multiple patterns for DID resolution
-        .route("/did/:did", get(resolve_did))
+        .route("/did/{did}", get(resolve_did))
         // Support exact format that the CommonDidResolver uses
-        .route("/:did", get(resolve_did))
+        .route("/{did}", get(resolve_did))
         // Make sure we respond to requests without trailing slash too
         .route("/", get(|| async { "PLC Directory Fixture Server" }))
         // Add catch-all route for all paths to aid debugging

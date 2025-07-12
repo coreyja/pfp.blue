@@ -1,5 +1,4 @@
 use axum::{
-    async_trait,
     extract::FromRequestParts,
     http::{request::Parts, StatusCode},
     response::{IntoResponse, Redirect, Response},
@@ -31,7 +30,6 @@ pub struct AuthUser {
     pub session: Session,
 }
 
-#[async_trait]
 impl FromRequestParts<AppState> for AuthUser {
     type Rejection = Response;
 
@@ -95,7 +93,6 @@ pub struct AdminUser {
     pub user: User,
 }
 
-#[async_trait]
 impl FromRequestParts<AppState> for AdminUser {
     type Rejection = Response;
 
@@ -132,7 +129,6 @@ pub struct OptionalUser {
     pub session: Option<Session>,
 }
 
-#[async_trait]
 impl FromRequestParts<AppState> for OptionalUser {
     type Rejection = Response;
 
@@ -188,7 +184,7 @@ impl FromRequestParts<AppState> for OptionalUser {
             }),
             Err(err) => {
                 error!("Error getting user for session {}: {:?}", session_id, err);
-                return Err(StatusCode::INTERNAL_SERVER_ERROR.into_response());
+                Err(StatusCode::INTERNAL_SERVER_ERROR.into_response())
             }
         }
     }
