@@ -7,7 +7,7 @@ use color_eyre::eyre::{eyre, WrapErr};
 use sea_orm::DatabaseConnection;
 use sqlx::{postgres::PgPoolOptions, PgPool};
 
-use crate::oauth::new::{AtriumOAuthClient, DbSessionStore, DbStateStore};
+use crate::oauth::{AtriumOAuthClient, DbSessionStore, DbStateStore};
 
 #[derive(Clone)]
 pub struct BlueskyOAuthConfig {
@@ -218,12 +218,12 @@ impl AppState {
         };
 
         let session_store =
-            crate::oauth::new::DbSessionStore::new(orm_pool.clone(), encryption.clone());
+            crate::oauth::DbSessionStore::new(orm_pool.clone(), encryption.clone());
 
         let state_store =
-            crate::oauth::new::DbStateStore::new(orm_pool.clone(), encryption.clone());
+            crate::oauth::DbStateStore::new(orm_pool.clone(), encryption.clone());
 
-        let atrium_oauth_client = crate::oauth::new::get_atrium_oauth_client(
+        let atrium_oauth_client = crate::oauth::get_atrium_oauth_client(
             &bsky_oauth,
             &domain,
             &session_store,

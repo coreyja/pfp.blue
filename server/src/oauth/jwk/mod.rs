@@ -62,7 +62,7 @@ pub fn generate_jwk(public_key_base64: &str) -> cja::Result<Jwk> {
         .wrap_err("Missing y coordinate in public key")?;
 
     // Generate a unique ID for the key
-    let key_id = crate::oauth::new::generate_key_id(x_bytes, y_bytes)?;
+    let key_id = crate::oauth::generate_key_id(x_bytes, y_bytes)?;
 
     let mut ops = BTreeSet::new();
     ops.insert(Operations::Verify);
