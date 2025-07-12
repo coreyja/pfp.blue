@@ -30,7 +30,7 @@ chrono = { version = "0.4.23", default-features = false, features = ["serde"] }
 base64 = "0.22"
 
 [dev-dependencies]
-reqwest = { version = "0.12", features = ["json"] }
+reqwest.workspace = true
 url = "2.5"
 
 [[bin]]

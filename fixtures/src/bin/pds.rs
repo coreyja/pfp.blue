@@ -5,7 +5,6 @@ use axum::{
     Json, Router,
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-use chrono;
 use clap::Parser;
 use fixtures::{db, run_server, FixtureArgs};
 use serde::Serialize;
@@ -27,6 +26,7 @@ struct Cli {
 struct AppState {
     port: u16,
     db: Pool<Sqlite>,
+    avatar_cdn_url: String,
 }
 
 #[derive(Serialize)]
@@ -48,6 +48,8 @@ async fn main() -> anyhow::Result<()> {
     let state = AppState {
         port: args.common.port,
         db,
+        avatar_cdn_url: std::env::var("AVATAR_CDN_URL")
+            .unwrap_or_else(|_| "http://localhost:3003".to_string()),
     };
 
     let app = Router::new()
@@ -77,12 +79,41 @@ async fn main() -> anyhow::Result<()> {
         )
         .route("/xrpc/com.atproto.repo.uploadBlob", post(upload_blob))
         .route("/xrpc/com.atproto.repo.putRecord", post(put_record))
+        .route("/xrpc/app.bsky.actor.getProfile", get(get_profile))
         .with_state(state);
 
     run_server(args.common, app).await
 }
 
 // Handler implementations
+
+async fn get_profile(
+    State(state): State<AppState>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> impl IntoResponse {
+    // Check which actor is being requested
+    let default_actor = "did:plc:abcdefg".to_string();
+    let actor = params.get("actor").unwrap_or(&default_actor);
+
+    match actor.as_str() {
+        "did:plc:bbbbb" => Json(json!({
+            "did": "did:plc:bbbbb",
+            "handle": "fixture-user2.test",
+            "displayName": "Fixture User 2",
+            "description": "This is the second test user from the fixture server",
+            "avatar": format!("{}/img/avatar/plain/did:plc:bbbbb/bafyreic2hxcysikiv5rsr2okgujajrjrpz4kpf7se52jgygyz7d7u@jpeg", state.avatar_cdn_url),
+            "indexedAt": "2025-03-14T12:00:00.000Z"
+        })),
+        _ => Json(json!({
+            "did": "did:plc:abcdefg",
+            "handle": "fixture-user.test",
+            "displayName": "Fixture User",
+            "description": "This is a test user from the fixture server",
+            "avatar": format!("{}/img/avatar/plain/did:plc:abcdefg/bafyreib3hg56hnxcysikiv5rsr2okgujajrjrpz4kpf7se52jgygyz7d7u@jpeg", state.avatar_cdn_url),
+            "indexedAt": "2025-03-14T12:00:00.000Z"
+        })),
+    }
+}
 
 async fn oauth_protected_resource(State(state): State<AppState>) -> impl IntoResponse {
     let base_url = format!("http://localhost:{}", state.port);

@@ -85,7 +85,22 @@ pub async fn callback(
         })?;
 
     let account = match existing_account {
-        Some(account) => account,
+        Some(account) => {
+            let mut active_model: crate::orm::accounts::ActiveModel = account.into();
+            active_model.user_id = ActiveValue::Set(user.user_id);
+            let account = active_model
+                .update(&state.orm)
+                .await
+                .wrap_err("Failed to update account")
+                .map_err(|e| {
+                    tracing::error!("Account creation failed: {:?}", e);
+                    ServerError(
+                        e,
+                        (Redirect::to("/login?error=account_creation_failed")).into_response(),
+                    )
+                })?;
+            account
+        }
         None => {
             let account = crate::orm::accounts::ActiveModel {
                 did: ActiveValue::Set(did.to_string()),

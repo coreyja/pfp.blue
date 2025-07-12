@@ -105,6 +105,7 @@ pub async fn profile(
             );
         }
     }
+    let accounts = user.find_related(Accounts).all(&state.orm).await?;
 
     if accounts.is_empty() {
         return Ok(empty_profile().into_response());

@@ -7,7 +7,7 @@ use tokio::time::sleep;
 
 fn start_pds_server(port: u16) -> Child {
     Command::new("cargo")
-        .args(&[
+        .args([
             "run",
             "-p",
             "fixtures",
@@ -25,7 +25,7 @@ async fn wait_for_server(port: u16) {
     let client = reqwest::Client::new();
     for _ in 0..60 {
         if client
-            .get(format!("http://localhost:{}/.well-known/jwks.json", port))
+            .get(format!("http://localhost:{port}/.well-known/jwks.json"))
             .send()
             .await
             .is_ok()
@@ -34,7 +34,7 @@ async fn wait_for_server(port: u16) {
         }
         sleep(Duration::from_millis(500)).await;
     }
-    panic!("Server failed to start on port {}", port);
+    panic!("Server failed to start on port {port}");
 }
 
 #[tokio::test]
@@ -47,8 +47,7 @@ async fn test_oauth_protected_resource() {
 
     let response = client
         .get(format!(
-            "http://localhost:{}/.well-known/oauth-protected-resource",
-            port
+            "http://localhost:{port}/.well-known/oauth-protected-resource"
         ))
         .send()
         .await
@@ -59,12 +58,13 @@ async fn test_oauth_protected_resource() {
     let json: Value = response.json().await.unwrap();
     assert_eq!(
         json["authorization_servers"][0],
-        format!("http://localhost:{}", port)
+        format!("http://localhost:{port}")
     );
-    assert_eq!(json["resource"], format!("http://localhost:{}", port));
+    assert_eq!(json["resource"], format!("http://localhost:{port}"));
 
     // Cleanup
     server.kill().expect("Failed to kill server");
+    server.wait().expect("Failed to wait for server");
 }
 
 #[tokio::test]
@@ -77,8 +77,7 @@ async fn test_oauth_authorization_server() {
 
     let response = client
         .get(format!(
-            "http://localhost:{}/.well-known/oauth-authorization-server",
-            port
+            "http://localhost:{port}/.well-known/oauth-authorization-server"
         ))
         .send()
         .await
@@ -87,10 +86,10 @@ async fn test_oauth_authorization_server() {
     assert_eq!(response.status(), reqwest::StatusCode::OK);
 
     let json: Value = response.json().await.unwrap();
-    assert_eq!(json["issuer"], format!("http://localhost:{}", port));
+    assert_eq!(json["issuer"], format!("http://localhost:{port}"));
     assert_eq!(
         json["token_endpoint"],
-        format!("http://localhost:{}/xrpc/com.atproto.server.getToken", port)
+        format!("http://localhost:{port}/xrpc/com.atproto.server.getToken")
     );
     assert!(json["scopes_supported"]
         .as_array()
@@ -99,6 +98,7 @@ async fn test_oauth_authorization_server() {
 
     // Cleanup
     server.kill().expect("Failed to kill server");
+    server.wait().expect("Failed to wait for server");
 }
 
 #[tokio::test]
@@ -110,7 +110,7 @@ async fn test_jwks_endpoint() {
     wait_for_server(port).await;
 
     let response = client
-        .get(format!("http://localhost:{}/.well-known/jwks.json", port))
+        .get(format!("http://localhost:{port}/.well-known/jwks.json"))
         .send()
         .await
         .unwrap();
@@ -124,6 +124,7 @@ async fn test_jwks_endpoint() {
 
     // Cleanup
     server.kill().expect("Failed to kill server");
+    server.wait().expect("Failed to wait for server");
 }
 
 #[tokio::test]
@@ -140,8 +141,7 @@ async fn test_oauth_authorization_flow() {
     // Test authorization endpoint with fixture-user.test
     let response = client
         .get(format!(
-            "http://localhost:{}/xrpc/com.atproto.server.authorize",
-            port
+            "http://localhost:{port}/xrpc/com.atproto.server.authorize"
         ))
         .query(&[
             ("client_id", "did:web:example.com"),
@@ -177,8 +177,7 @@ async fn test_oauth_authorization_flow() {
     // Test token endpoint
     let token_response = client
         .post(format!(
-            "http://localhost:{}/xrpc/com.atproto.server.getToken",
-            port
+            "http://localhost:{port}/xrpc/com.atproto.server.getToken"
         ))
         .form(&[
             ("grant_type", "authorization_code"),
@@ -213,7 +212,7 @@ async fn test_oauth_authorization_flow() {
     // Decode and validate JWT payload
     let payload_bytes = URL_SAFE_NO_PAD.decode(parts[1]).unwrap();
     let payload: Value = serde_json::from_slice(&payload_bytes).unwrap();
-    assert_eq!(payload["iss"], format!("http://localhost:{}", port));
+    assert_eq!(payload["iss"], format!("http://localhost:{port}"));
     assert_eq!(payload["sub"], "did:plc:abcdefg");
     assert_eq!(payload["aud"], "did:plc:abcdefg");
     assert!(payload["iat"].is_number());
@@ -222,6 +221,7 @@ async fn test_oauth_authorization_flow() {
 
     // Cleanup
     server.kill().expect("Failed to kill server");
+    server.wait().expect("Failed to wait for server");
 }
 
 #[tokio::test]
@@ -238,8 +238,7 @@ async fn test_oauth_authorization_flow_user2() {
     // Test authorization endpoint with fixture-user2.test
     let response = client
         .get(format!(
-            "http://localhost:{}/xrpc/com.atproto.server.authorize",
-            port
+            "http://localhost:{port}/xrpc/com.atproto.server.authorize"
         ))
         .query(&[
             ("client_id", "did:web:example.com"),
@@ -270,8 +269,7 @@ async fn test_oauth_authorization_flow_user2() {
     // Test token endpoint for user2
     let token_response = client
         .post(format!(
-            "http://localhost:{}/xrpc/com.atproto.server.getToken",
-            port
+            "http://localhost:{port}/xrpc/com.atproto.server.getToken"
         ))
         .form(&[
             ("grant_type", "authorization_code"),
@@ -297,6 +295,7 @@ async fn test_oauth_authorization_flow_user2() {
 
     // Cleanup
     server.kill().expect("Failed to kill server");
+    server.wait().expect("Failed to wait for server");
 }
 
 #[tokio::test]
@@ -310,8 +309,7 @@ async fn test_pushed_authorization_request() {
     // Test PAR endpoint
     let par_response = client
         .post(format!(
-            "http://localhost:{}/xrpc/com.atproto.server.pushAuthorization",
-            port
+            "http://localhost:{port}/xrpc/com.atproto.server.pushAuthorization"
         ))
         .form(&[
             ("client_id", "did:web:example.com"),
@@ -341,8 +339,7 @@ async fn test_pushed_authorization_request() {
 
     let auth_response = client_no_redirect
         .get(format!(
-            "http://localhost:{}/xrpc/com.atproto.server.authorize",
-            port
+            "http://localhost:{port}/xrpc/com.atproto.server.authorize"
         ))
         .query(&[("request_uri", request_uri)])
         .send()
@@ -363,6 +360,7 @@ async fn test_pushed_authorization_request() {
 
     // Cleanup
     server.kill().expect("Failed to kill server");
+    server.wait().expect("Failed to wait for server");
 }
 
 #[tokio::test]
@@ -376,8 +374,7 @@ async fn test_invalid_auth_code() {
     // Test token endpoint with invalid auth code
     let token_response = client
         .post(format!(
-            "http://localhost:{}/xrpc/com.atproto.server.getToken",
-            port
+            "http://localhost:{port}/xrpc/com.atproto.server.getToken"
         ))
         .form(&[
             ("grant_type", "authorization_code"),
@@ -396,6 +393,7 @@ async fn test_invalid_auth_code() {
 
     // Cleanup
     server.kill().expect("Failed to kill server");
+    server.wait().expect("Failed to wait for server");
 }
 
 #[tokio::test]
@@ -409,8 +407,7 @@ async fn test_missing_auth_code() {
     // Test token endpoint without auth code
     let token_response = client
         .post(format!(
-            "http://localhost:{}/xrpc/com.atproto.server.getToken",
-            port
+            "http://localhost:{port}/xrpc/com.atproto.server.getToken"
         ))
         .form(&[
             ("grant_type", "authorization_code"),
@@ -432,4 +429,5 @@ async fn test_missing_auth_code() {
 
     // Cleanup
     server.kill().expect("Failed to kill server");
+    server.wait().expect("Failed to wait for server");
 }
