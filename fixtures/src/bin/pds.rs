@@ -4,10 +4,14 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use clap::Parser;
-use fixtures::{run_server, FixtureArgs};
+use fixtures::{db, run_server, FixtureArgs};
 use serde::Serialize;
 use serde_json::json;
+use sqlx::{Pool, Sqlite};
+use tracing::info;
+use uuid::Uuid;
 
 /// PDS (Personal Data Server) fixture server
 #[derive(Parser, Debug)]
@@ -21,6 +25,8 @@ struct Cli {
 #[derive(Clone)]
 struct AppState {
     port: u16,
+    db: Pool<Sqlite>,
+    avatar_cdn_url: String,
 }
 
 #[derive(Serialize)]
@@ -36,8 +42,14 @@ async fn main() -> anyhow::Result<()> {
 
     // We don't have any specific env vars to check for the PDS fixture
 
+    // Initialize the in-memory database
+    let db = db::init_database().await?;
+
     let state = AppState {
         port: args.common.port,
+        db,
+        avatar_cdn_url: std::env::var("AVATAR_CDN_URL")
+            .unwrap_or_else(|_| "http://localhost:3003".to_string()),
     };
 
     let app = Router::new()
@@ -50,6 +62,7 @@ async fn main() -> anyhow::Result<()> {
             "/.well-known/oauth-authorization-server",
             get(oauth_authorization_server),
         )
+        .route("/.well-known/jwks.json", get(jwks))
         // OAuth protocol endpoints
         .route("/xrpc/com.atproto.server.authorize", get(authorize))
         .route(
@@ -66,6 +79,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .route("/xrpc/com.atproto.repo.uploadBlob", post(upload_blob))
         .route("/xrpc/com.atproto.repo.putRecord", post(put_record))
+        .route("/xrpc/app.bsky.actor.getProfile", get(get_profile))
         .with_state(state);
 
     run_server(args.common, app).await
@@ -73,15 +87,43 @@ async fn main() -> anyhow::Result<()> {
 
 // Handler implementations
 
+async fn get_profile(
+    State(state): State<AppState>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> impl IntoResponse {
+    // Check which actor is being requested
+    let default_actor = "did:plc:abcdefg".to_string();
+    let actor = params.get("actor").unwrap_or(&default_actor);
+
+    match actor.as_str() {
+        "did:plc:bbbbb" => Json(json!({
+            "did": "did:plc:bbbbb",
+            "handle": "fixture-user2.test",
+            "displayName": "Fixture User 2",
+            "description": "This is the second test user from the fixture server",
+            "avatar": format!("{}/img/avatar/plain/did:plc:bbbbb/bafyreic2hxcysikiv5rsr2okgujajrjrpz4kpf7se52jgygyz7d7u@jpeg", state.avatar_cdn_url),
+            "indexedAt": "2025-03-14T12:00:00.000Z"
+        })),
+        _ => Json(json!({
+            "did": "did:plc:abcdefg",
+            "handle": "fixture-user.test",
+            "displayName": "Fixture User",
+            "description": "This is a test user from the fixture server",
+            "avatar": format!("{}/img/avatar/plain/did:plc:abcdefg/bafyreib3hg56hnxcysikiv5rsr2okgujajrjrpz4kpf7se52jgygyz7d7u@jpeg", state.avatar_cdn_url),
+            "indexedAt": "2025-03-14T12:00:00.000Z"
+        })),
+    }
+}
+
 async fn oauth_protected_resource(State(state): State<AppState>) -> impl IntoResponse {
     let base_url = format!("http://localhost:{}", state.port);
-    println!(
-        "PDS: Returning oauth-protected-resource with auth server: {}",
-        base_url
-    );
+    info!("PDS: Returning oauth-protected-resource with auth server: {base_url}");
     Json(json!({
         // This matches what the real API returns - has to contain an array
-        "authorization_servers": [base_url]
+        "authorization_servers": [base_url],
+        "resource": base_url,
+        "scopes_supported": ["read", "write", "profile", "email"],
+        "response_types_supported": ["code"]
     }))
 }
 
@@ -297,14 +339,23 @@ async fn put_record() -> impl IntoResponse {
 // OAuth authorization server metadata endpoint
 async fn oauth_authorization_server(State(state): State<AppState>) -> impl IntoResponse {
     let base_url = format!("http://localhost:{}", state.port);
-    println!("PDS: Returning oauth-authorization-server metadata");
+    info!("PDS: Returning oauth-authorization-server metadata");
 
     Json(json!({
         "issuer": base_url,
         "pushed_authorization_request_endpoint": format!("{}/xrpc/com.atproto.server.pushAuthorization", base_url),
         "authorization_endpoint": format!("{}/xrpc/com.atproto.server.authorize", base_url),
         "token_endpoint": format!("{}/xrpc/com.atproto.server.getToken", base_url),
-        "scopes_supported": ["read", "write", "profile", "email"]
+        "jwks_uri": format!("{}/.well-known/jwks.json", base_url),
+        "scopes_supported": ["read", "write", "profile", "email", "atproto", "transition:generic"],
+        "response_types_supported": ["code"],
+        "token_endpoint_auth_methods_supported": ["private_key_jwt", "client_secret_basic"],
+        "token_endpoint_auth_signing_alg_values_supported": ["ES256", "RS256"],
+        "code_challenge_methods_supported": ["S256"],
+        "grant_types_supported": ["authorization_code", "refresh_token"],
+        "dpop_signing_alg_values_supported": ["ES256"],
+        "require_pushed_authorization_requests": false,
+        "client_id_schemes_supported": ["did"]
     }))
 }
 
@@ -317,123 +368,429 @@ use axum::extract::Query;
 #[derive(Debug, serde::Deserialize)]
 #[allow(dead_code)]
 struct AuthorizeQuery {
-    client_id: String,
-    redirect_uri: String,
+    client_id: Option<String>,
+    redirect_uri: Option<String>,
     state: Option<String>,
-
     code_challenge: Option<String>,
-
     code_challenge_method: Option<String>,
-
     response_type: Option<String>,
+    request_uri: Option<String>,
 }
 
 // The authorization endpoint is what the browser gets redirected to
 async fn authorize(
+    State(app_state): State<AppState>,
     Query(params): Query<AuthorizeQuery>,
     axum::extract::Query(all_params): axum::extract::Query<
         std::collections::HashMap<String, String>,
     >,
 ) -> impl IntoResponse {
-    println!(
-        "PDS: Handling OAuth authorization request with redirect_uri: {}",
-        params.redirect_uri
-    );
+    // Handle PAR flow where request_uri is provided instead of direct parameters
+    let (redirect_uri, auth_code, _scope, _code_challenge, state) = if let Some(request_uri) =
+        &params.request_uri
+    {
+        info!("PDS: Handling PAR authorization with request_uri: {request_uri}");
 
-    // The handle is passed as a scope in the form "profile.handle:fixture-user.test"
-    let scope = all_params
-        .get("scope")
-        .unwrap_or(&"".to_string())
-        .to_string();
-    println!("PDS: OAuth scope: {}", scope);
+        // Look up the PAR request from the database
+        let par_data = sqlx::query_as::<
+            _,
+            (
+                String,
+                String,
+                Option<String>,
+                Option<String>,
+                Option<String>,
+                String,
+            ),
+        >(
+            r#"
+            SELECT client_id, redirect_uri, state, code_challenge, code_challenge_method, scope
+            FROM par_requests 
+            WHERE request_uri = ? AND expires_at > ?
+            "#,
+        )
+        .bind(request_uri)
+        .bind(chrono::Utc::now().timestamp())
+        .fetch_optional(&app_state.db)
+        .await;
 
-    // Determine which user is being authorized based on the handle in the scope
-    let auth_code = if scope.contains("fixture-user2.test") {
-        println!("PDS: Authorizing as fixture-user2.test");
-        "fixture_auth_code_user2"
+        match par_data {
+            Ok(Some((
+                client_id,
+                redirect_uri,
+                state,
+                code_challenge,
+                _code_challenge_method,
+                scope,
+            ))) => {
+                info!("PDS: Found PAR request for client_id: {client_id}, scope: {scope}");
+
+                // Determine user based on scope
+                let (auth_code, user_did, user_handle) = if scope.contains("fixture-user2.test") {
+                    info!("PDS: PAR flow - Authorizing as fixture-user2.test");
+                    (
+                        format!("fixture_auth_code_{}", Uuid::new_v4()),
+                        "did:plc:bbbbb".to_string(),
+                        "fixture-user2.test".to_string(),
+                    )
+                } else {
+                    info!("PDS: PAR flow - Authorizing as fixture-user.test");
+                    (
+                        format!("fixture_auth_code_{}", Uuid::new_v4()),
+                        "did:plc:abcdefg".to_string(),
+                        "fixture-user.test".to_string(),
+                    )
+                };
+
+                // Store the authorization code in the database
+                let expires_at = chrono::Utc::now().timestamp() + 600; // 10 minutes expiration
+                let _ = sqlx::query(
+                    r#"
+                    INSERT INTO auth_codes (
+                        code, request_uri, client_id, redirect_uri, user_did, 
+                        user_handle, scope, code_challenge, expires_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    "#,
+                )
+                .bind(&auth_code)
+                .bind(request_uri)
+                .bind(&client_id)
+                .bind(&redirect_uri)
+                .bind(&user_did)
+                .bind(&user_handle)
+                .bind(&scope)
+                .bind(&code_challenge)
+                .bind(expires_at)
+                .execute(&app_state.db)
+                .await;
+
+                (redirect_uri, auth_code, scope, code_challenge, state)
+            }
+            Ok(None) => {
+                tracing::error!("PAR request not found or expired: {request_uri}");
+                return (
+                    axum::http::StatusCode::BAD_REQUEST,
+                    Json(json!({
+                        "error": "invalid_request",
+                        "error_description": "Invalid or expired request_uri"
+                    })),
+                )
+                    .into_response();
+            }
+            Err(e) => {
+                tracing::error!("Failed to fetch PAR request: {}", e);
+                return (
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({
+                        "error": "server_error",
+                        "error_description": "Failed to process authorization request"
+                    })),
+                )
+                    .into_response();
+            }
+        }
     } else {
-        println!("PDS: Authorizing as fixture-user.test");
-        "fixture_auth_code_12345"
+        // Traditional OAuth flow
+        let redirect_uri = params
+            .redirect_uri
+            .clone()
+            .unwrap_or_else(|| "http://localhost:3000/oauth/bsky/callback".to_string());
+        let client_id = params.client_id.clone().unwrap_or_default();
+        let code_challenge = params.code_challenge.clone();
+
+        info!("PDS: Handling traditional OAuth authorization with redirect_uri: {redirect_uri}");
+
+        // The handle is passed as a scope in the form "profile.handle:fixture-user.test"
+        let scope = all_params
+            .get("scope")
+            .unwrap_or(&"".to_string())
+            .to_string();
+        info!("PDS: OAuth scope: {scope}");
+
+        // Determine which user is being authorized based on the handle in the scope
+        let (auth_code, user_did, user_handle) = if scope.contains("fixture-user2.test") {
+            info!("PDS: Authorizing as fixture-user2.test");
+            (
+                format!("fixture_auth_code_{}", Uuid::new_v4()),
+                "did:plc:bbbbb".to_string(),
+                "fixture-user2.test".to_string(),
+            )
+        } else {
+            info!("PDS: Authorizing as fixture-user.test");
+            (
+                format!("fixture_auth_code_{}", Uuid::new_v4()),
+                "did:plc:abcdefg".to_string(),
+                "fixture-user.test".to_string(),
+            )
+        };
+
+        // Store the authorization code in the database
+        let expires_at = chrono::Utc::now().timestamp() + 600; // 10 minutes expiration
+        let _ = sqlx::query(
+            r#"
+            INSERT INTO auth_codes (
+                code, request_uri, client_id, redirect_uri, user_did, 
+                user_handle, scope, code_challenge, expires_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&auth_code)
+        .bind(None::<String>) // No request_uri for traditional flow
+        .bind(&client_id)
+        .bind(&redirect_uri)
+        .bind(&user_did)
+        .bind(&user_handle)
+        .bind(&scope)
+        .bind(&code_challenge)
+        .bind(expires_at)
+        .execute(&app_state.db)
+        .await;
+
+        (
+            redirect_uri,
+            auth_code,
+            scope,
+            code_challenge,
+            params.state.clone(),
+        )
     };
 
     // For fixtures, we'll auto-authorize and redirect back with a code
     let redirect_params = OAuthRedirectParams {
-        code: auth_code,
-        state: params.state.as_deref(),
+        code: &auth_code,
+        state: state.as_deref(),
     };
     let query_string = serde_urlencoded::to_string(&redirect_params).unwrap(); // SAFETY: We are in fixtures so a panic is fine
-    let redirect_url = format!("{}?{}", params.redirect_uri, query_string);
+    let redirect_url = format!("{redirect_uri}?{query_string}");
 
-    println!("PDS: Redirecting to: {}", redirect_url);
+    info!("PDS: Redirecting to: {redirect_url}");
 
     // Redirect to callback URL with auth code
-    axum::response::Redirect::to(&redirect_url)
+    axum::response::Redirect::to(&redirect_url).into_response()
 }
 
 // The pushed authorization request endpoint
 async fn push_authorization(
+    State(state): State<AppState>,
     axum::extract::Form(params): axum::extract::Form<std::collections::HashMap<String, String>>,
 ) -> impl IntoResponse {
-    println!("PDS: Handling pushed authorization request");
+    info!("PDS: Handling pushed authorization request");
 
-    // The handle is passed as a scope in the form "profile.handle:fixture-user.test"
-    let scope = params.get("scope").unwrap_or(&"".to_string()).to_string();
-    println!("PDS: Push authorization scope: {}", scope);
+    // Extract parameters
+    let client_id = params.get("client_id").cloned().unwrap_or_default();
+    let redirect_uri = params
+        .get("redirect_uri")
+        .cloned()
+        .unwrap_or_else(|| "http://localhost:3000/oauth/bsky/callback".to_string());
+    let state_param = params.get("state").cloned();
+    let code_challenge = params.get("code_challenge").cloned();
+    let code_challenge_method = params.get("code_challenge_method").cloned();
+    let scope = params.get("scope").cloned().unwrap_or_default();
 
-    // Determine which user is being authorized based on the handle in the scope
-    let request_uri = if scope.contains("fixture-user2.test") {
-        println!("PDS: Using request URI for fixture-user2.test");
-        "urn:fixture:auth:user2:12345"
-    } else {
-        println!("PDS: Using request URI for fixture-user.test");
-        "urn:fixture:auth:12345"
-    };
+    info!("PDS: Push authorization scope: {scope}");
 
-    // Return a request URI that the client will redirect to
-    Json(json!({
-        "request_uri": request_uri,
-        "expires_in": 60
-    }))
+    // Generate a unique request URI
+    let request_uri = format!("urn:fixture:auth:{}", Uuid::new_v4());
+
+    // Store the PAR request in the database
+    let expires_at = chrono::Utc::now().timestamp() + 60; // 60 seconds expiration
+
+    let result = sqlx::query(
+        r#"
+        INSERT INTO par_requests (
+            request_uri, client_id, redirect_uri, state, 
+            code_challenge, code_challenge_method, scope, expires_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        "#,
+    )
+    .bind(&request_uri)
+    .bind(&client_id)
+    .bind(&redirect_uri)
+    .bind(&state_param)
+    .bind(&code_challenge)
+    .bind(&code_challenge_method)
+    .bind(&scope)
+    .bind(expires_at)
+    .execute(&state.db)
+    .await;
+
+    match result {
+        Ok(_) => {
+            info!("PDS: Stored PAR request with URI: {request_uri}");
+            // Return a request URI that the client will redirect to
+            // PAR typically returns 201 Created
+            (
+                axum::http::StatusCode::CREATED,
+                Json(json!({
+                    "request_uri": request_uri,
+                    "expires_in": 60
+                })),
+            )
+        }
+        Err(e) => {
+            tracing::error!("Failed to store PAR request: {}", e);
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "error": "server_error",
+                    "error_description": "Failed to store authorization request"
+                })),
+            )
+        }
+    }
 }
 
 // The token endpoint
 async fn get_token(
+    State(state): State<AppState>,
     axum::extract::Form(params): axum::extract::Form<std::collections::HashMap<String, String>>,
 ) -> impl IntoResponse {
-    println!("PDS: Handling token request");
+    info!("PDS: Handling token request");
 
-    // Check various params to determine which user is authenticating
-    let code = params
-        .get("code")
-        .unwrap_or(&"fixture_auth_code_12345".to_string())
-        .to_string();
-    let request_uri = params
-        .get("request_uri")
-        .unwrap_or(&"".to_string())
-        .to_string();
+    // Extract the authorization code
+    let code = params.get("code").cloned().unwrap_or_default();
 
-    // Check both code and request_uri for user2 identifiers
-    let is_user2 = code == "fixture_auth_code_user2" || request_uri.contains("user2");
-
-    if is_user2 {
-        println!("PDS: Issuing tokens for fixture-user2.test");
-        // Return tokens for the second user
-        Json(json!({
-            "access_token": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJkaWQ6cGxjOmJiYmJiIiwiZXhwIjoxNzA5MTIzNDU2fQ.fixture-user2",
-            "refresh_token": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJkaWQ6cGxjOmJiYmJiIiwiZXhwIjoxNzA5MTIzNDU2fQ.refresh-fixture-user2",
-            "token_type": "bearer",
-            "expires_in": 3600,
-            "scope": "read write profile email"
-        }))
-    } else {
-        println!("PDS: Issuing tokens for fixture-user.test");
-        // Default to first user's tokens
-        Json(json!({
-            "access_token": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJkaWQ6cGxjOmFiY2RlZmciLCJleHAiOjE3MDkxMjM0NTZ9.fixture",
-            "refresh_token": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJkaWQ6cGxjOmFiY2RlZmciLCJleHAiOjE3MDkxMjM0NTZ9.refresh-fixture",
-            "token_type": "bearer",
-            "expires_in": 3600,
-            "scope": "read write profile email"
-        }))
+    if code.is_empty() {
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(json!({
+                "error": "invalid_request",
+                "error_description": "Missing authorization code"
+            })),
+        )
+            .into_response();
     }
+
+    // Look up the authorization code from the database
+    let auth_code_data = sqlx::query_as::<_, (String, String, String, String)>(
+        r#"
+        SELECT user_did, user_handle, scope, redirect_uri
+        FROM auth_codes 
+        WHERE code = ? AND expires_at > ?
+        "#,
+    )
+    .bind(&code)
+    .bind(chrono::Utc::now().timestamp())
+    .fetch_optional(&state.db)
+    .await;
+
+    match auth_code_data {
+        Ok(Some((user_did, user_handle, scope, _redirect_uri))) => {
+            info!("PDS: Found valid auth code for user: {user_handle} ({user_did})");
+
+            // Delete the used authorization code
+            let _ = sqlx::query("DELETE FROM auth_codes WHERE code = ?")
+                .bind(&code)
+                .execute(&state.db)
+                .await;
+
+            // Generate valid JWT tokens based on the user
+            let base_url = format!("http://localhost:{}", state.port);
+            let now = chrono::Utc::now().timestamp();
+            let exp = now + 3600; // 1 hour expiration
+
+            // Create JWT claims for access token
+            let access_claims = json!({
+                "iss": base_url,
+                "aud": user_did.clone(),
+                "sub": user_did.clone(),
+                "iat": now,
+                "exp": exp,
+                "scope": scope.clone()
+            });
+
+            // Create JWT claims for refresh token (longer expiration)
+            let refresh_claims = json!({
+                "iss": base_url,
+                "aud": user_did.clone(),
+                "sub": user_did.clone(),
+                "iat": now,
+                "exp": now + 2592000, // 30 days expiration
+                "scope": scope.clone(),
+                "jti": format!("refresh_{}", Uuid::new_v4())
+            });
+
+            // For fixtures, we'll use simple base64-encoded JWTs with a test signature
+            // In production, these would be properly signed with the PDS's private key
+            let header = URL_SAFE_NO_PAD.encode(
+                json!({"alg": "ES256", "typ": "JWT", "kid": "fixture-key-1"})
+                    .to_string()
+                    .as_bytes(),
+            );
+
+            let access_payload = URL_SAFE_NO_PAD.encode(access_claims.to_string().as_bytes());
+
+            let refresh_payload = URL_SAFE_NO_PAD.encode(refresh_claims.to_string().as_bytes());
+
+            // Create test signature (in production this would be a real ES256 signature)
+            let test_signature = if user_handle == "fixture-user2.test" {
+                "fixture-sig-user2"
+            } else {
+                "fixture-sig-user1"
+            };
+            let signature = URL_SAFE_NO_PAD.encode(test_signature.as_bytes());
+
+            let access_token = format!("{header}.{access_payload}.{signature}");
+            let refresh_token = format!("{header}.{refresh_payload}.{signature}");
+
+            info!("PDS: Issuing JWT tokens for {}", user_handle);
+
+            // Return a properly structured token response
+            (
+                axum::http::StatusCode::OK,
+                Json(json!({
+                    "access_token": access_token,
+                    "refresh_token": refresh_token,
+                    "token_type": "Bearer",
+                    "expires_in": 3600,
+                    "scope": scope,
+                    "sub": user_did,
+                })),
+            )
+                .into_response()
+        }
+        Ok(None) => {
+            tracing::error!("Authorization code not found or expired: {code}");
+            (
+                axum::http::StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "error": "invalid_grant",
+                    "error_description": "Invalid or expired authorization code"
+                })),
+            )
+                .into_response()
+        }
+        Err(e) => {
+            tracing::error!("Failed to fetch authorization code: {}", e);
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "error": "server_error",
+                    "error_description": "Failed to process token request"
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+// JWKS endpoint for JWT verification
+async fn jwks() -> impl IntoResponse {
+    info!("PDS: Returning JWKS for token verification");
+
+    // Return a test JWKS with a dummy ES256 key for fixture testing
+    // In production, this would contain the actual public keys used to verify JWTs
+    Json(json!({
+        "keys": [
+            {
+                "kty": "EC",
+                "use": "sig",
+                "crv": "P-256",
+                "kid": "fixture-key-1",
+                "x": "f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU",
+                "y": "x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0",
+                "alg": "ES256"
+            }
+        ]
+    }))
 }

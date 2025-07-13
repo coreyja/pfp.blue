@@ -39,7 +39,7 @@ pub async fn serve_static_file(Path(path): Path<String>) -> impl IntoResponse {
 
 // Helper function to get an image URL relative to the site
 pub fn image_url(path: &str) -> String {
-    format!("/static/{}", path)
+    format!("/static/{path}")
 }
 
 // Create reusable components for the logo

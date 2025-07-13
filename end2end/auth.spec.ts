@@ -45,6 +45,14 @@ test.describe('Authentication flow', () => {
     
     // Skip checking intermediate URLs and just wait for the final destination
     // This makes the test more resilient to implementation changes in the auth flow
+    
+    // Debug: Check if we're redirected to login with an error
+    await page.waitForLoadState('networkidle');
+    const currentUrl = page.url();
+    if (currentUrl.includes('/login') && currentUrl.includes('error=')) {
+      throw new Error(`OAuth flow failed and redirected to login with error: ${currentUrl}`);
+    }
+    
     await page.waitForURL('/me', { timeout: 10000 });
     
     // Verify we're logged in by checking for profile page elements

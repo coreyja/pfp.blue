@@ -21,20 +21,6 @@ pub struct Badge {
 }
 
 impl Badge {
-    pub fn new(text: &str, color: BadgeColor) -> Self {
-        Self {
-            text: text.to_string(),
-            color,
-            rounded: false,
-            extra_classes: None,
-        }
-    }
-
-    pub fn rounded(mut self, rounded: bool) -> Self {
-        self.rounded = rounded;
-        self
-    }
-
     fn get_color_classes(&self) -> &'static str {
         match self.color {
             BadgeColor::Blue => "bg-blue-100 text-blue-800",
@@ -59,10 +45,8 @@ impl Render for Badge {
         };
         let extra_classes = self.extra_classes.as_deref().unwrap_or("");
 
-        let classes = format!(
-            "{} text-xs font-medium px-2 py-1 {} {}",
-            color_classes, rounded, extra_classes
-        );
+        let classes =
+            format!("{color_classes} text-xs font-medium px-2 py-1 {rounded} {extra_classes}");
 
         html! {
             span class=(classes) { (self.text) }

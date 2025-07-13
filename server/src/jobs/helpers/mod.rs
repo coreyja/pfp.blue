@@ -1,52 +1,38 @@
+use atrium_api::agent::Agent;
+use atrium_api::types::string::{Nsid, RecordKey};
+use atrium_api::types::TryFromUnknown;
 use color_eyre::eyre::{eyre, Result, WrapErr};
-use reqwest::Client;
 use serde_json::Value;
-use std::sync::Arc;
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 
-/// Helper function to resolve DID to PDS endpoint with improved error handling
-async fn resolve_did_to_pds(did_str: &str) -> Result<String> {
-    let xrpc_client = Arc::new(atrium_xrpc_client::reqwest::ReqwestClient::new(
-        "https://bsky.social",
-    ));
+use crate::prelude::*;
 
-    // Convert string DID to DID object
-    let did = atrium_api::types::string::Did::new(did_str.to_string())
-        .map_err(|e| eyre!("Invalid DID format for {}: {}", did_str, e))?;
+pub async fn get_original_profile_picture(
+    app_state: &AppState,
+    account: &Account,
+) -> Result<Value> {
+    let did = atrium_api::types::string::Did::new(account.did.clone())
+        .map_err(|e| eyre!("Invalid DID format for {}: {}", account.did, e))?;
+    let session = app_state.atrium.oauth.restore(&did).await?;
+    let agent = Agent::new(session);
 
-    // Resolve DID to document
-    let did_document = crate::did::resolve_did_to_document(&did, xrpc_client)
-        .await
-        .wrap_err_with(|| format!("Failed to resolve DID document for {}", did_str))?;
+    let collection = Nsid::new("blue.pfp.unmodifiedPfp".to_string())
+        .map_err(|e| eyre!("Invalid collection: {}", e))?;
+    let rkey = RecordKey::new("self".to_string()).map_err(|e| eyre!("Invalid rkey: {}", e))?;
+    let params = atrium_api::com::atproto::repo::get_record::ParametersData {
+        collection,
+        rkey,
+        repo: did.into(),
+        cid: None,
+    };
+    let resp = agent.api.com.atproto.repo.get_record(params.into()).await?;
 
-    // Find the PDS service endpoint
-    let services = did_document
-        .service
-        .as_ref()
-        .ok_or_else(|| eyre!("No service endpoints found in DID document for {}", did_str))?;
+    let value: Value = Value::try_from_unknown(resp.data.value)?;
 
-    let pds_service = services
-        .iter()
-        .find(|s| s.id == "#atproto_pds")
-        .ok_or_else(|| {
-            eyre!(
-                "No ATProto PDS service endpoint found in DID document for {}",
-                did_str
-            )
-        })?;
-
-    Ok(pds_service.service_endpoint.clone())
+    Ok(value)
 }
 
-use crate::{
-    oauth::{create_dpop_proof_with_ath, OAuthTokenSet},
-    state::AppState,
-};
-
-/// Helper function to find PDS endpoint for a user
-pub async fn find_pds_endpoint(token: &OAuthTokenSet) -> cja::Result<String> {
-    resolve_did_to_pds(&token.did).await
-}
+use crate::state::AppState;
 
 /// Extract progress from display name
 /// Supports formats like "X/Y" or "X%" or "X.Y%"
@@ -250,14 +236,11 @@ pub async fn generate_progress_image(
 /// Upload an image to Bluesky and return the blob object
 pub async fn upload_image_to_bluesky(
     app_state: &AppState,
-    token: &OAuthTokenSet,
+    account: &Account,
     image_data: &[u8],
 ) -> cja::Result<Value> {
-    // Create a reqwest client
-    let client = Client::new();
-
     // Detect image format from magic bytes
-    let image_mime_type = match infer::get(image_data) {
+    let _image_mime_type = match infer::get(image_data) {
         Some(kind) => {
             // Check if it's a supported image type
             let mime = kind.mime_type();
@@ -277,556 +260,170 @@ pub async fn upload_image_to_bluesky(
         }
     };
 
-    // Find PDS endpoint using our helper function
-    let pds_endpoint = resolve_did_to_pds(&token.did)
+    // Get the atrium session for this account
+    let did = atrium_api::types::string::Did::new(account.did.clone())
+        .map_err(|e| eyre!("Invalid DID format: {}", e))?;
+
+    let session = app_state
+        .atrium
+        .oauth
+        .restore(&did)
         .await
-        .wrap_err_with(|| format!("Failed to find PDS endpoint for {}", token.did))?;
+        .wrap_err("Failed to restore atrium session")?;
+    let agent = atrium_api::agent::Agent::new(session);
 
-    info!("Found PDS endpoint for upload: {}", pds_endpoint);
+    // Upload the blob
+    let upload_result = agent
+        .api
+        .com
+        .atproto
+        .repo
+        .upload_blob(image_data.to_vec())
+        .await
+        .wrap_err("Failed to upload blob")?;
 
-    // Construct the full URL to the PDS endpoint
-    let upload_url = format!("{}/xrpc/com.atproto.repo.uploadBlob", pds_endpoint);
+    // Convert the blob ref to a JSON value
+    let blob_json = serde_json::to_value(&upload_result.data.blob)
+        .wrap_err("Failed to convert blob to JSON")?;
 
-    // For uploadBlob, we'll try directly with no nonce first
-    // and then handle any nonce in the error response
-
-    // We need to pass the access token to create_dpop_proof to calculate ath (access token hash)
-    let dpop_proof = create_dpop_proof_with_ath(
-        &app_state.bsky_oauth,
-        "POST",
-        &upload_url,
-        None,
-        &token.access_token,
-    )?;
-
-    info!("Uploading image with MIME type: {}", image_mime_type);
-
-    // Make the API request to upload the blob directly to the user's PDS
-    // Send the raw image data with the correct content type
-    let mut response_result = client
-        .post(&upload_url)
-        .header("Authorization", format!("DPoP {}", token.access_token))
-        .header("DPoP", dpop_proof)
-        .header("Content-Type", image_mime_type)
-        .body(image_data.to_vec())
-        .send()
-        .await;
-
-    // Handle nonce errors by trying again if needed
-    if let Ok(response) = &response_result {
-        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
-            // Check if there's a DPoP-Nonce in the error response
-            if let Some(new_nonce) = response
-                .headers()
-                .get("DPoP-Nonce")
-                .and_then(|h| h.to_str().ok())
-            {
-                info!("Received new DPoP-Nonce in error response: {}", new_nonce);
-
-                // Create a new DPoP proof with the provided nonce and access token hash
-                let new_dpop_proof = create_dpop_proof_with_ath(
-                    &app_state.bsky_oauth,
-                    "POST",
-                    &upload_url,
-                    Some(new_nonce),
-                    &token.access_token,
-                )?;
-
-                // Retry the request with the new nonce
-                info!("Retrying upload with new DPoP-Nonce");
-                response_result = client
-                    .post(&upload_url)
-                    .header("Authorization", format!("DPoP {}", token.access_token))
-                    .header("DPoP", new_dpop_proof)
-                    .header("Content-Type", image_mime_type)
-                    .body(image_data.to_vec())
-                    .send()
-                    .await;
-            }
-        }
-    }
-
-    // Unwrap the final result
-    let response = response_result.wrap_err("Network error when uploading image to Bluesky")?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let error_text = response
-            .text()
-            .await
-            .wrap_err("Failed to read error response")
-            .unwrap_or_else(|e| format!("Failed to read error response: {}", e));
-
-        error!("Failed to upload blob: {} - {}", status, error_text);
-        return Err(eyre!("Failed to upload blob: {} - {}", status, error_text));
-    }
-
-    // Parse the response JSON
-    let response_data = response.json::<Value>().await?;
-
-    // Extract the entire blob object
-    if let Some(blob) = response_data.get("blob").cloned() {
-        // Log the blob information for debugging
-        if let Some(blob_ref) = blob.get("ref") {
-            if let Some(link) = blob_ref.get("$link").and_then(|l| l.as_str()) {
-                info!("Successfully uploaded blob with CID: {}", link);
-            }
-        }
-        Ok(blob)
-    } else {
-        error!(
-            "Failed to extract blob object from response: {:?}",
-            response_data
-        );
-        Err(eyre!("Failed to extract blob object from response"))
-    }
+    Ok(blob_json)
 }
 
 /// Save the original profile picture blob to a dedicated PDS collection
 /// This allows us to reference the original image without storing its blob ID in our database
 pub async fn save_original_profile_picture(
     app_state: &AppState,
-    token: &OAuthTokenSet,
+    account: &Account,
     original_blob_object: Value,
 ) -> cja::Result<()> {
-    // Create a reqwest client
-    let client = Client::new();
+    use atrium_api::types::string::{Did, Nsid, RecordKey};
+    use atrium_api::types::Unknown;
 
-    // Find PDS endpoint for this user
-    let pds_endpoint = find_pds_endpoint(token)
+    // Get the atrium session for this account
+    let did = Did::new(account.did.clone()).map_err(|e| eyre!("Invalid DID format: {}", e))?;
+
+    let session = app_state
+        .atrium
+        .oauth
+        .restore(&did)
         .await
-        .wrap_err_with(|| format!("Failed to find PDS endpoint for {}", token.did))?;
+        .wrap_err("Failed to restore atrium session")?;
+    let agent = atrium_api::agent::Agent::new(session);
 
-    // Construct the full URL to the PDS endpoint for putRecord
-    let put_record_url = format!("{}/xrpc/com.atproto.repo.putRecord", pds_endpoint);
+    // Create the record to store the original profile picture
+    let collection = Nsid::new("blue.pfp.unmodifiedPfp".to_string())
+        .map_err(|e| eyre!("Invalid collection: {}", e))?;
+    let rkey = RecordKey::new("self".to_string()).map_err(|e| eyre!("Invalid rkey: {}", e))?;
 
-    // Start with no nonce and handle any in the error response
-    // Create a DPoP proof for updating the profile with access token hash
-    let put_dpop_proof = create_dpop_proof_with_ath(
-        &app_state.bsky_oauth,
-        "POST",
-        &put_record_url,
-        None,
-        &token.access_token,
-    )?;
-
-    // Create the record - we use a fixed rkey of "self" as we only need one record per user
+    // The record should contain the blob reference
     let record = serde_json::json!({
-        "avatar": original_blob_object,
-        "createdAt": chrono::Utc::now().to_rfc3339(),
+        "$type": "blue.pfp.unmodifiedPfp",
+        "blob": original_blob_object,
+        "createdAt": chrono::Utc::now().to_rfc3339()
     });
 
-    // Create the request body
-    let put_body = serde_json::json!({
-        "repo": token.did,
-        "collection": "blue.pfp.unmodifiedPfp",
-        "rkey": "self",
-        "record": record
-    });
+    // Convert JSON to Unknown
+    let record_unknown = serde_json::from_value::<Unknown>(record)
+        .wrap_err("Failed to convert record to Unknown")?;
 
-    // Make the API request to store the record on the user's PDS
-    let mut put_response_result = client
-        .post(&put_record_url)
-        .header("Authorization", format!("DPoP {}", token.access_token))
-        .header("DPoP", put_dpop_proof)
-        .json(&put_body)
-        .send()
-        .await;
-
-    // Handle nonce errors by trying again if needed
-    if let Ok(response) = &put_response_result {
-        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
-            // Check if there's a DPoP-Nonce in the error response
-            if let Some(new_nonce) = response
-                .headers()
-                .get("DPoP-Nonce")
-                .and_then(|h| h.to_str().ok())
-            {
-                info!("Received new DPoP-Nonce in error response: {}", new_nonce);
-
-                // Create a new DPoP proof with the provided nonce and access token hash
-                let new_dpop_proof = create_dpop_proof_with_ath(
-                    &app_state.bsky_oauth,
-                    "POST",
-                    &put_record_url,
-                    Some(new_nonce),
-                    &token.access_token,
-                )?;
-
-                // Retry the request with the new nonce
-                info!("Retrying record creation with new DPoP-Nonce");
-                put_response_result = client
-                    .post(&put_record_url)
-                    .header("Authorization", format!("DPoP {}", token.access_token))
-                    .header("DPoP", new_dpop_proof)
-                    .json(&put_body)
-                    .send()
-                    .await;
+    // Put the record
+    agent
+        .api
+        .com
+        .atproto
+        .repo
+        .put_record(
+            atrium_api::com::atproto::repo::put_record::InputData {
+                collection,
+                record: record_unknown,
+                repo: did.into(),
+                rkey,
+                swap_commit: None,
+                swap_record: None,
+                validate: None,
             }
-        }
-    }
-
-    // Unwrap the final result
-    let put_response =
-        put_response_result.wrap_err("Network error when saving original profile picture")?;
-
-    if !put_response.status().is_success() {
-        let status = put_response.status();
-        let error_text = put_response
-            .text()
-            .await
-            .wrap_err("Failed to read error response")
-            .unwrap_or_else(|e| format!("Failed to read error response: {}", e));
-
-        error!(
-            "Failed to save original profile picture: {} - {}",
-            status, error_text
-        );
-        return Err(eyre!(
-            "Failed to save original profile picture: {} - {}",
-            status,
-            error_text
-        ));
-    }
-
-    info!(
-        "Successfully saved original profile picture for DID: {}",
-        token.did
-    );
-    Ok(())
-}
-
-/// Get the original profile picture blob from our custom PDS collection
-pub async fn get_original_profile_picture(
-    app_state: &AppState,
-    token: &OAuthTokenSet,
-) -> cja::Result<Value> {
-    // Create a reqwest client
-    let client = Client::new();
-
-    // Find PDS endpoint for this user
-    let pds_endpoint = find_pds_endpoint(token)
+            .into(),
+        )
         .await
-        .wrap_err_with(|| format!("Failed to find PDS endpoint for {}", token.did))?;
+        .wrap_err("Failed to save original profile picture record")?;
 
-    // Construct the full URL to the PDS endpoint for getRecord
-    let get_record_url = format!("{}/xrpc/com.atproto.repo.getRecord", pds_endpoint);
-
-    // Start with no nonce and handle any in the error response
-    let get_dpop_proof = create_dpop_proof_with_ath(
-        &app_state.bsky_oauth,
-        "GET",
-        &get_record_url,
-        None,
-        &token.access_token,
-    )?;
-
-    // Make the API request to get the record from the user's PDS
-    let mut get_response_result = client
-        .get(&get_record_url)
-        .query(&[
-            ("repo", &token.did),
-            ("collection", &String::from("blue.pfp.unmodifiedPfp")),
-            ("rkey", &String::from("self")),
-        ])
-        .header("Authorization", format!("DPoP {}", token.access_token))
-        .header("DPoP", get_dpop_proof)
-        .send()
-        .await;
-
-    // Handle nonce errors by trying again if needed
-    if let Ok(response) = &get_response_result {
-        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
-            // Check if there's a DPoP-Nonce in the error response
-            if let Some(new_nonce) = response
-                .headers()
-                .get("DPoP-Nonce")
-                .and_then(|h| h.to_str().ok())
-            {
-                info!("Received new DPoP-Nonce in error response: {}", new_nonce);
-
-                // Create a new DPoP proof with the provided nonce and access token hash
-                let new_dpop_proof = create_dpop_proof_with_ath(
-                    &app_state.bsky_oauth,
-                    "GET",
-                    &get_record_url,
-                    Some(new_nonce),
-                    &token.access_token,
-                )?;
-
-                // Retry the request with the new nonce
-                info!("Retrying record retrieval with new DPoP-Nonce");
-                get_response_result = client
-                    .get(&get_record_url)
-                    .query(&[
-                        ("repo", &token.did),
-                        ("collection", &String::from("blue.pfp.unmodifiedPfp")),
-                        ("rkey", &String::from("self")),
-                    ])
-                    .header("Authorization", format!("DPoP {}", token.access_token))
-                    .header("DPoP", new_dpop_proof)
-                    .send()
-                    .await;
-            }
-        }
-    }
-
-    // Unwrap the final result
-    let get_response =
-        get_response_result.wrap_err("Network error when retrieving original profile picture")?;
-
-    // If record doesn't exist, return None (not an error)
-    if get_response.status() == reqwest::StatusCode::NOT_FOUND {
-        error!(
-            "No original profile picture record found for DID: {}",
-            token.did
-        );
-        return Err(eyre!(
-            "No original profile picture record found for DID: {}",
-            token.did
-        ));
-    }
-
-    if !get_response.status().is_success() {
-        let status = get_response.status();
-        let error_text = get_response
-            .text()
-            .await
-            .wrap_err("Failed to read error response")
-            .unwrap_or_else(|e| format!("Failed to read error response: {}", e));
-
-        error!(
-            "Failed to get original profile picture: {} - {}",
-            status, error_text
-        );
-        return Err(eyre!(
-            "Failed to get original profile picture: {} - {}",
-            status,
-            error_text
-        ));
-    }
-
-    // Parse the response JSON
-    let record_data = get_response.json::<Value>().await?;
-
-    // Extract the avatar blob from the record
-    if let Some(value) = record_data.get("value") {
-        if let Some(avatar) = value.get("avatar") {
-            info!(
-                "Found original profile picture record for DID: {}",
-                token.did
-            );
-            return Ok(avatar.clone());
-        }
-    }
-
-    // No avatar found in the record
-    error!(
-        "Original profile picture record exists but has no avatar for DID: {}",
-        token.did
-    );
-    Err(eyre!("No original profile picture record found"))
+    Ok(())
 }
 
 /// Update profile with a new image
 pub async fn update_profile_with_image(
     app_state: &AppState,
-    token: &OAuthTokenSet,
+    account: &Account,
     blob_object: Value,
 ) -> cja::Result<()> {
-    // First, we need to get the current profile to avoid losing other fields
-    let client = Client::new();
+    use atrium_api::types::string::{Did, Nsid, RecordKey};
+    use atrium_api::types::{TryFromUnknown, Unknown};
 
-    // Find PDS endpoint using our helper function
-    let pds_endpoint = resolve_did_to_pds(&token.did)
+    // Get the atrium session for this account
+    let did = Did::new(account.did.clone()).map_err(|e| eyre!("Invalid DID format: {}", e))?;
+
+    let session = app_state
+        .atrium
+        .oauth
+        .restore(&did)
         .await
-        .wrap_err_with(|| format!("Failed to find PDS endpoint for {}", token.did))?;
+        .wrap_err("Failed to restore atrium session")?;
+    let agent = atrium_api::agent::Agent::new(session);
 
-    info!("Found PDS endpoint for profile update: {}", pds_endpoint);
+    // First, get the current profile to preserve other fields
+    let collection = Nsid::new("app.bsky.actor.profile".to_string())
+        .map_err(|e| eyre!("Invalid collection: {}", e))?;
+    let rkey = RecordKey::new("self".to_string()).map_err(|e| eyre!("Invalid rkey: {}", e))?;
 
-    // Construct the full URL to the PDS endpoint for getRecord
-    let get_record_url = format!("{}/xrpc/com.atproto.repo.getRecord", pds_endpoint);
-
-    // Start with no nonce and handle any in the error response
-    // Create a DPoP proof for getting the profile with access token hash
-    let get_dpop_proof = create_dpop_proof_with_ath(
-        &app_state.bsky_oauth,
-        "GET",
-        &get_record_url,
-        None,
-        &token.access_token,
-    )?;
-
-    // Make the API request to get current profile directly from user's PDS
-    let mut get_response_result = client
-        .get(&get_record_url)
-        .query(&[
-            ("repo", &token.did),
-            ("collection", &String::from("app.bsky.actor.profile")),
-            ("rkey", &String::from("self")),
-        ])
-        .header("Authorization", format!("DPoP {}", token.access_token))
-        .header("DPoP", get_dpop_proof)
-        .send()
-        .await;
-
-    // Handle nonce errors by trying again if needed
-    if let Ok(response) = &get_response_result {
-        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
-            // Check if there's a DPoP-Nonce in the error response
-            if let Some(new_nonce) = response
-                .headers()
-                .get("DPoP-Nonce")
-                .and_then(|h| h.to_str().ok())
-            {
-                info!("Received new DPoP-Nonce in error response: {}", new_nonce);
-
-                // Create a new DPoP proof with the provided nonce and access token hash
-                let new_dpop_proof = create_dpop_proof_with_ath(
-                    &app_state.bsky_oauth,
-                    "GET",
-                    &get_record_url,
-                    Some(new_nonce),
-                    &token.access_token,
-                )?;
-
-                // Retry the request with the new nonce
-                info!("Retrying profile retrieval with new DPoP-Nonce");
-                get_response_result = client
-                    .get(&get_record_url)
-                    .query(&[
-                        ("repo", &token.did),
-                        ("collection", &String::from("app.bsky.actor.profile")),
-                        ("rkey", &String::from("self")),
-                    ])
-                    .header("Authorization", format!("DPoP {}", token.access_token))
-                    .header("DPoP", new_dpop_proof)
-                    .send()
-                    .await;
+    let current_profile = agent
+        .api
+        .com
+        .atproto
+        .repo
+        .get_record(
+            atrium_api::com::atproto::repo::get_record::ParametersData {
+                collection: collection.clone(),
+                rkey: rkey.clone(),
+                repo: did.clone().into(),
+                cid: None,
             }
-        }
-    }
+            .into(),
+        )
+        .await
+        .wrap_err("Failed to get current profile")?;
 
-    // Unwrap the final result
-    let get_response = get_response_result.wrap_err("Network error when retrieving profile")?;
+    // Extract the current profile data
+    let mut profile_data: Value = Value::try_from_unknown(current_profile.data.value)?;
 
-    if !get_response.status().is_success() {
-        let status = get_response.status();
-        let error_text = get_response
-            .text()
-            .await
-            .wrap_err("Failed to read error response")
-            .unwrap_or_else(|e| format!("Failed to read error response: {}", e));
-
-        error!("Failed to get profile: {} - {}", status, error_text);
-        return Err(eyre!("Failed to get profile: {} - {}", status, error_text));
-    }
-
-    // Parse the response JSON
-    let profile_data = get_response.json::<Value>().await?;
-
-    // Get the existing profile value
-    let mut profile_value = if let Some(value) = profile_data.get("value") {
-        value.clone()
-    } else {
-        // No profile found, create a new one
-        serde_json::json!({})
-    };
-
-    // Ensure profile_value is a mutable object
-    if let Value::Object(ref mut obj) = profile_value {
-        // Update the avatar field with the complete blob object
+    // Update the avatar field
+    if let Some(obj) = profile_data.as_object_mut() {
         obj.insert("avatar".to_string(), blob_object);
-    } else {
-        return Err(eyre!("Profile value is not an object"));
     }
 
-    // Construct the full URL to the PDS endpoint for putRecord
-    let put_record_url = format!("{}/xrpc/com.atproto.repo.putRecord", pds_endpoint);
+    // Convert profile data to Unknown
+    let profile_unknown = serde_json::from_value::<Unknown>(profile_data)
+        .wrap_err("Failed to convert profile data to Unknown")?;
 
-    // Start with no nonce and handle any in the error response
-    // Create a DPoP proof for updating the profile with access token hash
-    let put_dpop_proof = create_dpop_proof_with_ath(
-        &app_state.bsky_oauth,
-        "POST",
-        &put_record_url,
-        None,
-        &token.access_token,
-    )?;
-
-    // Create the request body
-    let put_body = serde_json::json!({
-        "repo": token.did,
-        "collection": "app.bsky.actor.profile",
-        "rkey": "self",
-        "record": profile_value
-    });
-
-    // Make the API request to update the profile directly on the user's PDS
-    let mut put_response_result = client
-        .post(&put_record_url)
-        .header("Authorization", format!("DPoP {}", token.access_token))
-        .header("DPoP", put_dpop_proof)
-        .json(&put_body)
-        .send()
-        .await;
-
-    // Handle nonce errors by trying again if needed
-    if let Ok(response) = &put_response_result {
-        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
-            // Check if there's a DPoP-Nonce in the error response
-            if let Some(new_nonce) = response
-                .headers()
-                .get("DPoP-Nonce")
-                .and_then(|h| h.to_str().ok())
-            {
-                info!("Received new DPoP-Nonce in error response: {}", new_nonce);
-
-                // Create a new DPoP proof with the provided nonce and access token hash
-                let new_dpop_proof = create_dpop_proof_with_ath(
-                    &app_state.bsky_oauth,
-                    "POST",
-                    &put_record_url,
-                    Some(new_nonce),
-                    &token.access_token,
-                )?;
-
-                // Retry the request with the new nonce
-                info!("Retrying profile update with new DPoP-Nonce");
-                put_response_result = client
-                    .post(&put_record_url)
-                    .header("Authorization", format!("DPoP {}", token.access_token))
-                    .header("DPoP", new_dpop_proof)
-                    .json(&put_body)
-                    .send()
-                    .await;
+    // Put the updated record back
+    agent
+        .api
+        .com
+        .atproto
+        .repo
+        .put_record(
+            atrium_api::com::atproto::repo::put_record::InputData {
+                collection,
+                record: profile_unknown,
+                repo: did.into(),
+                rkey,
+                swap_commit: None,
+                swap_record: None,
+                validate: None,
             }
-        }
-    }
+            .into(),
+        )
+        .await
+        .wrap_err("Failed to update profile with new image")?;
 
-    // Unwrap the final result
-    let put_response =
-        put_response_result.wrap_err("Network error when updating profile with new image")?;
-
-    if !put_response.status().is_success() {
-        let status = put_response.status();
-        let error_text = put_response
-            .text()
-            .await
-            .wrap_err("Failed to read error response")
-            .unwrap_or_else(|e| format!("Failed to read error response: {}", e));
-
-        error!("Failed to update profile: {} - {}", status, error_text);
-        return Err(eyre!(
-            "Failed to update profile: {} - {}",
-            status,
-            error_text
-        ));
-    }
-
-    info!(
-        "Successfully updated profile with new image for DID: {}",
-        token.did
-    );
     Ok(())
 }

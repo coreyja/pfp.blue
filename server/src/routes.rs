@@ -1,9 +1,8 @@
 use crate::{
     auth::{AdminUser, AuthUser, OptionalUser},
     components::layout::Page,
-    errors::{ServerResult, WithRedirect},
-    oauth::get_valid_token_by_did,
-    profile_progress::ProfilePictureProgress,
+    errors::ServerResult,
+    orm::prelude::*,
     state::AppState,
 };
 use axum::{
@@ -15,12 +14,11 @@ use axum::{
     response::{IntoResponse, Redirect},
     routing::{get, post},
 };
-use cja::{jobs::Job as _, server::cookies::CookieJar};
-use color_eyre::eyre::{eyre, WrapErr};
+use cja::server::cookies::CookieJar;
+use color_eyre::eyre::WrapErr;
 use serde::Deserialize;
 use std::collections::HashMap;
 use tracing::{error, info};
-use uuid::Uuid;
 
 pub mod bsky;
 
@@ -41,8 +39,6 @@ pub fn routes(app_state: AppState) -> axum::Router {
         .route("/oauth/bsky/metadata.json", get(bsky::client_metadata))
         .route("/oauth/bsky/authorize", get(bsky::authorize))
         .route("/oauth/bsky/callback", get(bsky::callback))
-        .route("/oauth/bsky/token", get(bsky::get_token))
-        .route("/oauth/bsky/revoke", get(bsky::revoke_token))
         .route("/oauth/bsky/set-primary", get(bsky::set_primary_account))
         // Admin routes
         .route("/_", get(admin_panel))
@@ -50,7 +46,7 @@ pub fn routes(app_state: AppState) -> axum::Router {
         .route("/_/job/run", post(admin_run_job))
         // Static files route
         .route(
-            "/static/*path",
+            "/static/{*path}",
             get(crate::static_assets::serve_static_file),
         )
         // Add trace layer for debugging
@@ -79,7 +75,7 @@ async fn root_page(optional_user: OptionalUser, State(state): State<AppState>) -
                 r#"
                 SELECT t.display_name, t.did
                 FROM sessions s
-                JOIN oauth_tokens t ON s.primary_token_id = t.uuid_id
+                JOIN accounts t ON s.primary_account_id = t.account_id
                 WHERE s.user_id = $1
                 LIMIT 1
                 "#,
@@ -98,7 +94,7 @@ async fn root_page(optional_user: OptionalUser, State(state): State<AppState>) -
             };
 
             // Personalized greeting with display name
-            let greeting_text = format!("Welcome back, @{}!", display_name);
+            let greeting_text = format!("Welcome back, @{display_name}!");
 
             // Action buttons for logged in users
             let action_buttons = maud::html! {
@@ -298,121 +294,118 @@ async fn toggle_profile_progress(
     AuthUser { user, .. }: AuthUser,
     Form(params): Form<ToggleProfileProgressParams>,
 ) -> ServerResult<Response, Redirect> {
-    let token_id = validate_did_ownership(&state, &params.did, user.user_id)
+    use crate::errors::WithRedirect;
+    use cja::jobs::Job;
+    use color_eyre::eyre::{eyre, WrapErr};
+    use sea_orm::{ActiveModelTrait, ActiveValue, ColumnTrait, EntityTrait, QueryFilter};
+
+    // Find the account for this DID that belongs to this user
+    let account = Accounts::find()
+        .filter(crate::orm::accounts::Column::Did.eq(params.did.clone()))
+        .filter(crate::orm::accounts::Column::UserId.eq(user.user_id))
+        .one(&state.orm)
         .await
         .wrap_err("Failed to validate DID ownership")
+        .with_redirect(Redirect::to("/me"))?
+        .ok_or_else(|| eyre!("Account not found or not owned by user"))
         .with_redirect(Redirect::to("/me"))?;
 
     // Check if we're enabling the feature
-    // When the form is submitted with enabled=true we're enabling
-    // When it's submitted without the enabled parameter we're disabling
     let is_enabling = params.enabled.is_some();
 
     // Get or create the profile progress settings
-    let mut settings = ProfilePictureProgress::get_or_create(&state.db, token_id, is_enabling)
+    let existing_progress = crate::orm::profile_picture_progress::Entity::find()
+        .filter(crate::orm::profile_picture_progress::Column::AccountId.eq(account.account_id))
+        .one(&state.orm)
         .await
-        .wrap_err("Failed to get or create profile progress settings")
+        .wrap_err("Failed to get profile progress settings")
         .with_redirect(Redirect::to("/me"))?;
 
-    // Update the enabled status
-    settings
-        .update_enabled(&state.db, is_enabling)
-        .await
-        .wrap_err("Failed to update profile progress settings")
-        .with_redirect(Redirect::to("/me"))?;
+    let _progress_settings = if let Some(existing) = existing_progress {
+        // Update existing settings
+        let mut active_model: crate::orm::profile_picture_progress::ActiveModel = existing.into();
+        active_model.enabled = ActiveValue::Set(is_enabling);
+        active_model.updated_at = ActiveValue::Set(chrono::Utc::now().into());
+        active_model
+            .update(&state.orm)
+            .await
+            .wrap_err("Failed to update profile progress settings")
+            .with_redirect(Redirect::to("/me"))?
+    } else if is_enabling {
+        // Create new settings only if enabling
+        let new_settings = crate::orm::profile_picture_progress::ActiveModel {
+            account_id: ActiveValue::Set(account.account_id),
+            enabled: ActiveValue::Set(true),
+            created_at: ActiveValue::Set(chrono::Utc::now().into()),
+            updated_at: ActiveValue::Set(chrono::Utc::now().into()),
+            ..Default::default()
+        };
+        new_settings
+            .insert(&state.orm)
+            .await
+            .wrap_err("Failed to create profile progress settings")
+            .with_redirect(Redirect::to("/me"))?
+    } else {
+        // If disabling and no existing settings, just redirect back
+        return Ok(Redirect::to("/me").into_response());
+    };
 
     info!(
-        "Updated profile progress settings for token {}: enabled={}",
-        token_id, is_enabling
+        "Updated profile progress settings for account {}: enabled={}",
+        account.account_id, is_enabling
     );
 
     // If we're enabling the feature, automatically save the current profile picture as the base
     if is_enabling {
-        let Ok(token) = get_valid_token_by_did(&params.did, &state).await else {
-            return Err(eyre!("Token not found for DID {}", token_id))
-                .with_redirect(Redirect::to("/me"));
-        };
-
         // Fetch profile info to get the current avatar blob CID
-        let profile_info = crate::api::get_profile_with_avatar(&token.did, &state)
-            .await
-            .wrap_err("Failed to fetch profile info")
-            .with_redirect(Redirect::to("/me"))?;
+        let profile_info =
+            crate::routes::bsky::profile::fetch_profile_with_avatar(&account.did, &state)
+                .await
+                .wrap_err("Failed to fetch profile info")
+                .with_redirect(Redirect::to("/me"))?;
 
-        let avatar = profile_info
-            .avatar
-            .ok_or_else(|| eyre!("No avatar found in profile"))
-            .with_redirect(Redirect::to("/me"))?;
+        if let Some(avatar) = profile_info.avatar {
+            // Get the blob data
+            let blob_data =
+                crate::routes::bsky::fetch_blob_by_cid(&account.did, &avatar.cid, &state)
+                    .await
+                    .wrap_err("Failed to fetch avatar blob data")
+                    .with_redirect(Redirect::to("/me"))?;
 
-        // Get the blob data
-        let blob_data = crate::routes::bsky::fetch_blob_by_cid(&token.did, &avatar.cid, &state)
-            .await
-            .wrap_err("Failed to fetch avatar blob data")
-            .with_redirect(Redirect::to("/me"))?;
+            // Upload to get a proper blob object
+            let blob_object =
+                crate::jobs::helpers::upload_image_to_bluesky(&state, &account, &blob_data)
+                    .await
+                    .wrap_err("Failed to upload image to Bluesky")
+                    .with_redirect(Redirect::to("/me"))?;
 
-        // Upload to get a proper blob object
-        let blob_object = crate::jobs::helpers::upload_image_to_bluesky(&state, &token, &blob_data)
-            .await
-            .wrap_err("Failed to upload image to Bluesky")
-            .with_redirect(Redirect::to("/me"))?;
+            // Save the blob object to our custom PDS collection
+            crate::jobs::helpers::save_original_profile_picture(&state, &account, blob_object)
+                .await
+                .wrap_err("Failed to save original profile picture to PDS")
+                .with_redirect(Redirect::to("/me"))?;
 
-        // Save the blob object to our custom PDS collection
-        crate::jobs::helpers::save_original_profile_picture(&state, &token, blob_object)
-            .await
-            .wrap_err("Failed to save original profile picture to PDS")
-            .with_redirect(Redirect::to("/me"))?;
+            info!(
+                "Automatically saved original profile picture to PDS collection for DID {}",
+                account.did
+            );
 
-        info!(
-            "Automatically saved original profile picture to PDS collection for DID {}",
-            token.did
-        );
+            // Enqueue a job to update the profile picture
+            let job = crate::jobs::UpdateProfilePictureProgressJob::new(account.account_id);
+            job.enqueue(state.clone(), "enabled_profile_progress".to_string())
+                .await
+                .wrap_err("Failed to enqueue profile picture update job")
+                .with_redirect(Redirect::to("/me"))?;
 
-        // Enqueue a job to update the profile picture
-        let job = crate::jobs::UpdateProfilePictureProgressJob::new(token_id);
-        job.enqueue(state.clone(), "enabled_profile_progress".to_string())
-            .await
-            .wrap_err("Failed to enqueue profile picture update job")
-            .with_redirect(Redirect::to("/me"))?;
-
-        info!("Enqueued profile picture update job for token {}", token_id);
+            info!(
+                "Enqueued profile picture update job for account {}",
+                account.account_id
+            );
+        }
     }
 
     // Redirect back to profile page
     Ok(Redirect::to("/me").into_response())
-}
-
-// Previous set_original_profile_picture handler removed - functionality is now part of toggle_profile_progress
-
-/// Helper function to validate token ownership and return token ID
-async fn validate_did_ownership(state: &AppState, did: &str, user_id: Uuid) -> cja::Result<Uuid> {
-    let token_result = sqlx::query!(
-        r#"
-        SELECT id FROM oauth_tokens
-        WHERE did = $1 AND user_id = $2
-        "#,
-        did,
-        user_id
-    )
-    .fetch_optional(&state.db)
-    .await
-    .wrap_err_with(|| {
-        format!(
-            "Database error when checking token ownership for DID: {}",
-            did
-        )
-    })?;
-
-    match token_result {
-        Some(row) => Ok(row.id),
-        None => {
-            error!("Attempted to access token not belonging to user: {}", did);
-            Err(eyre!(
-                "Token {} not found or not owned by user {}",
-                did,
-                user_id
-            ))
-        }
-    }
 }
 
 /// Logout route - clears authentication cookies and redirects to home
@@ -557,7 +550,7 @@ async fn privacy_policy_page(_optional_user: OptionalUser, State(_state): State<
 
 /// Admin panel page - shows available jobs and provides a UI to run them
 async fn admin_panel(
-    AdminUser { user, .. }: AdminUser,
+    AdminUser { .. }: AdminUser,
     State(_state): State<AppState>,
 ) -> impl IntoResponse {
     use crate::components::{layout::Page, ui::heading::Heading};
@@ -618,9 +611,6 @@ async fn admin_panel(
 
             p class="text-gray-600 mb-6" {
                 "Hello, Administrator! "
-                @if let Some(username) = &user.username {
-                    "(" (username) ")"
-                }
             }
 
             (Heading::h2("Available Jobs").render())

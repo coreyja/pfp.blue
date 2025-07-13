@@ -12,7 +12,7 @@ use atrium_identity::{
 };
 use atrium_xrpc_client::reqwest::ReqwestClient;
 use color_eyre::eyre::{eyre, WrapErr};
-use tracing::{error, info};
+use tracing::info;
 
 /// Resolves a Bluesky handle to its DID
 pub async fn resolve_handle_to_did(
@@ -94,88 +94,4 @@ pub fn extract_pds_from_document(document: &DidDocument) -> cja::Result<&Service
         .iter()
         .find(|s| s.id == "#atproto_pds")
         .ok_or_else(|| eyre!("No ATProto PDS service endpoint found"))
-}
-
-#[derive(serde::Deserialize)]
-pub struct PDSMetadata {
-    authorization_servers: Vec<String>,
-}
-
-#[derive(serde::Deserialize, Debug)]
-// Needed for deserialization from API responses
-#[allow(dead_code)]
-pub struct AuthServerMetadata {
-    pub issuer: String,
-    pub pushed_authorization_request_endpoint: String,
-    pub authorization_endpoint: String,
-    pub token_endpoint: String,
-    pub scopes_supported: Vec<String>,
-}
-
-/// Converts a DID document to auth server metadata needed for OAuth flow
-pub async fn document_to_auth_server_metadata(
-    document: &DidDocument,
-    _client: Arc<ReqwestClient>,
-) -> cja::Result<AuthServerMetadata> {
-    // Regular flow for production use
-    let pds_service = extract_pds_from_document(document)?;
-    let metadata = fetch_auth_server_metadata_from_pds(&pds_service.service_endpoint).await?;
-    Ok(metadata)
-}
-
-/// Fetches auth server metadata from a PDS endpoint
-async fn fetch_auth_server_metadata_from_pds(
-    pds_endpoint: &str,
-) -> cja::Result<AuthServerMetadata> {
-    // Step 1: Get the PDS metadata to find the auth server URL
-    let pds_metadata_url = format!("{}/.well-known/oauth-protected-resource", pds_endpoint);
-    info!("Fetching PDS metadata from URL: {}", pds_metadata_url);
-
-    let pds_metadata = fetch_and_parse_json::<PDSMetadata>(&pds_metadata_url)
-        .await
-        .wrap_err_with(|| format!("Failed to get PDS metadata from {}", pds_metadata_url))?;
-
-    // Step 2: Get the auth server metadata
-    let auth_server_url = pds_metadata
-        .authorization_servers
-        .first()
-        .ok_or_else(|| eyre!("No authorization server found"))?;
-
-    let auth_server_metadata_url =
-        format!("{}/.well-known/oauth-authorization-server", auth_server_url);
-
-    info!(
-        "Fetching auth server metadata from URL: {}",
-        auth_server_metadata_url
-    );
-
-    let metadata = fetch_and_parse_json::<AuthServerMetadata>(&auth_server_metadata_url)
-        .await
-        .wrap_err_with(|| {
-            format!(
-                "Failed to get auth server metadata from {}",
-                auth_server_metadata_url
-            )
-        })?;
-
-    Ok(metadata)
-}
-
-/// Generic helper to fetch and parse JSON from a URL
-pub async fn fetch_and_parse_json<T: serde::de::DeserializeOwned>(url: &str) -> cja::Result<T> {
-    // Get the response
-    let response = reqwest::get(url).await?;
-
-    if !response.status().is_success() {
-        error!("Failed to get data: HTTP {}", response.status());
-        return Err(eyre!("Failed to get data: HTTP {}", response.status()))
-            .wrap_err_with(|| format!("HTTP error {} when fetching {}", response.status(), url));
-    }
-
-    // Try to decode as JSON
-    let response_text = response.text().await?;
-    let result = serde_json::from_str::<T>(&response_text)
-        .wrap_err_with(|| format!("Failed to decode JSON from {}", url))?;
-
-    Ok(result)
 }

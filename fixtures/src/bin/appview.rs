@@ -33,7 +33,7 @@ async fn main() -> anyhow::Result<()> {
     let args = Cli::parse();
 
     // Get URL of the Avatar CDN
-    let avatar_cdn_url = require_env_var("AVATAR_CDN_URL", args.common.force)?;
+    let avatar_cdn_url = require_env_var("AVATAR_CDN_URL")?;
 
     let state = AppState { avatar_cdn_url };
 

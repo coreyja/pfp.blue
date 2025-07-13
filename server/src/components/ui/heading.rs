@@ -68,7 +68,7 @@ impl Render for Heading {
         let color_class = self.color.as_deref().unwrap_or("text-gray-800");
         let additional_classes = self.classes.as_deref().unwrap_or("");
 
-        let classes = format!("{} {} {}", default_classes, color_class, additional_classes);
+        let classes = format!("{default_classes} {color_class} {additional_classes}");
 
         match self.level {
             HeadingLevel::H1 => html! { h1 class=(classes) { (self.text) } },

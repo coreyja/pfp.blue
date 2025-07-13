@@ -23,15 +23,15 @@ async fn main() -> anyhow::Result<()> {
     let args = Cli::parse();
 
     // Get URL of the PDS fixture
-    let pds_url = require_env_var("PDS_URL", args.common.force)?;
+    let pds_url = require_env_var("PDS_URL")?;
 
     let state = AppState { pds_url };
 
     let app = Router::new()
         // PLC Directory endpoints - support multiple patterns for DID resolution
-        .route("/did/:did", get(resolve_did))
+        .route("/did/{did}", get(resolve_did))
         // Support exact format that the CommonDidResolver uses
-        .route("/:did", get(resolve_did))
+        .route("/{did}", get(resolve_did))
         // Make sure we respond to requests without trailing slash too
         .route("/", get(|| async { "PLC Directory Fixture Server" }))
         // Add catch-all route for all paths to aid debugging
@@ -53,7 +53,7 @@ async fn resolve_did(
     State(state): State<AppState>,
     axum::extract::Path(did): axum::extract::Path<String>,
 ) -> impl IntoResponse {
-    println!("PLC DIRECTORY: Resolving DID: {}", did);
+    println!("PLC DIRECTORY: Resolving DID: {did}");
 
     // Return different DID documents based on the requested DID
     match did.as_str() {

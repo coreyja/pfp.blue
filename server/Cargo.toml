@@ -15,85 +15,69 @@ name = "generate-key"
 path = "src/bin/generate_key.rs"
 
 [dependencies]
-tokio = { version = "1.21", features = ["full"] }
-color-eyre = "0.6.2"
+tokio = { workspace = true, features = ["full"] }
+color-eyre = { workspace = true }
 
-opentelemetry = { version = "0.22.0" }
-opentelemetry_sdk = { version = "0.22.0", features = ["rt-tokio"] }
-tracing = "0.1.37"
-tracing-opentelemetry = "0.23.0"
-tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
-tracing-tree = "0.3.0"
-opentelemetry-otlp = { version = "0.15.0", features = [
-  "http-proto",
-  "reqwest-rustls",
-  "reqwest-client",
-], default-features = false }
-sentry = { version = "0.32.2", default-features = false, features = [
-  "rustls",
-  "backtrace",
-  "contexts",
-  "panic",
-  "tower",
-  "reqwest",
-] }
-sentry-tower = { version = "0.32.2", features = ["http"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-maud = { version = "0.26.0", features = ["axum"] }
-async-trait = "0.1.60"
-axum = "0.7.4"
-axum-macros = "0.4.0"
-tower-http = { version = "0.5.2", features = ["trace"] }
-tower = "0.4.13"
-thiserror = "1.0"
-reqwest = { version = "0.12.12", features = [
-  "json",
-  "rustls-tls",
-  "multipart",
-], default-features = false }
+opentelemetry = { workspace = true }
+opentelemetry_sdk = { workspace = true, features = ["rt-tokio"] }
+tracing = { workspace = true }
+tracing-opentelemetry = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+tracing-tree = { workspace = true }
+opentelemetry-otlp = { workspace = true, features = ["http-proto", "reqwest-rustls", "reqwest-client"] }
+sentry = { workspace = true, features = ["rustls", "backtrace", "contexts", "panic", "tower", "reqwest"] }
+sentry-tower = { workspace = true, features = ["http"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+maud = { workspace = true, features = ["axum"] }
+async-trait = { workspace = true }
+axum = { workspace = true }
+axum-macros = { workspace = true }
+tower-http = { workspace = true, features = ["trace"] }
+tower = { workspace = true }
+thiserror = { workspace = true }
+reqwest.workspace = true
 
-cja = { version = "0.0.0", git = "https://github.com/coreyja/cja", branch = "main" }
-sqlx = "0.7.3"
-uuid = { version = "1.6.1", features = ["v4"] }
-time = "0.3.9"
-futures = "0.3.30"
-chrono = { version = "0.4.23", default-features = false, features = ["serde"] }
-jsonwebtoken = "9.3.0"
-p256 = { version = "0.13", features = ["ecdsa", "pem", "pkcs8"] }
+cja = { workspace = true }
+sqlx = { workspace = true, features = ["runtime-tokio-rustls", "postgres", "chrono", "uuid"] }
+uuid = { workspace = true, features = ["v4"] }
+time = { workspace = true }
+futures = { workspace = true }
+chrono = { workspace = true, features = ["serde"] }
+jsonwebtoken = { workspace = true }
+p256 = { workspace = true, features = ["ecdsa", "jwk", "pem", "pkcs8"] }
 base64 = "0.21"
-base64ct = { version = "1.6", features = ["alloc"] }
-ring = "0.17"
-rand = "0.8"
-sha2 = "0.10"
-tempfile = "3.8"
-urlencoding = "2.1"
-simple_asn1 = "0.6"
-num-bigint = "0.4"
+base64ct = { workspace = true, features = ["alloc"] }
+ring = { workspace = true }
+rand = { workspace = true }
+sha2 = { workspace = true }
+tempfile = { workspace = true }
+urlencoding = { workspace = true }
 
-atrium-identity = { version = "0.1", git = "https://github.com/sugyan/atrium" }
-atrium-api = { version = "0.24", git = "https://github.com/sugyan/atrium" }
-atrium-common = { version = "0.1", git = "https://github.com/sugyan/atrium" }
-atrium-xrpc-client = { version = "0.5", git = "https://github.com/sugyan/atrium", default-features = false, features = [
-  "reqwest",
-] }
-
+bsky-sdk = { workspace = true, features = ["rich-text"] }
+atrium-oauth = { workspace = true, features = [] }
+image = { workspace = true }
 # Dependencies for profile picture progress feature
-image = "0.24"
-imageproc = "0.23"
-regex = "1.10"
-infer = "0.15"
-age = { version = "0.11.1", features = ["armor"] }
-include_dir = "0.7.3"
-mime_guess = "2.0.4"
-mime = "0.3.17"
-serde_urlencoded = "0.7.1"
+imageproc = { workspace = true }
+regex = { workspace = true }
+infer = { workspace = true }
+age = { workspace = true, features = ["armor"] }
+include_dir = { workspace = true }
+mime_guess = { workspace = true }
+mime = { workspace = true }
+serde_urlencoded = { workspace = true }
+atrium-identity = { workspace = true }
+atrium-api = { workspace = true }
+atrium-common = { workspace = true }
+atrium-xrpc-client = { workspace = true, features = ["reqwest"] }
+sec1 = { workspace = true, features = ["pem", "std"] }
+elliptic-curve = { workspace = true, features = ["pem", "jwk", "std"] }
+jose-jwk = { workspace = true }
+trust-dns-resolver = { workspace = true, features = ["tokio-rustls"] }
+sea-orm = { workspace = true, features = ["sqlx-postgres", "runtime-tokio-rustls", "macros", "with-json", "with-chrono", "with-uuid"] }
+sea-query-binder = { workspace = true, features = ["runtime-tokio-rustls", "sqlx-postgres", "with-uuid"] }
+sea-query = { workspace = true, features = ["backend-postgres"] }
+atrium-xrpc = { workspace = true }
 
 [build-dependencies]
-vergen = { version = "8.3.1", features = [
-  "build",
-  "cargo",
-  "git",
-  "gitoxide",
-  "rustc",
-] }
+vergen = { workspace = true, features = ["build", "cargo", "git", "gitoxide", "rustc"] }

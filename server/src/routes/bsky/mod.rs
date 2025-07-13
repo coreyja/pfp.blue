@@ -6,7 +6,7 @@ mod auth;
 mod blobs;
 mod callback;
 mod client_metadata;
-mod profile;
+pub mod profile;
 mod tokens;
 mod utils;
 
@@ -16,5 +16,3 @@ pub use blobs::*;
 pub use callback::*;
 pub use client_metadata::*;
 pub use profile::*;
-pub use tokens::*;
-pub use utils::*;

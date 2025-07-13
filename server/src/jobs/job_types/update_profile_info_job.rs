@@ -1,14 +1,10 @@
 use atrium_api::did_doc::DidDocument;
 use cja::jobs::Job;
-use color_eyre::eyre::eyre;
-use color_eyre::eyre::Context as _;
 use serde::{Deserialize, Serialize};
-use tracing::info;
 
-use crate::{
-    oauth::{create_dpop_proof_with_ath, OAuthTokenSet},
-    state::AppState,
-};
+use crate::state::AppState;
+
+use crate::prelude::*;
 
 /// Job to update a user's profile information (display name and handle) in the database
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -18,11 +14,8 @@ pub struct UpdateProfileInfoJob {
 }
 
 impl UpdateProfileInfoJob {
-    /// Create a new job from an OAuthTokenSet
-    pub fn from_token(token: &OAuthTokenSet) -> Self {
-        Self {
-            did: token.did.clone(),
-        }
+    pub fn new(did: String) -> Self {
+        Self { did }
     }
 }
 
@@ -34,176 +27,66 @@ pub fn get_handle(did: &DidDocument) -> Option<String> {
         .map(|s| s.to_string())
 }
 
+use crate::orm::prelude::*;
+
 #[async_trait::async_trait]
 impl Job<AppState> for UpdateProfileInfoJob {
     const NAME: &'static str = "UpdateProfileInfoJob";
 
     async fn run(&self, app_state: AppState) -> cja::Result<()> {
-        // First, get the current token from the database with decryption
-        let token = crate::oauth::get_valid_token_by_did(&self.did, &app_state)
+        let account = Accounts::find()
+            .filter(crate::orm::accounts::Column::Did.eq(self.did.clone()))
+            .one(&app_state.orm)
             .await
-            .wrap_err_with(|| format!("Error retrieving token for DID {}", self.did))?;
+            .wrap_err_with(|| format!("Error retrieving account for DID {}", self.did))?;
 
-        let client = reqwest::Client::new();
+        let account = account
+            .ok_or_else(|| cja::color_eyre::eyre::eyre!("No account found for DID {}", self.did))?;
 
-        // First, resolve the DID document to find PDS endpoint
-        let xrpc_client = std::sync::Arc::new(atrium_xrpc_client::reqwest::ReqwestClient::new(
-            "https://bsky.social",
-        ));
-
-        // Convert string DID to DID object
+        // Get the atrium session for this DID
         let did = atrium_api::types::string::Did::new(self.did.clone())
-            .map_err(|e| eyre!("Invalid DID format: {}", e))?;
+            .map_err(|e| cja::color_eyre::eyre::eyre!("Invalid DID format: {}", e))?;
 
-        // Resolve DID to document
-        let did_document = crate::did::resolve_did_to_document(&did, xrpc_client)
-            .await
-            .wrap_err_with(|| format!("Failed to resolve DID document for {}", self.did))?;
+        let session = app_state.atrium.oauth.restore(&did).await?;
+        let agent = atrium_api::agent::Agent::new(session);
 
-        // Find the PDS service endpoint
-        let services = did_document
-            .service
-            .as_ref()
-            .ok_or_else(|| eyre!("No service endpoints found in DID document"))?;
+        // Get the DID document to extract the handle
+        let did_doc =
+            crate::did::resolve_did_to_document(&did, app_state.bsky_client.clone()).await?;
 
-        let pds_service = services
-            .iter()
-            .find(|s| s.id == "#atproto_pds")
-            .ok_or_else(|| eyre!("No ATProto PDS service endpoint found in DID document"))?;
-
-        let pds_endpoint = &pds_service.service_endpoint;
-        info!("Found PDS endpoint for DID {}: {}", self.did, pds_endpoint);
-
-        // Construct the full URL to the PDS endpoint
-        let get_record_url = format!("{}/xrpc/com.atproto.repo.getRecord", pds_endpoint);
-
-        // Access token hash is required for requests to PDS
-
-        // Start with no nonce and handle any in the error response
-        // Create a DPoP proof for this API call using the PDS endpoint (no nonce initially)
-        // Include access token hash (ath)
-        let dpop_proof = create_dpop_proof_with_ath(
-            &app_state.bsky_oauth,
-            "GET",
-            &get_record_url,
-            None,
-            &token.access_token,
-        )
-        .wrap_err_with(|| {
-            format!(
-                "Failed to create DPoP proof for profile job for DID {}",
-                self.did
-            )
-        })?;
-
-        // Make the API request to get user profile directly from their PDS
-        let mut response_result = client
-            .get(&get_record_url)
-            .query(&[
-                ("repo", &self.did),
-                ("collection", &String::from("app.bsky.actor.profile")),
-                ("rkey", &String::from("self")),
-            ])
-            .header("Authorization", format!("DPoP {}", token.access_token))
-            .header("DPoP", dpop_proof)
-            .send()
-            .await;
-
-        // Handle nonce errors by trying again if needed
-        if let Ok(response) = &response_result {
-            if response.status() == reqwest::StatusCode::UNAUTHORIZED {
-                // Check if there's a DPoP-Nonce in the error response
-                if let Some(new_nonce) = response
-                    .headers()
-                    .get("DPoP-Nonce")
-                    .and_then(|h| h.to_str().ok())
-                {
-                    info!("Received new DPoP-Nonce in error response: {}", new_nonce);
-
-                    // Create a new DPoP proof with the provided nonce and access token hash
-                    let new_dpop_proof = create_dpop_proof_with_ath(
-                        &app_state.bsky_oauth,
-                        "GET",
-                        &get_record_url,
-                        Some(new_nonce),
-                        &token.access_token,
-                    )
-                    .wrap_err_with(|| {
-                        format!(
-                            "Failed to create DPoP proof with new nonce for DID {}",
-                            self.did
-                        )
-                    })?;
-
-                    // Retry the request with the new nonce
-                    info!("Retrying profile retrieval with new DPoP-Nonce");
-                    response_result = client
-                        .get(&get_record_url)
-                        .query(&[
-                            ("repo", &self.did),
-                            ("collection", &String::from("app.bsky.actor.profile")),
-                            ("rkey", &String::from("self")),
-                        ])
-                        .header("Authorization", format!("DPoP {}", token.access_token))
-                        .header("DPoP", new_dpop_proof)
-                        .send()
-                        .await;
+        // Get the profile
+        let profile = agent
+            .api
+            .app
+            .bsky
+            .actor
+            .get_profile(
+                atrium_api::app::bsky::actor::get_profile::ParametersData {
+                    actor: did.clone().into(),
                 }
-            }
-        }
-
-        // Handle the final result
-        let response = response_result.wrap_err("Network error when fetching profile")?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response
-                .text()
-                .await
-                .wrap_err("Failed to read error response")?;
-
-            return Err(eyre!(
-                "Failed to fetch profile: {} - {}",
-                status,
-                error_text
-            ));
-        }
-
-        // Parse the response JSON
-        let profile_data = response
-            .json::<serde_json::Value>()
-            .await
-            .wrap_err_with(|| format!("Failed to parse profile response for DID {}", self.did))?;
-
-        // Extract the display name and handle from the profile data
-        let value = profile_data.get("value");
-
-        // Extract the display name
-        let extracted_display_name = if let Some(value) = value {
-            if let Some(display_name_val) = value.get("displayName") {
-                display_name_val.as_str().map(|s| s.to_string())
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        let extracted_handle = get_handle(&did_document);
-
-        crate::oauth::db::update_token_display_name_and_handle(
-            &app_state.db,
-            &self.did,
-            extracted_display_name.as_deref(),
-            extracted_handle.as_deref(),
-        )
-        .await
-        .wrap_err_with(|| {
-            format!(
-                "Failed to update display name in database for DID {}",
-                self.did
+                .into(),
             )
-        })?;
+            .await?;
+
+        // Extract handle from DID document (if available)
+        let handle = get_handle(&did_doc);
+
+        // Extract display name from profile
+        let display_name = profile.data.display_name.clone();
+
+        // Update the account with the latest information
+        use sea_orm::ActiveModelTrait as _;
+        let mut account_model: crate::orm::accounts::ActiveModel = account.into();
+
+        if let Some(h) = handle {
+            account_model.handle = sea_orm::ActiveValue::Set(Some(h));
+        }
+
+        if let Some(dn) = display_name {
+            account_model.display_name = sea_orm::ActiveValue::Set(Some(dn));
+        }
+
+        account_model.update(&app_state.orm).await?;
 
         Ok(())
     }
