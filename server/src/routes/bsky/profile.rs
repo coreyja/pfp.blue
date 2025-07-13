@@ -2,7 +2,6 @@ use axum::{extract::State, http::StatusCode, response::IntoResponse};
 use cja::jobs::Job;
 use maud::html;
 use sea_orm::ModelTrait;
-use sqlx::Row;
 use tracing::error;
 
 use crate::{
@@ -127,7 +126,7 @@ pub async fn profile(
 
     // Display profile with all accounts
     Ok(display_profile_multi(&state, primary_account, accounts)
-        .await
+        .await?
         .into_response())
 }
 
@@ -225,7 +224,7 @@ async fn display_profile_multi(
     state: &AppState,
     primary_account: crate::orm::accounts::Model,
     all_accounts: Vec<crate::orm::accounts::Model>,
-) -> maud::Markup {
+) -> cja::Result<maud::Markup> {
     use crate::components::{
         layout::Page,
         ui::{
@@ -361,17 +360,17 @@ async fn display_profile_multi(
                         }
 
                         // Get profile progress settings for this token
-                        @let progress_enabled = match sqlx::query(
+                        @let progress_enabled = match sqlx::query!(
                             r#"
                             SELECT p.enabled FROM profile_picture_progress p
-                            JOIN oauth_tokens t ON p.token_id = t.id
-                            WHERE t.did = $1
-                            "#
-                        ).bind(&primary_account.did)
+                            WHERE p.account_id = $1
+                            "#,
+                            primary_account.account_id,
+                        )
                           .fetch_optional(&state.db)
-                          .await {
-                            Ok(Some(row)) => {
-                                let enabled: bool = row.get("enabled");
+                          .await? {
+                            Some(row) => {
+                                let enabled: bool = row.enabled;
                                 enabled
                             },
                             _ => false,
@@ -493,9 +492,9 @@ async fn display_profile_multi(
     };
 
     // Use the Page struct to wrap the content without additional header
-    Page::new(
+    Ok(Page::new(
         format!("{display_name} - Bluesky Profile - pfp.blue"),
         Box::new(content),
     )
-    .render()
+    .render())
 }
