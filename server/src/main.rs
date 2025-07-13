@@ -236,11 +236,21 @@ mod tests {
         // Test progress values
         let progress_values = [0.0, 0.25, 0.5, 0.75, 1.0];
 
+        let original_img =
+            image::load_from_memory(&original_buffer).wrap_err("Failed to load original image")?;
+
         for progress in progress_values {
             // Use the actual generate_progress_image function from the codebase
-            let progress_image_data = generate_progress_image(&original_buffer, progress)
+            let progress_image_data = generate_progress_image(&original_img, progress)
                 .await
                 .wrap_err("Failed to generate progress image")?;
+
+            let progress_image_data = crate::jobs::helpers::to_sized_png(
+                progress_image_data,
+                original_img.width(),
+                original_img.height(),
+            )
+            .await?;
 
             // Save the generated image
             let filename = format!("progress_{progress:.2}.png");

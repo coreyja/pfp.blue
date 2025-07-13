@@ -135,33 +135,62 @@ impl Job<AppState> for UpdateProfilePictureProgressJob {
             }
         };
 
+        let original_img = image::load_from_memory(&original_image_data)
+            .wrap_err("Failed to load original image")?;
+
         // Generate the progress image
-        let progress_image_data = match crate::jobs::helpers::generate_progress_image(
-            &original_image_data,
-            progress_percentage,
+        let progress_image_data =
+            match crate::jobs::helpers::generate_progress_image(&original_img, progress_percentage)
+                .await
+            {
+                Ok(data) => {
+                    info!(
+                        "Successfully generated progress image for account ID {}",
+                        self.account_id
+                    );
+                    data
+                }
+                Err(err) => {
+                    error!("Failed to generate progress image: {:?}", err);
+                    return Err(err);
+                }
+            };
+
+        const MAX_IMAGE_SIZE_BYTES: usize = 1000 * 1000;
+
+        let mut size_multiplier = 1.0;
+        let mut resized_image = crate::jobs::helpers::to_sized_png(
+            progress_image_data.clone(),
+            original_img.width(),
+            original_img.height(),
         )
-        .await
-        {
-            Ok(data) => {
-                info!(
-                    "Successfully generated progress image for account ID {}",
-                    self.account_id
+        .await?;
+
+        while resized_image.len() > MAX_IMAGE_SIZE_BYTES {
+            size_multiplier -= 0.1;
+
+            let new_width = (original_img.width() as f64 * size_multiplier) as u32;
+            let new_height = (original_img.height() as f64 * size_multiplier) as u32;
+            resized_image = crate::jobs::helpers::to_sized_png(
+                progress_image_data.clone(),
+                new_width,
+                new_height,
+            )
+            .await?;
+
+            if size_multiplier < 0.1 {
+                error!(
+                    "Failed to resize image below max size for account ID {}. Current size: {} bytes",
+                    self.account_id,
+                    resized_image.len()
                 );
-                data
+                break;
             }
-            Err(err) => {
-                error!("Failed to generate progress image: {:?}", err);
-                return Err(err);
-            }
-        };
+        }
 
         // Upload the new image to Bluesky
-        match crate::jobs::helpers::upload_image_to_bluesky(
-            &app_state,
-            &account,
-            &progress_image_data,
-        )
-        .await
+        match crate::jobs::helpers::upload_image_to_bluesky(&app_state, &account, &resized_image)
+            .await
         {
             Ok(blob_object) => {
                 info!("Successfully uploaded progress image to Bluesky");

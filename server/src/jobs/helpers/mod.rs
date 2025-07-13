@@ -1,7 +1,10 @@
+use std::io::Cursor;
+
 use atrium_api::agent::Agent;
 use atrium_api::types::string::{Nsid, RecordKey};
 use atrium_api::types::TryFromUnknown;
 use color_eyre::eyre::{eyre, Result, WrapErr};
+use image::{DynamicImage, ImageBuffer, Rgba};
 use serde_json::Value;
 use tracing::{debug, info};
 
@@ -72,18 +75,13 @@ pub fn extract_progress_from_display_name(display_name: &str) -> Option<(f64, f6
 
 /// Generate a new profile picture with progress visualization
 pub async fn generate_progress_image(
-    original_image_data: &[u8],
+    original_img: &DynamicImage,
     progress: f64,
-) -> cja::Result<Vec<u8>> {
-    use image::{ImageFormat, Rgba, RgbaImage};
+) -> cja::Result<ImageBuffer<Rgba<u8>, Vec<u8>>> {
+    use image::{Rgba, RgbaImage};
     use std::f64::consts::PI;
-    use std::io::Cursor;
 
     debug!("Generating progress image");
-
-    // Load the original image
-    let original_img =
-        image::load_from_memory(original_image_data).wrap_err("Failed to load image")?;
 
     // Get dimensions of the original image
     let width = original_img.width();
@@ -216,8 +214,16 @@ pub async fn generate_progress_image(
         }
     }
 
+    Ok(large_result)
+}
+
+pub async fn to_sized_png(
+    image: ImageBuffer<Rgba<u8>, Vec<u8>>,
+    width: u32,
+    height: u32,
+) -> cja::Result<Vec<u8>> {
     // Resize back to original dimensions with high-quality downsampling
-    let final_img = image::DynamicImage::ImageRgba8(large_result).resize_exact(
+    let final_img = image::DynamicImage::ImageRgba8(image).resize_exact(
         width,
         height,
         image::imageops::FilterType::Lanczos3,
@@ -227,7 +233,7 @@ pub async fn generate_progress_image(
     let mut buffer = Vec::new();
     let mut cursor = Cursor::new(&mut buffer);
     final_img
-        .write_to(&mut cursor, ImageFormat::Png)
+        .write_to(&mut cursor, image::ImageFormat::Png)
         .wrap_err("Failed to encode final image to PNG")?;
 
     Ok(buffer)

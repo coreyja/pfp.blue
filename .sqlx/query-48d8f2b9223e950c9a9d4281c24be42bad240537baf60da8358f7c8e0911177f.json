@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                            SELECT p.enabled FROM profile_picture_progress p\n                            WHERE p.account_id = $1\n                            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "enabled",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "48d8f2b9223e950c9a9d4281c24be42bad240537baf60da8358f7c8e0911177f"
+}
